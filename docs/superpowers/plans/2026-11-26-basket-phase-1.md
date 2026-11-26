@@ -159,7 +159,8 @@ e2e/**                              Playwright
 ### Task 4: Supabase project, schema, row-level security
 
 **Files:**
-- Create: `supabase/config.toml` (`supabase init`), `supabase/migrations/0001_init.sql`, `supabase/tests/rls_test.sql`, `lib/db/types.ts` (generated), `lib/db/client.ts`, `lib/db/server.ts`, `middleware.ts`
+- Create: `supabase/config.toml` (`supabase init`), `supabase/migrations/0001_init.sql`, `supabase/tests/rls_test.sql`, `lib/db/types.ts` (generated), `lib/db/client.ts`, `lib/db/server.ts`, `middleware.ts`, `.env.example` (variable names only, no values)
+- Modify: `.github/workflows/ci.yml` (enable the commented Supabase block: `supabase/setup-cli`, `supabase start`, `supabase test db`, export the local URL and publishable key to the e2e env), `playwright.config.ts` (in CI the webServer runs `npm run start` only, since CI already built), `.gitignore` (add `!.env.example`)
 - Test: `supabase/tests/rls_test.sql` (pgTAP, runs in CI via `supabase test db`)
 
 **Interfaces:**
