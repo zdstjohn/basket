@@ -1,7 +1,7 @@
 import { budgetState, type BudgetState } from "@/lib/domain/budget";
 import { formatDollars } from "@/lib/domain/money-input";
 
-const LOOK: Record<BudgetState, { label: string; pill: string; bar: string }> = {
+export const BUDGET_LOOK: Record<BudgetState, { label: string; pill: string; bar: string }> = {
   green: { label: "On budget", pill: "bg-green-tint text-green", bar: "bg-green" },
   amber: { label: "A little over", pill: "bg-[#FFF1CC] text-[#7A4B00]", bar: "bg-[#C98A00]" },
   red: { label: "Over budget", pill: "bg-[#FDE8E6] text-[#A6261B]", bar: "bg-[#C8372D]" },
@@ -18,7 +18,7 @@ export function BudgetMeter({
   cushionCents: number;
 }) {
   const state = budgetState(totalCents, targetCents, cushionCents);
-  const look = LOOK[state];
+  const look = BUDGET_LOOK[state];
   const pct = targetCents > 0 ? Math.min(100, Math.round((totalCents / targetCents) * 100)) : totalCents > 0 ? 100 : 0;
   const left =
     totalCents <= targetCents

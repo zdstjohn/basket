@@ -20,17 +20,15 @@ jobs:
       - run: npm test
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium webkit
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      # The CLI comes from the pinned devDependency, not a "latest" lookup that gets rate-limited.
       - name: Start local Supabase
-        run: supabase start
+        run: npx supabase start
       - name: Database tests (row-level security)
-        run: supabase test db
+        run: npx supabase test db
       - name: Export local Supabase keys for e2e
         run: |
-          echo "NEXT_PUBLIC_SUPABASE_URL=$(supabase status -o env | grep '^API_URL=' | cut -d'"' -f2)" >> "$GITHUB_ENV"
-          echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$(supabase status -o env | grep -E '^(PUBLISHABLE_KEY|ANON_KEY)=' | head -n1 | cut -d'"' -f2)" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_URL=$(npx supabase status -o env | grep '^API_URL=' | cut -d'"' -f2)" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$(npx supabase status -o env | grep -E '^(PUBLISHABLE_KEY|ANON_KEY)=' | head -n1 | cut -d'"' -f2)" >> "$GITHUB_ENV"
       - run: npm run build
       - run: npm run test:e2e
         env:

@@ -1,6 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { AlwaysHaveSection } from "@/components/household/AlwaysHaveSection";
+import { StaplesSection } from "@/components/household/StaplesSection";
+import { StoresSection } from "@/components/household/StoresSection";
 import { PersonRow } from "@/components/PersonRow";
 import { createBrowserClient } from "@/lib/db/client";
 import {
@@ -189,6 +192,10 @@ export function HouseholdScreen({
           </p>
         )}
       </section>
+
+      <StoresSection household={household} />
+      <StaplesSection household={household} />
+      <AlwaysHaveSection household={household} />
 
       <section aria-label="Stores and settings" className="mx-5 mt-4">
         <h2 className="mb-1.5 text-[15px] font-semibold">Stores and sharing</h2>

@@ -67,17 +67,31 @@ describe('estimateCents', () => {
       [{ canonical: 'rice', qty: mass }, { canonical: 'eggs', qty: count }], 'fred_meyer',
       { sb: sb as never, householdId: 'h1', onUsage },
     );
-    expect(out).toEqual({ rice: 0.4, eggs: 1 });
+    expect(out).toEqual({ rice: 0.4, eggs: 50 });
     expect(generateStructured).toHaveBeenCalledTimes(1);
     expect(vi.mocked(generateStructured).mock.calls[0][0].prompt).toContain('eggs');
     expect(vi.mocked(generateStructured).mock.calls[0][0].prompt).not.toContain('rice');
     expect(vi.mocked(generateStructured).mock.calls[0][0].system).toContain('Tacoma');
     expect(upserts).toHaveLength(1);
     expect(upserts[0].rows).toEqual([
-      { household_id: 'h1', canonical: 'eggs', store: 'fred_meyer', kind: 'count', cents_per_base: 1, source: 'ai' },
+      { household_id: 'h1', canonical: 'eggs', store: 'fred_meyer', kind: 'count', cents_per_base: 50, source: 'ai' },
     ]);
     expect(upserts[0].opts).toEqual({ onConflict: 'household_id,canonical,store,kind' });
     expect(onUsage).toHaveBeenCalledWith({ model: 'fake', inputTokens: 100, outputTokens: 50 });
+  });
+
+  it('the fake estimator uses a fixed table by base unit', async () => {
+    const { sb } = mockSb([]);
+    const out = await estimateCents(
+      [
+        { canonical: 'chicken', qty: mass },
+        { canonical: 'milk', qty: { amount: 3785, kind: 'volume', base: 'ml' } },
+        { canonical: 'eggs', qty: count },
+      ],
+      'fred_meyer',
+      { sb: sb as never, householdId: 'h1' },
+    );
+    expect(out).toEqual({ chicken: 1, milk: 0.1, eggs: 50 });
   });
 
   it('returns {} for no items without any query', async () => {
@@ -108,7 +122,7 @@ describe('POST /api/estimates', () => {
     sbRef = mockSb([]).sb;
     const res = await POST(req(body));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ eggs: 1 });
+    expect(await res.json()).toEqual({ eggs: 50 });
     expect(recordUsage).toHaveBeenCalledWith(expect.anything(), 'h1', 'estimate', 'fake', expect.objectContaining({ inputTokens: 100 }));
   });
 

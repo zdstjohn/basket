@@ -9,6 +9,9 @@ type Sb = SupabaseClient<Database>;
 export type MealPhoto = { path: string } | { url: string; credit: string; creditUrl: string };
 export type FavoriteFilter = 'vegetarian' | 'under15' | 'most';
 
+/** "Under $15" keeps meals that cost this much or less for the household. */
+export const UNDER_15_CENTS = 1500;
+
 const SIGNED_URL_SECONDS = 3600;
 
 /** A database row as the pure meal the scaling and note code works on. */
@@ -115,12 +118,12 @@ export async function getMeals(sb: Sb, ids: string[]): Promise<MealRow[]> {
 
 /**
  * Narrows favorites. `q` matches the meal name and ingredient names. `most` keeps meals
- * made at least once, most-made first. `under15` waits for price estimates and, until
- * then, keeps everything.
+ * made at least once, most-made first. `under15` uses `costs` (cents per meal id, null when
+ * a line has no price) and keeps only meals priced at $15 or less; without `costs` it keeps everything.
  */
 export function filterFavorites(
   rows: MealRow[],
-  opts: { q?: string; filter?: FavoriteFilter } = {},
+  opts: { q?: string; filter?: FavoriteFilter; costs?: ReadonlyMap<string, number | null> } = {},
 ): MealRow[] {
   let out = rows;
   const q = opts.q?.trim().toLowerCase();
@@ -135,6 +138,12 @@ export function filterFavorites(
     out = out.filter((r) => {
       const m = toMeal(r);
       return m.everyoneVegetarian || !m.ingredients.some((i) => i.role === 'meat' || i.role === 'fish');
+    });
+  } else if (opts.filter === 'under15' && opts.costs) {
+    const costs = opts.costs;
+    out = out.filter((r) => {
+      const c = costs.get(r.id);
+      return c !== undefined && c !== null && c <= UNDER_15_CENTS;
     });
   } else if (opts.filter === 'most') {
     out = out.filter((r) => r.times_planned > 0).sort((a, b) => b.times_planned - a.times_planned);

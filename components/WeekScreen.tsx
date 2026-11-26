@@ -7,6 +7,7 @@ import { DayRow } from "@/components/DayRow";
 import { MealSheet } from "@/components/MealSheet";
 import { Sheet } from "@/components/Sheet";
 import { useWeekData } from "@/components/useWeekData";
+import { useWeekList } from "@/lib/useWeekList";
 import { copyWeek } from "@/lib/db/queries/weeks";
 import { toMeal } from "@/lib/db/queries/meals";
 import type { Household } from "@/lib/db/rows";
@@ -18,6 +19,7 @@ import { dayNote } from "@/lib/week/note";
 
 export function WeekScreen({ household }: { household: Household }) {
   const { sb, data, error, live, reload } = useWeekData(household);
+  const list = useWeekList(household, data?.week.id ?? null);
   const [openDay, setOpenDay] = useState<Day | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -69,8 +71,7 @@ export function WeekScreen({ household }: { household: Household }) {
         </button>
       </header>
 
-      {/* Task 8 wires the list's prices in; until then nothing is estimated and the meter reads $0. */}
-      <BudgetMeter totalCents={0} targetCents={household.budget_cents} cushionCents={household.cushion_cents} />
+      <BudgetMeter totalCents={list.totals.totalCents} targetCents={household.budget_cents} cushionCents={household.cushion_cents} />
 
       <section aria-label="Dinners" className="mx-5 mt-3.5 flex flex-col gap-1.5">
         <div className="flex items-center justify-between">

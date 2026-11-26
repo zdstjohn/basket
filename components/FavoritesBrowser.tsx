@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import { createBrowserClient } from "@/lib/db/client";
+import { listPeople } from "@/lib/db/queries/household";
+import { listItemStores, listPrices } from "@/lib/db/queries/list";
 import { filterFavorites, listFavorites, mealPhotoSrcs, toMeal, type FavoriteFilter } from "@/lib/db/queries/meals";
 import type { Household, MealRow } from "@/lib/db/rows";
+import type { Store } from "@/lib/domain/list";
+import { scaleMeal } from "@/lib/domain/scaling";
+import type { Person } from "@/lib/domain/types";
+import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
+import { mealCostCents, priceKey, storeFor, toPriceMap, type PriceRow } from "@/lib/list/prices";
 import { subscribeHousehold } from "@/lib/realtime";
 import { focusRing } from "@/lib/ui";
 import { mealTag } from "@/lib/week/note";
@@ -15,6 +22,12 @@ const TAGS = {
   vegetarian: { label: "Vegetarian", cls: "bg-green-tint text-[#134D31]" },
   swap: { label: "Veg swap", cls: "bg-[#EEF0ED] text-[#4A544F]" },
 } as const;
+
+interface Pricing {
+  people: Person[];
+  itemStores: Map<string, Store>;
+  prices: PriceRow[];
+}
 
 const made = (n: number) => (n === 0 ? "Not made yet" : n === 1 ? "Made 1 time" : `Made ${n} times`);
 
@@ -36,6 +49,8 @@ export function FavoritesBrowser({
   const [error, setError] = useState(false);
   const [q, setQ] = useState("");
   const [chip, setChip] = useState<Chip>("all");
+  const [pricing, setPricing] = useState<Pricing | null>(null);
+  const requested = useRef(new Set<string>());
 
   useEffect(() => {
     let run = 0;
@@ -48,6 +63,19 @@ export function FavoritesBrowser({
         setRows(all);
         setPhotos(urls);
         setError(false);
+        if (showChips) {
+          // Only the "Under $15" chip needs these; the list still works without them.
+          try {
+            const [people, itemStores, prices] = await Promise.all([
+              listPeople(sb, household.id),
+              listItemStores(sb, household.id),
+              listPrices(sb, household.id),
+            ]);
+            if (mine === run) setPricing({ people, itemStores, prices });
+          } catch {
+            // Without prices the chip simply finds nothing.
+          }
+        }
       } catch {
         if (mine === run) setError(true);
       }
@@ -58,11 +86,42 @@ export function FavoritesBrowser({
       run++;
       stop();
     };
-  }, [sb, household.id]);
+  }, [sb, household.id, showChips]);
+
+  const storeOf = useMemo(
+    () => (canonical: string, role: Parameters<typeof storeFor>[1]) =>
+      storeFor(canonical, role, pricing?.itemStores ?? new Map(), (household.category_store ?? {}) as Record<string, unknown>),
+    [pricing, household.category_store],
+  );
+  const lines = useMemo(
+    () => (rows && pricing ? rows.map((r) => ({ id: r.id, lines: scaleMeal(toMeal(r), pricing.people) })) : []),
+    [rows, pricing],
+  );
+  const costs = useMemo(() => {
+    if (!pricing) return undefined;
+    const prices = toPriceMap(pricing.prices);
+    return new Map(lines.map((m) => [m.id, mealCostCents(m.lines, storeOf, prices)]));
+  }, [pricing, lines, storeOf]);
+
+  // The first time "Under $15" is picked, price whatever has no price yet: one request per store.
+  useEffect(() => {
+    if (chip !== "under15" || !pricing) return;
+    const have = new Set(pricing.prices.map((p) => priceKey(p.canonical, p.store, p.kind)));
+    const missing = lines
+      .flatMap((m) => m.lines)
+      .map((l) => ({ canonical: l.canonical, qty: l.qty, store: storeOf(l.canonical, l.role) }))
+      .filter((w) => !have.has(priceKey(w.canonical, w.store, w.qty.kind)) && !requested.current.has(priceKey(w.canonical, w.store, w.qty.kind)));
+    for (const w of missing) requested.current.add(priceKey(w.canonical, w.store, w.qty.kind));
+    for (const [store, wanted] of groupMissing(missing)) {
+      void requestEstimates(wanted, store).then((rows) => {
+        if (rows.length > 0) setPricing((p) => (p ? { ...p, prices: [...p.prices, ...rows] } : p));
+      });
+    }
+  }, [chip, pricing, lines, storeOf]);
 
   const shown = useMemo(
-    () => (rows ? filterFavorites(rows, { q, filter: chip === "all" ? undefined : chip }) : []),
-    [rows, q, chip],
+    () => (rows ? filterFavorites(rows, { q, filter: chip === "all" ? undefined : chip, costs }) : []),
+    [rows, q, chip, costs],
   );
 
   if (error && !rows) return <p role="alert" className="mx-5 mt-4 text-[15px]">We couldn&apos;t load your favorites. Try again in a moment.</p>;
@@ -71,6 +130,7 @@ export function FavoritesBrowser({
   const chips: { id: Chip; label: string }[] = [
     { id: "all", label: `All ${rows.length}` },
     { id: "vegetarian", label: "Vegetarian" },
+    { id: "under15", label: "Under $15" },
     { id: "most", label: "Most made" },
   ];
 
