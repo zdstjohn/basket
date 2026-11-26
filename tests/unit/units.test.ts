@@ -32,6 +32,11 @@ describe('toQuantity', () => {
   it('rejects unknown units', () => {
     expect(toQuantity(1, 'smidgen')).toBeNull();
   });
+  it('rejects prototype keys', () => {
+    for (const k of ['constructor', 'toString', 'valueOf', '__proto__']) {
+      expect(toQuantity(1, k)).toBeNull();
+    }
+  });
 });
 
 describe('addQuantities', () => {
@@ -61,5 +66,9 @@ describe('formatQuantity', () => {
     expect(formatQuantity(q(2, 'cans'))).toBe('2 cans');
     expect(formatQuantity(q(1, 'can'))).toBe('1 can');
     expect(formatQuantity(q(3, ''))).toBe('3');
+    expect(formatQuantity(q(2, 'bunch'))).toBe('2 bunches');
+    expect(formatQuantity(q(1, 'bunch'))).toBe('1 bunch');
+    expect(formatQuantity(q(3, 'slices'))).toBe('3 slices');
+    expect(formatQuantity(q(2, 'heads'))).toBe('2 heads');
   });
 });

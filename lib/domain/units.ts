@@ -44,9 +44,9 @@ const COUNT: Record<string, string | undefined> = {
 
 export function toQuantity(amount: number, unit: string): Quantity | null {
   const u = unit.trim().toLowerCase();
-  if (u in MASS) return { amount: amount * MASS[u], kind: 'mass', base: 'g' };
-  if (u in VOLUME) return { amount: amount * VOLUME[u], kind: 'volume', base: 'ml' };
-  if (u in COUNT) {
+  if (Object.hasOwn(MASS, u)) return { amount: amount * MASS[u], kind: 'mass', base: 'g' };
+  if (Object.hasOwn(VOLUME, u)) return { amount: amount * VOLUME[u], kind: 'volume', base: 'ml' };
+  if (Object.hasOwn(COUNT, u)) {
     const countUnit = COUNT[u];
     return countUnit === undefined
       ? { amount, kind: 'count', base: 'each' }
@@ -84,5 +84,7 @@ export function formatQuantity(q: Quantity): string {
     return `${num(q.amount / ML_PER_TSP)} tsp`;
   }
   if (!q.countUnit) return num(q.amount);
-  return `${num(q.amount)} ${q.countUnit}${q.amount === 1 ? '' : 's'}`;
+  const unit = q.countUnit;
+  const suffix = q.amount === 1 ? '' : /(ch|sh|s|x|z)$/.test(unit) ? 'es' : 's';
+  return `${num(q.amount)} ${unit}${suffix}`;
 }
