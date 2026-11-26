@@ -6,7 +6,7 @@
 
 **Architecture:** Next.js App Router app on Vercel; Supabase for Postgres, Auth and Realtime, with row-level security on every household table. All food math (portions, units, scaling, vegetarian swaps, list merging, budget) lives in pure TypeScript under `lib/domain` and is unit-tested without a database. AI calls go through the Vercel AI Gateway behind one provider module that has a deterministic fake for tests.
 
-**Tech Stack:** Next.js (latest stable at Task 1), TypeScript strict, Tailwind CSS, `@supabase/supabase-js` + `@supabase/ssr`, Vercel AI SDK (`ai`) + `zod`, Serwist for the service worker, Vitest, Playwright, Supabase CLI (local stack and pgTAP in CI), GitHub Actions.
+**Tech Stack:** Next.js (latest stable at Task 1), TypeScript strict, Tailwind CSS, `@supabase/supabase-js` + `@supabase/ssr`, Vercel AI SDK (`ai`) + `zod`, a hand-written service worker (`public/sw.js`), Vitest, Playwright, Supabase CLI (local stack and pgTAP in CI), GitHub Actions.
 
 **Spec:** `docs/superpowers/specs/2026-11-26-basket-design.md` (approved 2026-11-26 with mockups at https://claude.ai/artifact/BZLCrgeJE3ab7TG8z9rxfh).
 
@@ -309,7 +309,7 @@ e2e/**                              Playwright
 - Test: `tests/unit/kroger-size.test.ts`, `tests/unit/kroger-products.test.ts`, `tests/unit/kroger-token.test.ts`, `tests/unit/estimates-kroger.test.ts`, `e2e/fred-meyer-prices.spec.ts`
 
 **Interfaces:**
-- Migration 0004: `households.kroger_location_id text null`, `households.kroger_location_name text null` (members may update both: add them to the column update grant); `price_estimates.updated_at timestamptz not null default now()` plus `product_name text null` and `product_image_url text null`; pgTAP: a member can set the location; another household can't. Also `alter publication supabase_realtime add table public.item_store, public.always_have, public.price_estimates;` so store moves, always-have edits and new prices sync live between phones (from the Task 8 review).
+- Migration 0004: `households.kroger_location_id text null`, `households.kroger_location_name text null` (members may update both: add them to the column update grant); `price_estimates.updated_at timestamptz not null default now()` plus `product_name text null` and `product_image_url text null`; pgTAP: a member can set the location; another household can't. Also `alter publication supabase_realtime add table public.item_store, public.always_have, public.price_estimates, public.households;` so store moves, always-have edits and new prices sync live between phones (from the Task 8 review).
 - `getKrogerToken(): Promise<string>`: `POST https://api.kroger.com/v1/connect/oauth2/token` with HTTP Basic (`KROGER_CLIENT_ID`:`KROGER_CLIENT_SECRET`), `grant_type=client_credentials`, `scope=product.compact`; cached in module memory until 60 s before expiry; server-only. Missing env → `KrogerNotConfigured` (callers fall back to AI estimates silently).
 - `findLocations(zip: string): Promise<{ id: string; name: string; address: string; chain: string }[]>`: `GET /v1/locations?filter.zipCode.near=<zip>&filter.limit=10`; Fred Meyer first, then other Kroger-family chains.
 - `parseSize(size: string): Quantity | null` in `lib/kroger/size.ts` using `toQuantity` (handles "16 oz", "1 lb", "12 ct", "1 gal", "64 fl oz", "2 x 15 oz" → 30 oz, "1 each").
@@ -350,7 +350,7 @@ e2e/**                              Playwright
 
 **Files:**
 - Create: `app/manifest.ts`, `app/sw.ts`, `public/icons/*` (192, 512, maskable), `e2e/layout.spec.ts`
-- Modify: `next.config.ts` (Serwist)
+- Modify: `public/sw.js` (the hand-written service worker from Task 8 — no Serwist, by ruling 2026-11-26)
 - Test: `e2e/layout.spec.ts`, `e2e/pwa.spec.ts`
 
 **Interfaces:**
