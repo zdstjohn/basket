@@ -8,7 +8,21 @@ export interface SearchResult {
   toppedUp: boolean;
 }
 
-export type Failure = "cap" | "source_limit" | "unreadable" | "other";
+export type Failure = "unauthorized" | "cap" | "source_limit" | "unreadable" | "other";
+
+/** Which failure an HTTP status means. */
+export function failureForStatus(status: number): Failure {
+  if (status === 401) return "unauthorized";
+  if (status === 402) return "cap";
+  if (status === 429) return "source_limit";
+  if (status === 422) return "unreadable";
+  return "other";
+}
+
+/** Where to send someone whose session ended, so they come back to the same page. */
+export function loginUrl(path: string): string {
+  return `/login?next=${encodeURIComponent(path)}`;
+}
 
 export class ApiFailure extends Error {
   constructor(readonly kind: Failure) {
@@ -28,10 +42,11 @@ async function post<T>(url: string, body: unknown): Promise<T> {
     throw new ApiFailure("other");
   }
   if (res.ok) return (await res.json()) as T;
-  if (res.status === 402) throw new ApiFailure("cap");
-  if (res.status === 429) throw new ApiFailure("source_limit");
-  if (res.status === 422) throw new ApiFailure("unreadable");
-  throw new ApiFailure("other");
+  const kind = failureForStatus(res.status);
+  if (kind === "unauthorized" && typeof window !== "undefined") {
+    window.location.assign(loginUrl(window.location.pathname + window.location.search));
+  }
+  throw new ApiFailure(kind);
 }
 
 export const searchRecipes = (query: string, source: RecipeSource) =>
@@ -43,6 +58,7 @@ export const draftFromOption = (option: RecipeOption) =>
 export const draftFromText = (value: string) => post<RecipeDraft>("/api/meals/draft", { mode: "text", value });
 
 export const MESSAGES: Record<Failure, string> = {
+  unauthorized: "Signing you in again…",
   cap: "This month's recipe help is used up. You can still type the ingredients in.",
   source_limit: "Spoonacular's daily limit is used up. Big sites still works.",
   unreadable: "We couldn't read that recipe. Try another one, or paste the ingredients.",

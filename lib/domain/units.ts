@@ -100,3 +100,9 @@ export function quantityOrCount(amount: number, unit: string): Quantity {
     }
   );
 }
+
+/** For showing: counts round up to whole numbers (you buy whole onions); other units read as usual. */
+export function formatQuantityRoundedUp(q: Quantity): string {
+  if (q.kind !== 'count') return formatQuantity(q);
+  return formatQuantity({ ...q, amount: Math.max(1, Math.ceil(q.amount - 1e-9)) });
+}

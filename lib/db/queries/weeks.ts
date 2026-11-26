@@ -114,18 +114,11 @@ export async function setWeekMeal(
   if (current?.meal_id !== mealId) await bumpTimesPlanned(sb, [mealId]);
 }
 
-/** Copies one week's dinners into another, replacing what the target had. */
+/** Copies one week's dinners into another, replacing what the target had (copies first, then removes the rest). */
 export async function copyWeek(sb: Sb, fromWeekId: string, toWeekId: string): Promise<void> {
   const [from, to] = await Promise.all([listWeekMeals(sb, fromWeekId), listWeekMeals(sb, toWeekId)]);
   if (from.length === 0) return;
   const householdId = from[0].household_id;
-
-  const wanted = new Set(from.map((m) => `${m.day}/${m.slot}`));
-  const stale = to.filter((m) => !wanted.has(`${m.day}/${m.slot}`)).map((m) => m.id);
-  if (stale.length > 0) {
-    const { error } = await sb.from('week_meals').delete().in('id', stale);
-    if (error) throw new Error(error.message);
-  }
 
   const { error } = await sb.from('week_meals').upsert(
     from.map((m) => ({
@@ -139,6 +132,15 @@ export async function copyWeek(sb: Sb, fromWeekId: string, toWeekId: string): Pr
     { onConflict: 'week_id,day,slot' },
   );
   if (error) throw new Error(error.message);
+
+  // Only after the copies are in: a failure above leaves the old week intact.
+  const wanted = new Set(from.map((m) => `${m.day}/${m.slot}`));
+  const stale = to.filter((m) => !wanted.has(`${m.day}/${m.slot}`)).map((m) => m.id);
+  if (stale.length > 0) {
+    const { error } = await sb.from('week_meals').delete().in('id', stale);
+    if (error) throw new Error(error.message);
+  }
+
 
   const had = new Map(to.map((m) => [`${m.day}/${m.slot}`, m.meal_id]));
   await bumpTimesPlanned(

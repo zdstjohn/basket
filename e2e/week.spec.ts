@@ -322,3 +322,48 @@ test("favorites: listed with a photo and tag, searchable, adds to the first empt
   await expect(page.getByTestId("day-row-thu")).toContainText("Add dinner");
   await expect(page.getByTestId("day-row-sun")).toContainText("Add dinner");
 });
+
+test("add a meal: bad links go back to the week; ingredients can be edited before saving", async ({ page }) => {
+  const email = await createHousehold(page);
+  for (const bad of ["day=constructor&slot=dinner", "day=thu&slot=lunch", "day=__proto__&slot=dinner"]) {
+    await page.goto(`/week/add?${bad}`);
+    await expect(page).toHaveURL(/\/week$/);
+  }
+
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0);
+  await searchFor(page, "tacos");
+  await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
+  const draft = page.getByRole("region", { name: "Draft recipe" });
+  // 12 tortillas for 4 servings is 11.4 for this household: shown rounded up.
+  await expect(draft.getByText("Corn tortillas")).toBeVisible();
+  await expect(draft.getByText("12", { exact: true })).toBeVisible();
+
+  await draft.getByRole("button", { name: "Edit ingredients" }).click();
+  const tortillas = draft.getByRole("group", { name: "Ingredient 2" });
+  await expect(tortillas.getByLabel("Name")).toHaveValue("corn tortillas");
+  await tortillas.getByLabel("Amount").fill("8");
+  await draft.getByRole("button", { name: "Remove yellow onion" }).click();
+  await draft.getByRole("button", { name: "+ Add ingredient" }).click();
+  const added = draft.getByRole("group", { name: "Ingredient 3" });
+  await added.getByLabel("Name").fill("lime");
+  await added.getByLabel("Amount").fill("0");
+  await draft.getByRole("button", { name: "Done" }).click();
+  await expect(draft.getByRole("alert")).toContainText("needs a name, an amount above zero and a unit");
+  await added.getByLabel("Amount").fill("2");
+  await draft.getByRole("button", { name: "Done" }).click();
+  await expect(draft.getByText("Lime")).toBeVisible();
+  await expect(draft.getByText("Yellow onion")).toHaveCount(0);
+  await expect(draft.getByText("8", { exact: true })).toBeVisible(); // 8 * 3.8 / 4 = 7.6, up to 8
+
+  await page.getByRole("button", { name: "Add to Thursday" }).click();
+  await expect(page).toHaveURL(/\/week$/);
+
+  const sb = await clientFor(email);
+  const household = await getMyHousehold(sb);
+  const [meal] = await listFavorites(sb, household!.id);
+  const lines = meal.ingredients as unknown as { canonical: string; amount: number }[];
+  expect(lines.find((l) => l.canonical === "corn tortillas")?.amount).toBe(8);
+  expect(lines.find((l) => l.canonical === "lime")?.amount).toBe(2);
+  expect(lines.some((l) => l.canonical === "yellow onion")).toBe(false);
+});

@@ -20,3 +20,16 @@ describe("week formatting", () => {
     expect(formatMinutes(120)).toBe("2 hr");
   });
 });
+
+import { isDay } from "@/lib/week/format";
+
+describe("isDay", () => {
+  it("accepts the seven days", () => {
+    for (const d of ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]) expect(isDay(d)).toBe(true);
+  });
+  it("rejects prototype keys and other junk", () => {
+    for (const v of ["constructor", "toString", "__proto__", "hasOwnProperty", "Thu", "", 3, null, undefined]) {
+      expect(isDay(v)).toBe(false);
+    }
+  });
+});

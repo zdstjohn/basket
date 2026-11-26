@@ -13,3 +13,7 @@ export const stickyAboveNav =
   "sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 bg-ground/95 px-5 pt-3 pb-2.5 backdrop-blur-sm";
 
 export const bigGreenLink = `flex h-[52px] w-full items-center justify-center rounded-full bg-green text-base font-semibold text-white no-underline disabled:opacity-60 ${focusRing}`;
+
+// The same bar on a full screen with no bottom nav (Add a meal).
+export const stickyBottom =
+  "sticky bottom-0 z-10 bg-ground/95 px-5 pt-3 pb-[calc(0.625rem+env(safe-area-inset-bottom))] backdrop-blur-sm";

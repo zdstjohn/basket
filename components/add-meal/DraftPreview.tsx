@@ -5,7 +5,10 @@ import type { RecipeDraft } from "@/lib/ai/schemas";
 import { householdServings } from "@/lib/domain/portions";
 import { scaleMeal } from "@/lib/domain/scaling";
 import type { Meal, Person } from "@/lib/domain/types";
-import { formatQuantity } from "@/lib/domain/units";
+import { formatQuantityRoundedUp } from "@/lib/domain/units";
+import { useState } from "react";
+import { IngredientEditor } from "@/components/add-meal/IngredientEditor";
+import type { IngredientLine } from "@/lib/domain/types";
 import { focusRing, pillButton } from "@/lib/ui";
 import { hasMeatOrFish, joinNames, swapPeople } from "@/lib/week/note";
 
@@ -30,6 +33,7 @@ export function DraftPreview({
   photoSrc,
   onPhoto,
   onDismiss,
+  onIngredients,
 }: {
   draft: RecipeDraft;
   people: Person[];
@@ -37,7 +41,9 @@ export function DraftPreview({
   photoSrc: string | null;
   onPhoto: (file: File) => void;
   onDismiss: () => void;
+  onIngredients: (lines: IngredientLine[]) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const meal = draftAsMeal(draft);
   const servings = householdServings(people);
   const lines = scaleMeal(meal, people);
@@ -65,7 +71,6 @@ export function DraftPreview({
             <input
               type="file"
               accept="image/*"
-              capture="environment"
               className="sr-only"
               aria-label="Change photo"
               onChange={(e) => {
@@ -87,25 +92,42 @@ export function DraftPreview({
           </a>
         )}
 
-        <div className="mt-2 flex items-baseline justify-between">
-          <h3 className="text-[15px] font-semibold">Ingredients</h3>
-          <span className="text-xs text-muted">Scaled to {servings} servings</span>
-        </div>
-        <ul className="mt-2 flex flex-col">
-          {lines.map((l, i) => {
-            // scaleMeal adds the swap as the last line whenever someone is skipping the meat.
-            const isSwap = !!draft.vegSwap && skipping.length > 0 && i === lines.length - 1;
-            return (
-              <li key={`${l.canonical}-${i}`} className="flex justify-between gap-3 border-t border-[#F0F2EF] py-[7px] text-sm">
-                <span>
-                  {cap(l.canonical)}
-                  {isSwap ? ` (${swapNames})` : ""}
-                </span>
-                <span className="whitespace-nowrap text-[#4A544F]">{formatQuantity(l.qty)}</span>
-              </li>
-            );
-          })}
-        </ul>
+        {editing ? (
+          <IngredientEditor
+            lines={draft.ingredients}
+            servings={draft.baseServings}
+            onDone={(lines) => {
+              onIngredients(lines);
+              setEditing(false);
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        ) : (
+          <>
+            <div className="mt-2 flex items-baseline justify-between">
+              <h3 className="text-[15px] font-semibold">Ingredients</h3>
+              <span className="text-xs text-muted">Scaled to {servings} servings</span>
+            </div>
+            <ul className="mt-2 flex flex-col">
+              {lines.map((l, i) => {
+                // scaleMeal adds the swap as the last line whenever someone is skipping the meat.
+                const isSwap = !!draft.vegSwap && skipping.length > 0 && i === lines.length - 1;
+                return (
+                  <li key={`${l.canonical}-${i}`} className="flex justify-between gap-3 border-t border-[#F0F2EF] py-[7px] text-sm">
+                    <span>
+                      {cap(l.canonical)}
+                      {isSwap ? ` (${swapNames})` : ""}
+                    </span>
+                    <span className="whitespace-nowrap text-[#4A544F]">{formatQuantityRoundedUp(l.qty)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <button type="button" onClick={() => setEditing(true)} className={`mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-green ${focusRing}`}>
+              Edit ingredients
+            </button>
+          </>
+        )}
       </section>
 
       {hasMeatOrFish(meal) && skipping.length > 0 && (

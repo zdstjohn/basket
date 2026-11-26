@@ -12,7 +12,7 @@ const NAMES: Record<Day, string> = {
 
 export const DAY_IDS = Object.keys(NAMES) as Day[];
 
-export const isDay = (v: unknown): v is Day => typeof v === 'string' && v in NAMES;
+export const isDay = (v: unknown): v is Day => typeof v === 'string' && (DAY_IDS as string[]).includes(v);
 
 export const dayName = (d: Day): string => NAMES[d];
 export const dayShort = (d: Day): string => NAMES[d].slice(0, 3);

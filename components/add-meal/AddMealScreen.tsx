@@ -17,20 +17,13 @@ import type { Household, MealRow } from "@/lib/db/rows";
 import type { Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts";
+import { parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
-import { bigGreenLink, focusRing, stickyAboveNav } from "@/lib/ui";
+import { bigGreenLink, focusRing, stickyBottom } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
 
-type Tab = "search" | "paste" | "favorites";
-
-interface Saved {
-  tab: Tab;
-  query: string;
-  paste: string;
-  draft: RecipeDraft | null;
-  saveFavorite: boolean;
-}
+type Tab = AddMealTab;
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "search", label: "Search" },
@@ -62,7 +55,10 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   useEffect(() => {
     // The week comes from the phone's clock, so it is worked out after the page loads.
     const start = weekStartFor(new Date(), household.week_start as Day, household.time_zone);
-    const saved = loadDraft<Saved>(`add-meal:${start}:${day}:${slot}`);
+    const storedKey = `add-meal:${start}:${day}:${slot}`;
+    const stored = loadDraft<unknown>(storedKey);
+    const saved = parseSavedAddMeal(stored);
+    if (stored !== null && !saved) clearDraft(storedKey);
     /* eslint-disable react-hooks/set-state-in-effect */
     if (saved) {
       setTab(saved.tab);
@@ -80,7 +76,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   useEffect(() => {
     if (!key || !restored) return;
     if (!query && !paste && !draft) clearDraft(key);
-    else saveDraft(key, { tab, query, paste, draft, saveFavorite } satisfies Saved);
+    else saveDraft(key, { tab, query, paste, draft, saveFavorite } satisfies SavedAddMeal);
   }, [key, restored, tab, query, paste, draft, saveFavorite]);
 
   useEffect(() => {
@@ -226,7 +222,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       )}
       {showPreview && (
         <>
-          <DraftPreview draft={draft} people={people} photoSrc={custom?.url ?? null} onPhoto={(f) => void pickPhoto(f)} onDismiss={startOver} />
+          <DraftPreview draft={draft} people={people} photoSrc={custom?.url ?? null} onPhoto={(f) => void pickPhoto(f)} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} />
           <label className="mx-5 mt-3 flex min-h-11 items-center gap-2.5 text-[15px] font-medium">
             <input
               type="checkbox"
@@ -246,7 +242,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
 
       <div className="mt-auto" />
       {showPreview && (
-        <div className={stickyAboveNav}>
+        <div className={stickyBottom}>
           <button type="button" disabled={adding || !weekStart} onClick={() => void addDraft()} className={bigGreenLink}>
             Add to {label}
           </button>

@@ -60,6 +60,8 @@ const ITEMS = [
 
 export function BottomNav() {
   const pathname = usePathname();
+  // Add a meal is a full screen of its own: just the close button and the Add button.
+  if (pathname.startsWith("/week/add")) return null;
   return (
     <nav
       aria-label="Main"

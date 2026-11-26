@@ -97,7 +97,6 @@ export function MealSheet({
             <input
               type="file"
               accept="image/*"
-              capture="environment"
               className="sr-only"
               aria-label="Change photo"
               disabled={busy}

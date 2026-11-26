@@ -87,3 +87,17 @@ describe('quantityOrCount', () => {
     });
   });
 });
+
+import { formatQuantityRoundedUp } from "@/lib/domain/units";
+
+describe("formatQuantityRoundedUp", () => {
+  it("rounds counts up to whole numbers", () => {
+    expect(formatQuantityRoundedUp({ amount: 11.4, kind: "count", base: "each" })).toBe("12");
+    expect(formatQuantityRoundedUp({ amount: 0.9, kind: "count", base: "each" })).toBe("1");
+    expect(formatQuantityRoundedUp({ amount: 2.0000000001, kind: "count", base: "each" })).toBe("2");
+    expect(formatQuantityRoundedUp({ amount: 1.2, kind: "count", base: "each", countUnit: "can" })).toBe("2 cans");
+  });
+  it("leaves weights and volumes as they were", () => {
+    expect(formatQuantityRoundedUp({ amount: 453.6 * 1.2, kind: "mass", base: "g" })).toBe("1.2 lb");
+  });
+});
