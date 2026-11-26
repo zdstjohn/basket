@@ -1,8 +1,10 @@
-export default function Page() {
-  return (
-    <section className="px-5 pt-5">
-      <h1 className="text-[30px] font-bold tracking-tight text-ink">Favorites</h1>
-      <p className="mt-2 text-[15px] text-muted">Meals you love will show up here.</p>
-    </section>
-  );
+import { redirect } from "next/navigation";
+import { FavoritesScreen } from "@/components/FavoritesScreen";
+import { createServerClient } from "@/lib/db/server";
+import { getMyHousehold } from "@/lib/db/queries/household";
+
+export default async function Page() {
+  const household = await getMyHousehold(await createServerClient());
+  if (!household) redirect("/onboarding");
+  return <FavoritesScreen household={household} />;
 }

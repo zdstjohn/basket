@@ -37,6 +37,10 @@ jobs:
           CI: "true"
           E2E: "1"
           E2E_PASSWORD: ci-only-e2e-password-1
+          AI_FAKE: "1"
+          RECIPE_SEARCH_FAKE: "1"
+          # Any value: the fake search only needs the key to exist so Big sites can fall back to Spoonacular.
+          SPOONACULAR_API_KEY: ci-fake-key
       - name: e2e (test login route is closed without E2E=1)
         run: npx playwright test -c playwright.locked.config.ts
         env:

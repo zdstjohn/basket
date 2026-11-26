@@ -37,6 +37,18 @@ const SPOON: Record<string, RecipeOption[]> = {
       structured: tacos.ingredients,
     },
   ],
+  // Only Spoonacular knows lasagna, so a Big sites search for it falls back.
+  lasagna: [
+    {
+      ...base, source: 'spoonacular', url: 'https://spoonacular.com/fake-lasagna', site: 'Spoonacular',
+      title: 'Easy lasagna', image: img('lasagna'), totalMinutes: 75,
+      ingredients: ['1 lb ground beef', '12 lasagna noodles'],
+      structured: [
+        { canonical: 'ground beef', amount: 1, unit: 'lb', role: 'meat' },
+        { canonical: 'lasagna noodles', amount: 12, unit: 'each', role: 'pantry' },
+      ],
+    },
+  ],
   'pot pie': [
     {
       ...base, source: 'spoonacular', url: 'https://spoonacular.com/fake-pot-pie', site: 'Spoonacular',

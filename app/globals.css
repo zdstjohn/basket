@@ -20,7 +20,7 @@
   --color-green-tint: var(--green-tint);
   --color-sale: var(--sale);
   --color-sale-tint: var(--sale-tint);
-  --font-head: var(--font-head);
+  --font-heading: var(--font-head);
   --font-sans: var(--font-body);
 }
 
