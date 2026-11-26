@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { resizeForUpload } from "@/lib/photos/upload";
 import type { DishGuess } from "@/lib/ai/schemas";
 import type { RecipeSource } from "@/lib/recipes/search/provider";
@@ -51,29 +52,35 @@ export async function lookUpDish(
 
 /** The camera button: opens the phone's picker (camera or gallery). */
 export function FindMyDishButton({ busy, onFile }: { busy: boolean; onFile: (file: File) => void }) {
+  const input = useRef<HTMLInputElement>(null);
   return (
-    <label
-      className={`inline-flex size-12 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-green bg-white text-green focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-green ${
-        busy ? "opacity-60" : ""
-      }`}
-    >
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M4 8h3l1.5-2h7L17 8h3v11H4z" />
-        <circle cx="12" cy="13" r="3.5" />
-      </svg>
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => input.current?.click()}
+        className={`mt-2.5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border-[1.5px] border-green bg-white text-[15px] font-semibold text-green disabled:opacity-60 ${focusRing}`}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 8h3l1.5-2h7L17 8h3v11H4z" />
+          <circle cx="12" cy="13" r="3.5" />
+        </svg>
+        Find my dish
+      </button>
       <input
+        ref={input}
         type="file"
         accept="image/*"
-        className="sr-only"
-        aria-label="Find my dish"
-        disabled={busy}
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden="true"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) onFile(f);
           e.target.value = "";
         }}
       />
-    </label>
+    </>
   );
 }
 

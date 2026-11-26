@@ -1,8 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { createHousehold } from "./helpers/household";
 import { FOOD_JPG, routeFoodImages } from "./helpers/fixtures";
 
 const SIGNED_PHOTO = /\/storage\/v1\/object\/sign\/meal-photos\//;
+
+/** Tap the visible "Find my dish" button and choose the photo in the picker. */
+async function choosePhoto(page: Page) {
+  const button = page.getByRole("button", { name: "Find my dish" });
+  await expect(button).toBeVisible();
+  expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), button.click()]);
+  await chooser.setFiles(FOOD_JPG);
+}
 
 test.beforeEach(async ({ page }) => {
   await routeFoodImages(page);
@@ -14,7 +23,7 @@ test("find my dish: photo to recipe cards, then use my photo for the meal", asyn
   await page.goto("/week/add?day=thu&slot=dinner");
   await expect(page.getByRole("heading", { name: "Thursday dinner" })).toBeVisible();
 
-  await page.getByLabel("Find my dish").setInputFiles(FOOD_JPG);
+  await choosePhoto(page);
   await expect(page.getByText("Looks like: Chicken tacos")).toBeVisible();
   await expect(page.getByAltText("Your dish photo")).toBeVisible();
   await expect(page.getByTestId("result-card").first()).toBeVisible();
@@ -45,7 +54,7 @@ test("find my dish: photo to recipe cards, then use my photo for the meal", asyn
 test("find my dish: unchecking keeps the recipe's own photo", async ({ page }) => {
   await createHousehold(page);
   await page.goto("/week/add?day=fri&slot=dinner");
-  await page.getByLabel("Find my dish").setInputFiles(FOOD_JPG);
+  await choosePhoto(page);
   await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
   await page.getByRole("checkbox", { name: "Use my photo for this meal" }).uncheck();
   await expect(page.getByText("Photo: Allrecipes")).toBeVisible();
@@ -68,22 +77,36 @@ test("find my dish: not a dish, a low-confidence guess, and the monthly limit", 
     });
 
   await page.route("**/api/recipes/identify", answer({ isFood: false, dish: "", searchQuery: "", keyIngredients: [], confidence: "low" }));
-  await page.getByLabel("Find my dish").setInputFiles(FOOD_JPG);
+  await choosePhoto(page);
   await expect(page.getByText("That doesn't look like a dish. Try another photo.")).toBeVisible();
   await expect(page.getByTestId("result-card")).toHaveCount(0);
 
   await page.unroute("**/api/recipes/identify");
   await page.route("**/api/recipes/identify", answer({ isFood: true, dish: "Chicken tacos", searchQuery: "tacos", keyIngredients: [], confidence: "low" }));
-  await page.getByLabel("Find my dish").setInputFiles(FOOD_JPG);
+  await choosePhoto(page);
   await expect(page.getByText("Not sure? Edit the name and search again.")).toBeVisible();
 
   await page.unroute("**/api/recipes/identify");
   await page.route("**/api/recipes/identify", (route) =>
     route.fulfill({ status: 402, contentType: "application/json", body: '{"error":"cap_reached"}' }),
   );
-  await page.getByLabel("Find my dish").setInputFiles(FOOD_JPG);
+  await choosePhoto(page);
   await expect(
     page.getByText("This month's recipe help is used up. You can still type the ingredients in."),
   ).toBeVisible();
   await expect(page.getByLabel("What's for dinner?")).toBeVisible();
+});
+
+test("find my dish: the labelled button fits a 360 px screen", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await createHousehold(page);
+  await page.goto("/week/add?day=mon&slot=dinner");
+  const button = page.getByRole("button", { name: "Find my dish" });
+  await expect(button).toBeVisible();
+  const box = (await button.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(360);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  await page.screenshot({ path: "e2e/screenshots/find-my-dish-360.png", fullPage: true });
 });

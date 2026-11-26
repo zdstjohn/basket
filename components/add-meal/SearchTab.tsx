@@ -134,8 +134,8 @@ export function SearchTab({
           >
             Search
           </button>
-          <FindMyDishButton busy={loading} onFile={(f) => void findDish(f)} />
         </div>
+        <FindMyDishButton busy={loading} onFile={(f) => void findDish(f)} />
         <div role="radiogroup" aria-label="Where to look" className="mt-2.5 grid grid-cols-2 gap-1 rounded-[14px] bg-[#EAEEE9] p-1">
           {SOURCES.map((s) => (
             <button
