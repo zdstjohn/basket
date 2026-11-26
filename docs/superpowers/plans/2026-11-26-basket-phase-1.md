@@ -299,9 +299,33 @@ e2e/**                              Playwright
 - [ ] **Step 5:** Implement to the mockup (sale banner and coupon lines hidden in phase 1; the bottom bar shows the week's estimated total and budget colour, with no button; "Review and fill carts" arrives in phase 2). Staples and always-have lists edited on `/household`.
 - [ ] **Step 6:** CI → PASS. Commit `feat: shopping list, staples, stores, estimates`.
 
-### Task 9: Find my dish (photo → recipe search)
+### Task 9: Real Fred Meyer prices (Kroger Products API)
 
-*Added 2026-11-26 at the user's request: "add a 'find my dish' option that lets me add a picture and searches the web for the recipe or a similar recipe". Runs after the shopping list (Task 8) and before install/launch (now Task 10).*
+*Added 2026-11-26 at the user's request: replace AI price guesses with real Fred Meyer shelf prices in the first version. Uses only the Kroger public API's client-credentials token (no shopper sign-in, no cart — those stay in phase 2). Amazon and Costco keep AI estimates and "your price".*
+
+**Files:**
+- Create: `supabase/migrations/0004_fred_meyer_store.sql`, `lib/kroger/token.ts`, `lib/kroger/locations.ts`, `lib/kroger/products.ts`, `lib/kroger/size.ts`, `lib/kroger/fake.ts`, `app/api/kroger/locations/route.ts`, `components/StorePicker.tsx`, `tests/fixtures/kroger/*.json`
+- Modify: `app/api/estimates/route.ts` and `lib/ai/estimate.ts` (Fred Meyer items priced from Kroger first), `app/(app)/household/page.tsx` (store picker), list row labels, `.env.example`, `supabase/tests/rls_test.sql`
+- Test: `tests/unit/kroger-size.test.ts`, `tests/unit/kroger-products.test.ts`, `tests/unit/kroger-token.test.ts`, `tests/unit/estimates-kroger.test.ts`, `e2e/fred-meyer-prices.spec.ts`
+
+**Interfaces:**
+- Migration 0004: `households.kroger_location_id text null`, `households.kroger_location_name text null` (members may update both: add them to the column update grant); `price_estimates.updated_at timestamptz not null default now()` plus `product_name text null` and `product_image_url text null`; pgTAP: a member can set the location; another household can't. Also `alter publication supabase_realtime add table public.item_store, public.always_have, public.price_estimates;` so store moves, always-have edits and new prices sync live between phones (from the Task 8 review).
+- `getKrogerToken(): Promise<string>`: `POST https://api.kroger.com/v1/connect/oauth2/token` with HTTP Basic (`KROGER_CLIENT_ID`:`KROGER_CLIENT_SECRET`), `grant_type=client_credentials`, `scope=product.compact`; cached in module memory until 60 s before expiry; server-only. Missing env → `KrogerNotConfigured` (callers fall back to AI estimates silently).
+- `findLocations(zip: string): Promise<{ id: string; name: string; address: string; chain: string }[]>`: `GET /v1/locations?filter.zipCode.near=<zip>&filter.limit=10`; Fred Meyer first, then other Kroger-family chains.
+- `parseSize(size: string): Quantity | null` in `lib/kroger/size.ts` using `toQuantity` (handles "16 oz", "1 lb", "12 ct", "1 gal", "64 fl oz", "2 x 15 oz" → 30 oz, "1 each").
+- `priceFor(canonical: string, kind: Quantity['kind'], locationId: string): Promise<{ centsPerBase: number; productName: string; onSale: boolean; imageUrl: string | null } | null>`: `GET /v1/products?filter.term=<canonical>&filter.locationId=<id>&filter.limit=10`; for each product item with a price, use `promo` when > 0 else `regular`; compute cents per base unit from `parseSize(item.size)` when its kind matches; produce sold by weight (`soldBy: 'WEIGHT'`) with a per-lb price counts as mass; pick the lowest per-unit price among the first five relevant results whose description contains every word of the canonical name (case-insensitive, singular/plural tolerant), else among the first three results; `null` when nothing matches the item's kind.
+- Estimates route: for `store === 'fred_meyer'` and a household with `kroger_location_id`, price each item with `priceFor` first (in parallel, max 6 at once), cache with `source: 'kroger'`, `product_name`, `product_image_url` (the product's featured `front` image at size `small`, else `thumbnail`; https on `www.kroger.com` only), `updated_at`; items Kroger can't price fall back to the AI estimate as now. Kroger-sourced rows older than 24 h are refreshed; AI rows don't expire; 'user' rows always win and never expire. Kroger calls don't count toward the AI cap.
+- `GET /api/kroger/locations?zip=98402` → `200` list | `401` | `400` bad zip | `503 not_configured`.
+- UI: on `/household`, the Fred Meyer row becomes "Your Fred Meyer" with the chosen store's name, or a "Choose store" button that opens a ZIP search (5-digit input, results list, tap to choose). Fred Meyer rows priced from Kroger show the product photo as a 40 px thumbnail (`<img loading="lazy" referrerpolicy="no-referrer">`, hidden on error) and the product name under the item (e.g. "Heritage Farm Boneless Skinless Chicken Thighs"); prices from Kroger show "Fred Meyer price" (and "Sale" when `onSale`); AI prices keep "estimate"; user prices keep "your price". When Kroger isn't configured or no store is chosen, everything works as before.
+
+- [ ] **Step 1: Failing unit tests**: `parseSize` cases above plus junk → null; `priceFor` with fixture JSON (promo beats regular; per-unit comparison picks a cheaper larger pack; kind mismatch → null; description word match preferred); token caching (one fetch for two calls inside the expiry window; refetch after); estimates route with Kroger fake: Fred Meyer items get `source: 'kroger'`, unpriced items fall back to AI, a stale Kroger row is refreshed, a 'user' row is untouched, no Kroger calls when no location is set.
+- [ ] **Step 2: Failing e2e** (`fred-meyer-prices.spec.ts`, both projects, `KROGER_FAKE=1`): on `/household` choose a store via ZIP 98402 → "Your Fred Meyer" shows its name → `/list` shows "Fred Meyer price", the product name and a product thumbnail on chicken thighs and "estimate" on an Amazon item; screenshot `fred-meyer-prices.png`.
+- [ ] **Step 3:** Implement; apply 0004 to the real project (controller, via MCP) and regenerate types; lint, typecheck, `npm test`, build; e2e locally if the stack starts; CI. Commit `feat: real Fred Meyer prices via Kroger`.
+- [ ] **Step 4 (controller):** after the user adds `KROGER_CLIENT_ID`/`KROGER_CLIENT_SECRET` in Vercel, verify on the deployed app with one store search and one priced list.
+
+### Task 10: Find my dish (photo → recipe search)
+
+*Added 2026-11-26 at the user's request: "add a 'find my dish' option that lets me add a picture and searches the web for the recipe or a similar recipe". Runs after real Fred Meyer prices (Task 9) and before install/launch (Task 11).*
 
 **Files:**
 - Create: `lib/ai/identify.ts`, `app/api/recipes/identify/route.ts`, `components/add-meal/FindMyDish.tsx`, `e2e/find-my-dish.spec.ts`
@@ -322,7 +346,7 @@ e2e/**                              Playwright
 - [ ] **Step 4:** Implement. Copy above is exact. The fake returns the tacos guess for any image whose base64 is the fixture's, and `isFood: false` for an image tagged "not-food" in its file name (pass the name in the request body only in E2E mode, or use a second fixture image).
 - [ ] **Step 5:** lint, typecheck, `npm test`, build; e2e locally if the stack starts; CI. Commit `feat: find my dish from a photo`.
 
-### Task 10: Install as an app, layout pass, launch
+### Task 11: Install as an app, layout pass, launch
 
 **Files:**
 - Create: `app/manifest.ts`, `app/sw.ts`, `public/icons/*` (192, 512, maskable), `e2e/layout.spec.ts`

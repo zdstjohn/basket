@@ -119,8 +119,9 @@ On a meal containing meat/fish, vegetarian people get a **swapped portion**: the
 
 - Default store per category and per item; household picks its Kroger-family store by ZIP.
 - **Fred Meyer**: "Fill Fred Meyer cart" sends the list's UPCs and quantities to `cart/add` with the household's pickup or delivery setting. Because the cart can't be read back, the app records what it sent and warns before sending again. User checks out in the Fred Meyer app.
-- **Amazon**: "Open Amazon cart" builds one add-to-cart URL with all Amazon items; opens in the Amazon app/site. Products are added by pasting Amazon links (the app reads the ASIN). Whole Foods items tested in phase 3; fallback is a linked list.
-- **Costco**: checklist with sizes and last prices; "Send to Instacart" link if the Instacart application is approved.
+- **Fred Meyer prices in v1** (amended 2026-11-26 by the user): real shelf and sale prices, product names and product photos from the Kroger Products API (client credentials) at the household's chosen store; AI estimates only where Kroger can't match.
+- **Amazon**: "Open Amazon cart" builds one add-to-cart URL with all Amazon items; opens in the Amazon app/site. Products are added by pasting Amazon links (the app reads the ASIN). Whole Foods: decided 2026-11-26 — a tappable list (each item opens its Amazon page; the cart-add link was swallowed by the Android Amazon app and Whole Foods is a separate storefront). Prices for Amazon/Whole Foods/Costco: receipt or order-screenshot scanning (AI reads items and prices into "your price"), planned right after launch.
+- **Costco**: checklist with sizes and last prices; "Send to Instacart" link if the Instacart application is approved. Costco on Instacart returns no prices to apps; the user applies for the Instacart developer program.
 - **Changes after a cart is filled**: the list shows "changed since you filled the cart." Additions can be sent on their own; removals can't be made through the public API, so the app lists them for the user to remove in the store app.
 - Nothing is ever ordered by the app; carts only fill when a member taps the button after the review screen.
 
