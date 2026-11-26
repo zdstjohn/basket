@@ -560,6 +560,7 @@ export type Database = {
     }
     Functions: {
       accept_invite: { Args: { p_token: string }; Returns: string }
+      ai_spend_since: { Args: { h: string; since: string }; Returns: number }
       create_household: { Args: { p_name: string }; Returns: string }
       create_invite: { Args: never; Returns: string }
       is_member: { Args: { h: string }; Returns: boolean }
