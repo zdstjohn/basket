@@ -32,6 +32,7 @@ export function DraftPreview({
   people,
   photoSrc,
   onPhoto,
+  dishPhoto,
   onDismiss,
   onIngredients,
 }: {
@@ -40,6 +41,8 @@ export function DraftPreview({
   /** A photo the user picked, shown instead of the recipe page's. */
   photoSrc: string | null;
   onPhoto: (file: File) => void;
+  /** Set when the meal was found from the user's own photo: the "use my photo" tick. */
+  dishPhoto?: { checked: boolean; onChange: (checked: boolean) => void } | null;
   onDismiss: () => void;
   onIngredients: (lines: IngredientLine[]) => void;
 }) {
@@ -65,7 +68,7 @@ export function DraftPreview({
 
         <MealThumb key={shownPhoto} src={shownPhoto} className="mt-2.5 h-40 w-full rounded-xl" tileText="text-sm" />
         <div className="mt-1.5 flex items-center justify-between gap-3">
-          <p className="text-xs text-muted">{!photoSrc && draft.photo ? `Photo: ${draft.photo.credit}` : ""}</p>
+          <p className="text-xs text-muted">{photoSrc ? "Your photo" : draft.photo ? `Photo: ${draft.photo.credit}` : ""}</p>
           <label className={`${pillButton} h-11 cursor-pointer text-[13px] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-green`}>
             Change photo
             <input
@@ -81,6 +84,17 @@ export function DraftPreview({
             />
           </label>
         </div>
+        {dishPhoto && (
+          <label className="flex min-h-11 items-center gap-2.5 text-[15px] font-medium">
+            <input
+              type="checkbox"
+              checked={dishPhoto.checked}
+              onChange={(e) => dishPhoto.onChange(e.target.checked)}
+              className="size-5 accent-green"
+            />
+            Use my photo for this meal
+          </label>
+        )}
         {draft.sourceUrl && (
           <a
             href={draft.sourceUrl}

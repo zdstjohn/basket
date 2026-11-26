@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 import { focusRing } from "@/lib/ui";
 import { formatMinutes } from "@/lib/week/format";
 import { messageFor, searchRecipes, type SearchResult } from "./api";
+import { DishCard, FindMyDishButton, lookUpDish, type DishState } from "./FindMyDish";
 
 const SOURCES: { id: RecipeSource; label: string }[] = [
   { id: "sites", label: "Big sites" },
@@ -29,6 +30,7 @@ export function SearchTab({
   picking,
   onPick,
   onSearchStart,
+  onDishPhoto,
 }: {
   query: string;
   onQuery: (q: string) => void;
@@ -38,13 +40,56 @@ export function SearchTab({
   picking: boolean;
   onPick: (o: RecipeOption) => void;
   onSearchStart: () => void;
+  /** The browser-sized photo behind a found dish, or null when there is none. */
+  onDishPhoto: (photo: Blob | null) => void;
 }) {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dish, setDish] = useState<DishState | null>(null);
+  const thumbUrl = useRef<string | null>(null);
+
+  useEffect(() => () => {
+    if (thumbUrl.current) URL.revokeObjectURL(thumbUrl.current);
+  }, []);
+
+  async function findDish(file: File) {
+    onSearchStart();
+    onDishPhoto(null);
+    setResult(null);
+    setError(null);
+    setLoading(true);
+    setDish({ phase: "looking", url: "" });
+    try {
+      const { blob, result: found } = await lookUpDish(file, source, (_blob, url) => {
+        if (thumbUrl.current) URL.revokeObjectURL(thumbUrl.current);
+        thumbUrl.current = url;
+        setDish({ phase: "looking", url });
+      });
+      const url = thumbUrl.current ?? "";
+      if (!found.guess.isFood) {
+        setDish({ phase: "notfood", url });
+        return;
+      }
+      onQuery(found.guess.searchQuery);
+      setResult({
+        options: found.options,
+        source: found.source ?? source,
+        fellBack: !!found.fellBack,
+        toppedUp: !!found.toppedUp,
+      });
+      onDishPhoto(blob);
+      setDish({ phase: "found", url, guess: found.guess });
+    } catch (e) {
+      setDish({ phase: "error", url: thumbUrl.current, message: e instanceof Error ? e.message : messageFor(e) });
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function run(q: string, src: RecipeSource) {
     if (!q.trim()) return;
+    setDish((d) => (d?.phase === "found" ? d : null));
     onSearchStart();
     setLoading(true);
     setError(null);
@@ -89,6 +134,7 @@ export function SearchTab({
           >
             Search
           </button>
+          <FindMyDishButton busy={loading} onFile={(f) => void findDish(f)} />
         </div>
         <div role="radiogroup" aria-label="Where to look" className="mt-2.5 grid grid-cols-2 gap-1 rounded-[14px] bg-[#EAEEE9] p-1">
           {SOURCES.map((s) => (
@@ -112,9 +158,20 @@ export function SearchTab({
         </div>
       </form>
 
+      {!hideResults && dish && (
+        <DishCard
+          state={dish}
+          onChangeName={() => {
+            const input = document.getElementById("meal") as HTMLInputElement | null;
+            input?.focus();
+            input?.select();
+          }}
+        />
+      )}
+
       {!hideResults && (
         <div className="mx-5 mt-3.5" aria-live="polite">
-          {loading && (
+          {loading && dish?.phase !== "looking" && (
             <ul aria-label="Searching" className="flex flex-col gap-2">
               {[0, 1, 2].map((i) => (
                 <li key={i} className="flex h-[88px] animate-pulse gap-3 rounded-2xl border border-line bg-white p-2.5">

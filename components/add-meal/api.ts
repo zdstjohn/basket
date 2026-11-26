@@ -1,4 +1,4 @@
-import type { RecipeDraft } from "@/lib/ai/schemas";
+import type { DishGuess, RecipeDraft } from "@/lib/ai/schemas";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 
 export interface SearchResult {
@@ -6,6 +6,11 @@ export interface SearchResult {
   source: RecipeSource;
   fellBack: boolean;
   toppedUp: boolean;
+}
+
+export interface IdentifyResult extends Partial<Omit<SearchResult, "options">> {
+  guess: DishGuess;
+  options: RecipeOption[];
 }
 
 export type Failure = "unauthorized" | "cap" | "source_limit" | "unreadable" | "other";
@@ -51,6 +56,10 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 
 export const searchRecipes = (query: string, source: RecipeSource) =>
   post<SearchResult>("/api/recipes/search", { query, source });
+
+/** A photo (base64 JPEG) goes in; a guess at the dish and matching recipe cards come out. */
+export const identifyDish = (image: string, source: RecipeSource) =>
+  post<IdentifyResult>("/api/recipes/identify", { image, source });
 
 export const draftFromOption = (option: RecipeOption) =>
   post<RecipeDraft>("/api/meals/draft", { mode: "option", option });

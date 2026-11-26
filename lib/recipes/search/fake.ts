@@ -19,6 +19,13 @@ const SITES: Record<string, RecipeOption[]> = {
       title: 'Easy taco bowls', image: img('taco-bowls'), ingredients: ['1 lb ground turkey', '1 cup rice'],
     },
   ],
+  'beef stew': [
+    {
+      ...base, source: 'sites', url: 'https://www.budgetbytes.com/fake-beef-stew', site: 'Budget Bytes',
+      title: 'Beef stew', image: img('beef-stew'), totalMinutes: 120,
+      ingredients: ['2 lb beef chuck', '4 potatoes', '3 carrots'],
+    },
+  ],
   'pot pie': [
     {
       ...base, source: 'sites', url: 'https://www.tasteofhome.com/recipes/fake-pot-pie', site: 'Taste of Home',

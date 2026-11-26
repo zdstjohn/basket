@@ -33,3 +33,26 @@ export function fakeGenerate(task: AiTask, prompt: string): unknown {
     }
   }
 }
+
+/** A photo this small (about a hundred bytes) is not a dish to the fake model. */
+const FAKE_NOT_FOOD_BELOW_BYTES = 200;
+
+/**
+ * Deterministic stand-in for the vision model (AI_FAKE=1). The browser re-encodes every photo, so the answer
+ * cannot depend on the picture's exact bytes: any real photo is chicken tacos, a tiny image is not food, and
+ * an image whose bytes contain "broken" yields invalid output.
+ */
+export function fakeIdentify(base64: string): unknown {
+  const bytes = Buffer.from(base64, 'base64');
+  if (bytes.toString('latin1').includes('broken')) return { nonsense: true };
+  if (bytes.length < FAKE_NOT_FOOD_BELOW_BYTES) {
+    return { isFood: false, dish: '', searchQuery: '', keyIngredients: [], confidence: 'high' };
+  }
+  return {
+    isFood: true,
+    dish: 'Chicken tacos',
+    searchQuery: 'chicken tacos',
+    keyIngredients: ['chicken', 'corn tortillas', 'onion'],
+    confidence: 'high',
+  };
+}

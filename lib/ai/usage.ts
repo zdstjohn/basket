@@ -62,7 +62,7 @@ export async function checkCap(
 export async function recordUsage(
   sb: Sb,
   householdId: string,
-  kind: 'parse' | 'estimate' | 'search',
+  kind: 'parse' | 'estimate' | 'search' | 'identify',
   model: string,
   usage: { inputTokens: number; outputTokens: number },
 ): Promise<void> {

@@ -97,3 +97,19 @@ export const EstimatesBodySchema = z.object({
     .max(120),
   store: z.enum(['fred_meyer', 'amazon', 'costco']),
 });
+
+/** What the model sees in a photo of a dish. */
+export const DishGuessSchema = z.object({
+  isFood: z.boolean(),
+  dish: z.string().max(80),
+  searchQuery: z.string().max(80),
+  keyIngredients: z.array(z.string().max(40)).max(8),
+  confidence: z.enum(['high', 'medium', 'low']),
+});
+export type DishGuess = z.infer<typeof DishGuessSchema>;
+
+/** A photo (base64 JPEG, PNG or WebP; size and type are checked by the route) and where to look. */
+export const IdentifyBodySchema = z.object({
+  image: z.string().min(1),
+  source: z.enum(['sites', 'spoonacular']),
+});

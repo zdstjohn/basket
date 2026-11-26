@@ -43,6 +43,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
   const [saveFavorite, setSaveFavorite] = useState(true);
   const [custom, setCustom] = useState<{ blob: Blob; url: string } | null>(null);
+  const [dishPhoto, setDishPhoto] = useState<{ blob: Blob; url: string } | null>(null);
+  const [useDishPhoto, setUseDishPhoto] = useState(true);
   const [picking, setPicking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +85,24 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     if (!custom) return;
     return () => URL.revokeObjectURL(custom.url);
   }, [custom]);
+
+  useEffect(() => {
+    if (!dishPhoto) return;
+    return () => URL.revokeObjectURL(dishPhoto.url);
+  }, [dishPhoto]);
+
+  // A photo they changed by hand wins; otherwise the one they found the dish with, unless they unticked it.
+  const mine = custom ?? (dishPhoto && useDishPhoto ? dishPhoto : null);
+
+  function changeTab(next: Tab) {
+    setTab(next);
+    if (next !== "search") setDishPhoto(null);
+  }
+
+  function foundWithPhoto(blob: Blob | null) {
+    setDishPhoto(blob ? { blob, url: URL.createObjectURL(blob) } : null);
+    setUseDishPhoto(true);
+  }
 
   function changeSource(next: RecipeSource) {
     setSource(next);
@@ -125,9 +145,9 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       if (!savedMealId.current) {
         const meal = await saveMeal(sb, household.id, { ...draft, isFavorite: saveFavorite });
         savedMealId.current = meal.id;
-        if (custom) {
+        if (mine) {
           try {
-            const path = await uploadMealPhoto(sb, household.id, meal.id, custom.blob);
+            const path = await uploadMealPhoto(sb, household.id, meal.id, mine.blob);
             await setMealPhoto(sb, meal.id, { path });
           } catch {
             // The meal is saved; the photo can be changed from the week.
@@ -179,7 +199,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
             type="button"
             role="tab"
             aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => changeTab(t.id)}
             className={`h-11 rounded-[10px] text-sm ${focusRing} ${
               tab === t.id ? "bg-white font-semibold text-ink shadow-sm" : "font-medium text-[#4A544F]"
             }`}
@@ -199,6 +219,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
           picking={picking}
           onPick={(o) => void pick(o)}
           onSearchStart={startOver}
+          onDishPhoto={foundWithPhoto}
         />
       )}
       {tab === "paste" && (
@@ -222,7 +243,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       )}
       {showPreview && (
         <>
-          <DraftPreview draft={draft} people={people} photoSrc={custom?.url ?? null} onPhoto={(f) => void pickPhoto(f)} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} />
+          <DraftPreview draft={draft} people={people} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} />
           <label className="mx-5 mt-3 flex min-h-11 items-center gap-2.5 text-[15px] font-medium">
             <input
               type="checkbox"
