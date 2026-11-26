@@ -70,13 +70,16 @@ export function formatQuantity(q: Quantity): string {
       : `${num(q.amount / G_PER_LB)} lb`;
   }
   if (q.kind === 'volume') {
-    const steps: [string, number][] = [
-      ['gallon', ML_PER_GALLON],
-      ['cup', ML_PER_CUP],
-      ['tbsp', ML_PER_TBSP],
+    const steps: [string, number, boolean][] = [
+      ['gallon', ML_PER_GALLON, true],
+      ['cup', ML_PER_CUP, true],
+      ['tbsp', ML_PER_TBSP, false],
     ];
-    for (const [label, ml] of steps) {
-      if (q.amount >= ml) return `${num(q.amount / ml)} ${label}`;
+    for (const [label, ml, plural] of steps) {
+      if (q.amount >= ml) {
+        const n = num(q.amount / ml);
+        return `${n} ${label}${plural && n !== '1' ? 's' : ''}`;
+      }
     }
     return `${num(q.amount / ML_PER_TSP)} tsp`;
   }

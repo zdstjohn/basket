@@ -20,6 +20,12 @@ describe('portionFactor', () => {
     expect(portionFactor(38)).toBe(1);
     expect(portionFactor(1)).toBe(0.25);
   });
+  it.each([
+    [1, 0.25], [2, 0.4], [3, 0.4], [4, 0.5], [5, 0.5], [6, 0.6], [7, 0.6],
+    [8, 0.7], [10, 0.7], [11, 0.85], [13, 0.85], [14, 1],
+  ])('age %i -> %f', (age, f) => {
+    expect(portionFactor(age)).toBe(f);
+  });
   it('applies appetite', () => {
     expect(portionFactor(8, 1.5)).toBe(1.05);
   });

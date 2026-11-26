@@ -50,7 +50,9 @@ describe('formatQuantity', () => {
     expect(formatQuantity(q(3.1, 'lb'))).toBe('3.1 lb');
   });
   it('formats volume', () => {
-    expect(formatQuantity(q(2, 'cups'))).toBe('2 cup');
+    expect(formatQuantity(q(2, 'cups'))).toBe('2 cups');
+    expect(formatQuantity(q(1, 'cup'))).toBe('1 cup');
+    expect(formatQuantity(q(2, 'gallons'))).toBe('2 gallons');
     expect(formatQuantity(q(1, 'gallon'))).toBe('1 gallon');
     expect(formatQuantity(q(0.5, 'tsp'))).toBe('0.5 tsp');
     expect(formatQuantity(q(3, 'tbsp'))).toBe('3 tbsp');

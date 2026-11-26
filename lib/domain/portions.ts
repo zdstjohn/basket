@@ -9,10 +9,11 @@ const round = (n: number, decimals: number): number => {
 export function portionFactor(age: number, appetite = 1): number {
   let base: number;
   if (age < 2) base = 0.25;
-  else if (age <= 4) base = 0.5;
-  else if (age <= 6) base = 0.6;
-  else if (age <= 10) base = 0.7;
-  else if (age <= 14) base = 0.85;
+  else if (age < 4) base = 0.4;
+  else if (age < 6) base = 0.5;
+  else if (age < 8) base = 0.6;
+  else if (age < 11) base = 0.7;
+  else if (age < 14) base = 0.85;
   else base = 1;
   return round(base * appetite, 2);
 }
