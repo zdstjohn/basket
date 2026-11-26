@@ -26,12 +26,20 @@ const cacheKey = (weekId: string): string => `list:${weekId}`;
 let counter = 0;
 export const newEntryId = (): string => `${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-/** True for "the network is down" failures; false for errors the server answered (4xx, row-level security). */
+const NETWORK_MESSAGE = /failed to fetch|networkerror|load failed|network request failed|fetch failed/i;
+
+/**
+ * True when the network is down: the phone says so, or the error's message is a fetch failure
+ * (setItemState throws `new Error(message)`, and a plain `{ message }` object counts too).
+ * Everything else, including a TypeError from a bug, is a refusal.
+ */
 export function isNetworkError(e: unknown): boolean {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
-  if (e instanceof TypeError) return true;
-  const msg = e instanceof Error ? e.message : String(e);
-  return /failed to fetch|load failed|network|fetch failed|offline|timed out/i.test(msg);
+  const msg =
+    e instanceof Error ? e.message : typeof e === 'object' && e !== null && typeof (e as { message?: unknown }).message === 'string'
+      ? (e as { message: string }).message
+      : null;
+  return msg !== null && NETWORK_MESSAGE.test(msg);
 }
 
 /** Adds a change to the queue. A newer change to the same item wins field by field. */

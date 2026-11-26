@@ -18,7 +18,7 @@ import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import {
-  enqueuePatch, flushQueue, isNetworkError, loadListCache, saveListCache, type ItemPatch,
+  enqueuePatch, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
 } from "@/lib/list/offline";
 import {
   estimateFor, priceKey, priceSourceFor, storeFor, toPriceMap, userCentsPerBase, type PriceRow, type PriceSource,
@@ -108,7 +108,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     };
     // One flush runs at a time; a call that joined it may have missed a change added just now, so look once more.
     let left = await flushQueue(household.id, send);
-    if (left > 0 && !(typeof navigator !== "undefined" && navigator.onLine === false)) {
+    if (loadQueue(household.id).length > 0 && !(typeof navigator !== "undefined" && navigator.onLine === false)) {
       left = await flushQueue(household.id, send);
     }
     return left;
@@ -213,12 +213,12 @@ export function useWeekList(household: Household, weekId: string | null) {
     if (missing.length === 0) return;
     for (const m of missing) requested.current.add(priceKey(m.canonical, m.store, m.qty.kind));
     for (const [store, wanted] of groupMissing(missing)) {
+      const forget = () => {
+        // No answer (offline, over the cap): let it be asked again next time the list changes.
+        for (const w of wanted) requested.current.delete(priceKey(w.canonical, store, w.qty.kind));
+      };
       void requestEstimates(wanted, store).then((rows) => {
-        if (rows.length === 0) {
-          // No answer (offline, over the cap): let it be asked again next time the list changes.
-          for (const w of wanted) requested.current.delete(priceKey(w.canonical, store, w.qty.kind));
-          return;
-        }
+        if (rows.length === 0) return forget();
         for (const p of rows) fetched.current.set(priceKey(p.canonical, p.store, p.kind), p);
         setRaw((r) => {
           if (!r) return r;
@@ -226,7 +226,7 @@ export function useWeekList(household: Household, weekId: string | null) {
           const fresh = rows.filter((p) => !have.has(priceKey(p.canonical, p.store, p.kind)));
           return fresh.length === 0 ? r : { ...r, prices: [...r.prices, ...fresh] };
         });
-      });
+      }, forget);
     }
   }, [raw, items, offline]);
 

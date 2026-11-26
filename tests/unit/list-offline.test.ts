@@ -14,7 +14,7 @@ function fakeStorage() {
 }
 
 const e = (itemKey: string, patch: QueuedPatch['patch'], weekId = 'w1', id = `id-${itemKey}`): QueuedPatch => ({ id, weekId, itemKey, patch });
-const offlineErr = () => new TypeError('Failed to fetch');
+const offlineErr = () => new Error('TypeError: Failed to fetch');
 const rlsErr = () => new Error('new row violates row-level security policy');
 
 describe('mergePatch', () => {
@@ -57,6 +57,7 @@ describe('queue and cache storage', () => {
     saveListCache('w1', { hello: 1 });
     expect(loadListCache('w1')).toEqual({ hello: 1 });
     expect(loadListCache('w2')).toBeNull();
+    expect((globalThis.localStorage as unknown as ReturnType<typeof fakeStorage>).data.has('list:w1')).toBe(true);
   });
   it('survives storage that throws', () => {
     vi.stubGlobal('localStorage', {
@@ -72,11 +73,25 @@ describe('queue and cache storage', () => {
 });
 
 describe('isNetworkError', () => {
-  it('tells a dropped connection from a refusal', () => {
-    expect(isNetworkError(new TypeError('x'))).toBe(true);
-    expect(isNetworkError(new Error('TypeError: Failed to fetch'))).toBe(true);
+  afterEach(() => void vi.unstubAllGlobals());
+
+  it('recognises fetch failures however they are shaped', () => {
+    expect(isNetworkError(new Error('TypeError: Failed to fetch'))).toBe(true); // what setItemState throws
     expect(isNetworkError(new Error('Load failed'))).toBe(true);
+    expect(isNetworkError(new Error('NetworkError when attempting to fetch resource.'))).toBe(true);
+    expect(isNetworkError(new Error('Network request failed'))).toBe(true);
+    expect(isNetworkError({ message: 'TypeError: Failed to fetch', code: '', details: '' })).toBe(true); // PostgrestError shape
+  });
+  it('treats a refusal, and a plain TypeError from a bug, as not the network', () => {
     expect(isNetworkError(rlsErr())).toBe(false);
+    expect(isNetworkError({ message: 'permission denied for table week_item_state', code: '42501' })).toBe(false);
+    expect(isNetworkError(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe(false);
+    expect(isNetworkError('boom')).toBe(false);
+    expect(isNetworkError(null)).toBe(false);
+  });
+  it('is the network whenever the phone says it is offline', () => {
+    vi.stubGlobal('navigator', { onLine: false });
+    expect(isNetworkError(rlsErr())).toBe(true);
   });
 });
 
