@@ -143,6 +143,28 @@ describe('POST /api/recipes/identify', () => {
     expect(recordUsage).toHaveBeenCalledWith(expect.anything(), 'h1', 'identify', 'fake', expect.anything());
   });
 
+  it('retries a search that finds nothing with the first three words, and records both Brave calls', async () => {
+    const { identifyDish: id } = await import('@/lib/ai/identify');
+    vi.mocked(id).mockResolvedValueOnce({
+      isFood: true, dish: 'Teriyaki salmon bowl', searchQuery: 'teriyaki salmon brown rice spinach bowl',
+      keyIngredients: [], confidence: 'high',
+    });
+    searchRecipes
+      .mockResolvedValueOnce({ options: [], source: 'sites', fellBack: false, toppedUp: false })
+      .mockResolvedValueOnce({ options: [option], source: 'sites', fellBack: false, toppedUp: false });
+    const res = await POST(req({ image: food, source: 'sites' }));
+    expect((await res.json()).options).toHaveLength(1);
+    expect(searchRecipes).toHaveBeenNthCalledWith(1, 'teriyaki salmon brown rice spinach bowl', 'sites');
+    expect(searchRecipes).toHaveBeenNthCalledWith(2, 'teriyaki salmon brown', 'sites');
+    expect(recordUsage.mock.calls.filter((c) => c[2] === 'search')).toHaveLength(2);
+  });
+
+  it('does not retry when the query is already three words or fewer, or when results exist', async () => {
+    searchRecipes.mockResolvedValue({ options: [], source: 'sites', fellBack: false, toppedUp: false });
+    await POST(req({ image: food, source: 'sites' })); // "chicken tacos"
+    expect(searchRecipes).toHaveBeenCalledTimes(1);
+  });
+
   it('never logs the image', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     searchRecipes.mockRejectedValue(new Error('boom'));

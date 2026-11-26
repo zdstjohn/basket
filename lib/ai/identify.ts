@@ -1,17 +1,48 @@
 import 'server-only';
 import { generateObject, NoObjectGeneratedError } from 'ai';
+import { z } from 'zod';
 import { fakeIdentify } from './fake';
 import { getModel, UnreadableError, type UsageReport } from './provider';
-import { DishGuessSchema, type DishGuess } from './schemas';
+import type { DishGuess } from './schemas';
 
 export { UnreadableError } from './provider';
 
 export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp';
 
+/** What the model may answer: lengths are not limited here, they are trimmed after (see clampGuess). */
+const LooseGuessSchema = z.object({
+  isFood: z.boolean(),
+  dish: z.string(),
+  searchQuery: z.string(),
+  keyIngredients: z.array(z.string()),
+  confidence: z.enum(['high', 'medium', 'low']),
+});
+
+/** Cut at a word boundary so it is at most `max` characters. */
+function clampText(text: string, max: number): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return (space > 0 ? cut.slice(0, space) : cut).trim();
+}
+
+/** A real answer that runs a little long is trimmed to the contract, never thrown away. */
+function clampGuess(g: z.infer<typeof LooseGuessSchema>): DishGuess {
+  return {
+    isFood: g.isFood,
+    dish: clampText(g.dish, 80),
+    searchQuery: clampText(g.searchQuery, 80),
+    keyIngredients: g.keyIngredients.map((i) => clampText(i, 40)).filter(Boolean).slice(0, 8),
+    confidence: g.confidence,
+  };
+}
+
 const SYSTEM =
   'You look at one photo for a family meal planner. If it shows a dish or plated food, set isFood true and name ' +
-  'the most likely home-cookable dish (dish, at most 80 characters, plain words such as "Chicken tacos"). ' +
-  'searchQuery is a short recipe-search query for it (at most 80 characters, no site names). ' +
+  'the most likely home-cookable dish (dish, the fuller name in under 80 characters, such as "Chicken tacos"). ' +
+  'searchQuery is the dish in 2 to 4 plain words, for example "eggplant curry", "teriyaki salmon bowl" or "duck breast": ' +
+  'no word "recipe", no sides, sauces or garnishes, no site names. ' +
   'keyIngredients lists up to 8 ingredients you can see or expect. confidence is high, medium or low. ' +
   'If the photo is not food (a person, a place, an object), set isFood false, dish and searchQuery to empty strings, ' +
   'and keyIngredients to an empty list.';
@@ -25,14 +56,14 @@ export async function identifyDish(
   if (process.env.AI_FAKE === '1') {
     const usage = { inputTokens: 100, outputTokens: 50 };
     opts.onUsage?.({ model, ...usage });
-    const parsed = DishGuessSchema.safeParse(fakeIdentify(image.base64));
+    const parsed = LooseGuessSchema.safeParse(fakeIdentify(image.base64));
     if (!parsed.success) throw new UnreadableError(usage);
-    return parsed.data;
+    return clampGuess(parsed.data);
   }
   try {
     const result = await generateObject({
       model,
-      schema: DishGuessSchema,
+      schema: LooseGuessSchema,
       system: SYSTEM,
       messages: [
         {
@@ -52,7 +83,7 @@ export async function identifyDish(
       inputTokens: result.usage.inputTokens ?? 0,
       outputTokens: result.usage.outputTokens ?? 0,
     });
-    return result.object;
+    return clampGuess(result.object);
   } catch (e) {
     if (NoObjectGeneratedError.isInstance(e)) {
       const usage = { inputTokens: e.usage?.inputTokens ?? 0, outputTokens: e.usage?.outputTokens ?? 0 };

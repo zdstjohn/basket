@@ -40,14 +40,21 @@ export async function POST(req: Request) {
   if (!mediaType) return NextResponse.json({ error: 'bad_type' }, { status: 415 });
 
   const usages: UsageReport[] = [];
-  let searched = false;
+  let searches = 0;
   try {
     const guess = await identifyDish({ base64: image, mediaType }, { onUsage: (u) => void usages.push(u) });
     if (!guess.isFood || !guess.searchQuery.trim()) {
       return NextResponse.json({ guess: { ...guess, isFood: false }, options: [] });
     }
-    const found = await searchRecipes(guess.searchQuery.trim(), source);
-    searched = true;
+    const query = guess.searchQuery.trim();
+    let found = await searchRecipes(query, source);
+    searches++;
+    // A long query can find nothing: try once more with just its first three words.
+    const shorter = query.split(/\s+/).slice(0, 3).join(' ');
+    if (found.options.length === 0 && shorter !== query) {
+      found = await searchRecipes(shorter, source);
+      searches++;
+    }
     return NextResponse.json({ guess, ...found });
   } catch (e) {
     if (e instanceof UnreadableError) return NextResponse.json({ error: 'unreadable' }, { status: 422 });
@@ -61,8 +68,10 @@ export async function POST(req: Request) {
         await recordUsage(sb, household.id, 'identify', u.model, { inputTokens: u.inputTokens, outputTokens: u.outputTokens });
       }
       // Only Brave costs money; Spoonacular's free plan does not.
-      if (searched && source === 'sites') await recordUsage(sb, household.id, 'search', 'brave', { inputTokens: 0, outputTokens: 0 });
-      if (searched && household.recipe_source !== source) await updateHousehold(sb, household.id, { recipe_source: source });
+      if (source === 'sites') {
+        for (let i = 0; i < searches; i++) await recordUsage(sb, household.id, 'search', 'brave', { inputTokens: 0, outputTokens: 0 });
+      }
+      if (searches > 0 && household.recipe_source !== source) await updateHousehold(sb, household.id, { recipe_source: source });
     } catch (e) {
       console.error('identify bookkeeping failed', e instanceof Error ? e.message : 'unknown');
     }
