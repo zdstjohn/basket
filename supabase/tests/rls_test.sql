@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(81);
+select plan(83);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -193,6 +193,8 @@ select throws_ok($q$select public.accept_invite('valid-2')$q$, 'P0001', 'already
 select lives_ok($q$insert into public.people (household_id, name) values ((select v::uuid from t_kv where k = 'HA'), 'Added by C')$q$, 'a member can write household data');
 update public.households set budget_cents = 12345 where id = (select v::uuid from t_kv where k = 'HA');
 select is((select budget_cents from public.households), 12345, 'a member can update the household');
+select lives_ok($q$update public.households set week_start = 'wed' where id = (select v::uuid from t_kv where k = 'HA')$q$, 'a member can set week_start to any day');
+select throws_ok($q$update public.households set week_start = 'xyz' where id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'an invalid week_start violates the check');
 
 reset role;
 
