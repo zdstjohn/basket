@@ -2,6 +2,8 @@
 // The list's data comes from localStorage (see lib/list/offline.ts); this file only serves the page itself.
 const CACHE = "basket-offline-v1";
 const PAGE = "/list";
+const MAX_STATIC = 150;
+importScripts("/sw-trim.js");
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => {
@@ -31,6 +33,7 @@ self.addEventListener("message", (event) => {
       const cache = await caches.open(CACHE);
       const paths = [data.page, ...(data.assets || [])].filter((p) => typeof p === "string" && p.startsWith("/"));
       await Promise.all(paths.map((p) => save(cache, p).catch(() => {})));
+      await trimStatic(cache, MAX_STATIC).catch(() => {});
       if (event.source) event.source.postMessage({ type: "precached" });
     })(),
   );
@@ -51,7 +54,10 @@ self.addEventListener("fetch", (event) => {
           fetch(req).then((res) => {
             if (res.ok) {
               const copy = res.clone();
-              caches.open(CACHE).then((c) => c.put(url.pathname, copy));
+              caches.open(CACHE).then(async (c) => {
+                await c.put(url.pathname, copy);
+                await trimStatic(c, MAX_STATIC);
+              });
             }
             return res;
           }),
