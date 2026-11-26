@@ -88,3 +88,15 @@ export function formatQuantity(q: Quantity): string {
   const suffix = q.amount === 1 ? '' : /(ch|sh|s|x|z)$/.test(unit) ? 'es' : 's';
   return `${num(q.amount)} ${unit}${suffix}`;
 }
+
+/** Like toQuantity, but never drops a line: unknown units become a named count. */
+export function quantityOrCount(amount: number, unit: string): Quantity {
+  return (
+    toQuantity(amount, unit) ?? {
+      amount,
+      kind: 'count',
+      base: 'each',
+      countUnit: unit.trim().toLowerCase(),
+    }
+  );
+}

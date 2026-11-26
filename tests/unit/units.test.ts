@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addQuantities, formatQuantity, toQuantity } from '@/lib/domain/units';
+import { addQuantities, formatQuantity, quantityOrCount, toQuantity } from '@/lib/domain/units';
 import type { Quantity } from '@/lib/domain/types';
 
 const q = (amount: number, unit: string): Quantity => {
@@ -70,5 +70,20 @@ describe('formatQuantity', () => {
     expect(formatQuantity(q(1, 'bunch'))).toBe('1 bunch');
     expect(formatQuantity(q(3, 'slices'))).toBe('3 slices');
     expect(formatQuantity(q(2, 'heads'))).toBe('2 heads');
+  });
+});
+
+describe('quantityOrCount', () => {
+  it('uses toQuantity for known units', () => {
+    expect(quantityOrCount(1, 'lb')).toEqual(toQuantity(1, 'lb'));
+  });
+
+  it('falls back to a count with the trimmed lower-cased unit', () => {
+    expect(quantityOrCount(2, '  Sprigs ')).toEqual({
+      amount: 2,
+      kind: 'count',
+      base: 'each',
+      countUnit: 'sprigs',
+    });
   });
 });
