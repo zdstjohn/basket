@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  --ground: #f7f8f5;
+  --ink: #17201b;
+  --muted: #5b6560;
+  --line: #e3e7e2;
+  --green: #1f7a4d;
+  --green-tint: #e6f2eb;
+  --sale: #c2410c;
+  --sale-tint: #fff1ea;
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-green: var(--green);
+  --color-green-tint: var(--green-tint);
+  --color-sale: var(--sale);
+  --color-sale-tint: var(--sale-tint);
+  --font-head: var(--font-head);
+  --font-sans: var(--font-body);
+}
+
+html {
+  background: var(--ground);
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-head), system-ui, sans-serif;
+}
