@@ -13,6 +13,10 @@ async function choosePhoto(page: Page) {
   await chooser.setFiles(FOOD_JPG);
 }
 
+// The app registers its service worker on every screen, and WebKit lets requests from a worker-controlled page
+// skip page.route. These tests mock /api/recipes/identify, so they run without the worker.
+test.use({ serviceWorkers: "block" });
+
 test.beforeEach(async ({ page }) => {
   await routeFoodImages(page);
 });

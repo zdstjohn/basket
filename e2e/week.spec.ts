@@ -12,6 +12,10 @@ import { weekStartFor } from "../lib/domain/weeks";
 const thisWeekStart = () => weekStartFor(new Date(), "sun", "America/Los_Angeles");
 const SIGNED_PHOTO = /\/storage\/v1\/object\/sign\/meal-photos\//;
 
+// The app now registers its service worker on every screen. WebKit lets requests from a worker-controlled page
+// skip page.route, so these tests (which mock /api/recipes/search) run without the worker.
+test.use({ serviceWorkers: "block" });
+
 test.beforeEach(async ({ page }) => {
   await routeFoodImages(page);
 });

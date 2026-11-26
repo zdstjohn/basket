@@ -19,6 +19,8 @@ const body = DM_Sans({
 export const metadata: Metadata = {
   title: "Basket",
   description: "Family meal planning and grocery ordering.",
+  icons: { apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Basket", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

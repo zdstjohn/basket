@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { BottomNav } from "@/components/BottomNav";
+import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
 import { createServerClient } from "@/lib/db/server";
 import { countPeople, getMyHousehold } from "@/lib/db/queries/household";
 
@@ -19,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
       <main className="flex flex-1 flex-col">{children}</main>
       <BottomNav />
+      <RegisterServiceWorker />
     </div>
   );
 }
