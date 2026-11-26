@@ -299,7 +299,30 @@ e2e/**                              Playwright
 - [ ] **Step 5:** Implement to the mockup (sale banner and coupon lines hidden in phase 1; the bottom bar shows the week's estimated total and budget colour, with no button; "Review and fill carts" arrives in phase 2). Staples and always-have lists edited on `/household`.
 - [ ] **Step 6:** CI → PASS. Commit `feat: shopping list, staples, stores, estimates`.
 
-### Task 9: Install as an app, layout pass, launch
+### Task 9: Find my dish (photo → recipe search)
+
+*Added 2026-11-26 at the user's request: "add a 'find my dish' option that lets me add a picture and searches the web for the recipe or a similar recipe". Runs after the shopping list (Task 8) and before install/launch (now Task 10).*
+
+**Files:**
+- Create: `lib/ai/identify.ts`, `app/api/recipes/identify/route.ts`, `components/add-meal/FindMyDish.tsx`, `e2e/find-my-dish.spec.ts`
+- Modify: `lib/ai/schemas.ts` (DishGuessSchema), `lib/ai/fake.ts` (fixture guess), `components/add-meal/SearchTab.tsx` (camera button), `components/add-meal/DraftPreview.tsx` (use-my-photo option)
+- Test: `tests/unit/identify.test.ts`, `tests/unit/identify-route.test.ts`, `e2e/find-my-dish.spec.ts`
+
+**Interfaces:**
+- Consumes: Task 6 `getModel`, `checkCap`/`recordUsage`, `searchRecipes`, `resizeForUpload`, `uploadMealPhoto`, `setMealPhoto`; Task 7 Add-meal screen, draft preview, drafts.
+- Produces:
+  - `DishGuessSchema` (zod): `{ isFood: boolean; dish: string (≤ 80); searchQuery: string (≤ 80); keyIngredients: string[] (≤ 8, each ≤ 40); confidence: 'high' | 'medium' | 'low' }`
+  - `identifyDish(image: { base64: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' }, opts: { onUsage }): Promise<DishGuess>`: one vision call through `getModel('parse')` (Claude Haiku 5.5 supports images), `maxOutputTokens` 300; prompt asks for the most likely home-cookable dish and a short recipe-search query; non-food → `isFood: false`
+  - `POST /api/recipes/identify` body `{ image: string (base64 JPEG/PNG/WebP, decoded ≤ 1.5 MB); source: RecipeSource }` → `200 { guess: DishGuess; options: RecipeOption[]; source; fellBack; toppedUp }` | `200 { guess }` with `options: []` when `isFood` is false (no search run) | `401` | `402 cap_reached` | `413 too_large` | `415 bad_type` | `422 unreadable` | `429 source_limit`. The image is never stored server-side or logged.
+- UI: on the Search tab, a "Find my dish" button with a camera icon next to Search (≥ 44 px) opens the phone's picker (camera or gallery; no `capture` attribute). The photo is resized in the browser to ≤ 1024 px JPEG, shown as a thumbnail with "Looking at your dish…", then "Looks like: <dish>" as an editable query (tap to change and search again) above the usual result cards. Non-food: "That doesn't look like a dish. Try another photo." Low confidence adds "Not sure? Edit the name and search again." In the preview of a meal chosen this way, "Use my photo for this meal" is checked by default; on save the user's photo is uploaded with `uploadMealPhoto` and set with `setMealPhoto`, replacing the site photo (the credit line then reads "Your photo").
+
+- [ ] **Step 1: Failing unit tests** (`identify.test.ts`, AI fake): a food fixture returns `{ isFood: true, dish: 'Chicken tacos', searchQuery: 'chicken tacos', … }` and reports usage; a schema-invalid model answer → `UnreadableError` with usage still reported; non-food → `isFood: false`.
+- [ ] **Step 2: Failing route tests** (`identify-route.test.ts`, Supabase and search mocked): 401 signed out; 402 at cap without a model call; 413 for > 1.5 MB decoded; 415 for a GIF or non-image base64; food → search runs with `guess.searchQuery` and the given source; non-food → no search; Spoonacular limit → 429; usage recorded for the vision call (and for a Brave search per the existing rule).
+- [ ] **Step 3: Failing e2e** (`find-my-dish.spec.ts`, both projects, fakes on): Thursday → Add meal → "Find my dish" → choose `e2e/fixtures/food.jpg` → "Looks like: Chicken tacos" → result cards → pick "Chicken tacos · Allrecipes" → preview shows "Use my photo for this meal" checked and the user's photo → "Add to Thursday" → the Thursday row's thumbnail is the uploaded photo (signed URL). Editing the guess to "beef stew" and searching again shows new results. Screenshot `find-my-dish.png`.
+- [ ] **Step 4:** Implement. Copy above is exact. The fake returns the tacos guess for any image whose base64 is the fixture's, and `isFood: false` for an image tagged "not-food" in its file name (pass the name in the request body only in E2E mode, or use a second fixture image).
+- [ ] **Step 5:** lint, typecheck, `npm test`, build; e2e locally if the stack starts; CI. Commit `feat: find my dish from a photo`.
+
+### Task 10: Install as an app, layout pass, launch
 
 **Files:**
 - Create: `app/manifest.ts`, `app/sw.ts`, `public/icons/*` (192, 512, maskable), `e2e/layout.spec.ts`
