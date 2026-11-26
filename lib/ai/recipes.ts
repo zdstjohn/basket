@@ -5,7 +5,7 @@ import { fetchRecipePage } from '@/lib/recipes/import-url';
 import { extractRecipeJsonLd } from '@/lib/recipes/jsonld';
 import { searchRecipes } from '@/lib/recipes/search';
 import type { RecipeOption, RecipeSource } from '@/lib/recipes/search/provider';
-import { generateStructured, UnreadableError } from './provider';
+import { generateStructured, UnreadableError, type UsageReport } from './provider';
 import {
   LinesResultSchema, RecipeDraftSchema, VegSwapResultSchema, type RecipeDraft,
 } from './schemas';
@@ -49,6 +49,8 @@ function swapRule(wanted: boolean): string {
 
 type Report = (e: UsageEvent) => void;
 
+const parseReporter = (report: Report | undefined) => (u: UsageReport) => report?.({ kind: 'parse', ...u });
+
 async function linesFromStrings(
   strings: string[], wantSwap: boolean, report: Report | undefined,
 ): Promise<{ ingredients: IngredientLine[]; vegSwap: RecipeDraft['vegSwap'] }> {
@@ -58,8 +60,8 @@ async function linesFromStrings(
     schema: LinesResultSchema,
     system: `${SYSTEM} ${swapRule(wantSwap)}`,
     prompt: strings.slice(0, MAX_LINES).join('\n'),
+    onUsage: parseReporter(report),
   });
-  report?.({ kind: 'parse', model: r.model, ...r.usage });
   return r.object;
 }
 
@@ -71,8 +73,8 @@ async function swapForLines(
     schema: VegSwapResultSchema,
     system: `You suggest a vegetarian swap for a family meal planner. ${swapRule(true)}`,
     prompt: lines.map((l) => `${l.amount} ${l.unit} ${l.canonical} (${l.role})`).join('\n'),
+    onUsage: parseReporter(report),
   });
-  report?.({ kind: 'parse', model: r.model, ...r.usage });
   return r.object.vegSwap;
 }
 
@@ -132,7 +134,7 @@ export async function draftFromText(
 
   if (/^https?:\/\//i.test(value)) {
     const html = await fetchRecipePage(value);
-    const recipe = extractRecipeJsonLd(html);
+    const recipe = extractRecipeJsonLd(html, value);
     if (!recipe || !recipe.name) throw new UnreadableError();
     let host = value;
     try {
@@ -161,8 +163,8 @@ export async function draftFromText(
         `${SYSTEM} The user pastes a whole recipe. Return name, baseServings (how many it serves, 4 if unstated), ` +
         `ingredients, sourceUrl null and photo null. Do not copy the cooking steps. ${swapRule(wantSwap)}`,
       prompt: value,
+      onUsage: parseReporter(opts.onUsage),
     });
-    opts.onUsage?.({ kind: 'parse', model: r.model, ...r.usage });
     draft = {
       ...r.object,
       vegSwap: wantSwap && hasMeatOrFish(r.object.ingredients) ? r.object.vegSwap : null,

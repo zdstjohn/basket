@@ -12,6 +12,7 @@ vi.mock('@/lib/recipes/import-url', async (orig) => ({
 }));
 
 import { searchSites } from '@/lib/recipes/search';
+import { RecipeOptionSchema } from '@/lib/ai/schemas';
 import { RECIPE_SITES } from '@/lib/recipes/sites';
 
 const page = (name: string, image: string | null = `https://img.example.test/${name}.jpg`) =>
@@ -51,7 +52,8 @@ describe('searchSites', () => {
     const fetched = fetchPage.mock.calls.map((c) => new URL(c[0] as string).host);
     expect(fetched).not.toContain('blog.random.test');
     expect(fetched).not.toContain('notallrecipes.com');
-    expect(fetched.length).toBeLessThanOrEqual(8);
+    expect(fetched.length).toBeLessThanOrEqual(12);
+    expect(fetched).toHaveLength(10);
     expect(fetchPage.mock.calls[0][1]).toMatchObject({ timeoutMs: 5000 });
     expect(options).toHaveLength(8);
     expect(options.map((o) => o.site)).toEqual([
@@ -96,5 +98,39 @@ describe('searchSites', () => {
     expect(options.some((o) => o.title === 'Chicken tacos' && o.site === 'Allrecipes' &&
       o.image === 'https://images.example.test/tacos.jpg')).toBe(true);
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it('resolves a relative image against the page and clamps long fields so options fit the schema', async () => {
+    search.mockResolvedValue([{ url: 'https://www.delish.com/cooking/r/', title: 't' }]);
+    fetchPage.mockResolvedValue(
+      `<script type="application/ld+json">${JSON.stringify({
+        '@type': 'Recipe', name: 'T'.repeat(300), image: '/photos/x.jpg',
+        recipeIngredient: Array.from({ length: 100 }, () => 'x'.repeat(500)),
+      })}</script>`,
+    );
+    const [o] = await searchSites('x');
+    expect(o.image).toBe('https://www.delish.com/photos/x.jpg');
+    expect(o.title).toHaveLength(120);
+    expect(o.ingredients).toHaveLength(80);
+    expect(o.ingredients[0]).toHaveLength(300);
+    expect(RecipeOptionSchema.safeParse(o).success).toBe(true);
+  });
+
+  it('drops a page whose only image is javascript:', async () => {
+    search.mockResolvedValue([{ url: 'https://www.delish.com/a', title: 't' }]);
+    fetchPage.mockResolvedValue('<script type="application/ld+json">{"@type":"Recipe","name":"R","image":"javascript:alert(1)"}</script>');
+    expect(await searchSites('x')).toEqual([]);
+  });
+});
+
+describe('RecipeOptionSchema urls', () => {
+  const ok = { source: 'sites', url: 'https://a.test/r', site: 'A', title: 'T', image: 'https://a.test/i.jpg',
+    rating: null, ratingCount: null, totalMinutes: null, servings: null, ingredients: [], structured: null };
+  it.each(['javascript:alert(1)', 'data:text/html,hi', 'ftp://a.test/x'])('rejects %s in url and image', (bad) => {
+    expect(RecipeOptionSchema.safeParse({ ...ok, url: bad }).success).toBe(false);
+    expect(RecipeOptionSchema.safeParse({ ...ok, image: bad }).success).toBe(false);
+  });
+  it('accepts http and https', () => {
+    expect(RecipeOptionSchema.safeParse({ ...ok, url: 'http://a.test/r' }).success).toBe(true);
   });
 });

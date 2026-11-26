@@ -46,4 +46,21 @@ describe('extractRecipeJsonLd', () => {
     expect(r?.rating).toBeNull();
     expect(r?.totalMinutes).toBeNull();
   });
+
+  it('resolves relative image URLs against the page URL and drops non-http images', () => {
+    const rel = '<script type="application/ld+json">{"@type":"Recipe","name":"R","image":"/img/a.jpg"}</script>';
+    expect(extractRecipeJsonLd(rel, 'https://www.example.test/recipes/r')?.image).toBe('https://www.example.test/img/a.jpg');
+    const bad = '<script type="application/ld+json">{"@type":"Recipe","name":"R","image":"javascript:alert(1)"}</script>';
+    expect(extractRecipeJsonLd(bad, 'https://www.example.test/')?.image).toBeNull();
+    const data = '<script type="application/ld+json">{"@type":"Recipe","name":"R","image":"data:image/png;base64,AAAA"}</script>';
+    expect(extractRecipeJsonLd(data)?.image).toBeNull();
+  });
+
+  it('stays fast on hostile input (2 MB of unterminated <script )', () => {
+    const t0 = performance.now();
+    expect(extractRecipeJsonLd('<script '.repeat(2 * 1024 * 1024 / 8))).toBeNull();
+    expect(extractRecipeJsonLd('<script type="application/ld+json" '.repeat(60_000))).toBeNull();
+    expect(extractRecipeJsonLd('<script>'.repeat(260_000))).toBeNull();
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
 });

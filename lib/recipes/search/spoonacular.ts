@@ -1,5 +1,7 @@
 import 'server-only';
 import type { IngredientLine, Role } from '@/lib/domain/types';
+import { httpUrl } from '../url';
+import { clampOption } from './clamp';
 import { fakeSpoonacular } from './fake';
 import { SourceLimitError, type RecipeOption } from './provider';
 
@@ -29,19 +31,21 @@ export function roleFromAisle(aisle: unknown): Role {
 function toLine(i: SpoonIngredient): IngredientLine | null {
   const canonical = str(i.name);
   if (!canonical) return null;
+  const amount = typeof i.amount === 'number' && Number.isFinite(i.amount) ? i.amount : 1;
+  if (amount <= 0) return null; // "to taste" and the like
   return {
-    canonical: canonical.toLowerCase(),
-    amount: typeof i.amount === 'number' && Number.isFinite(i.amount) ? i.amount : 1,
-    unit: str(i.unit) ?? 'each',
+    canonical: canonical.toLowerCase().slice(0, 80),
+    amount,
+    unit: (str(i.unit) ?? 'each').slice(0, 30),
     role: roleFromAisle(i.aisle),
   };
 }
 
 function toOption(r: SpoonResult): RecipeOption | null {
   const title = str(r.title);
-  const image = str(r.image);
+  const image = httpUrl(r.image);
   if (!title || !image) return null;
-  const url = str(r.sourceUrl) ?? str(r.spoonacularSourceUrl);
+  const url = httpUrl(r.sourceUrl) ?? httpUrl(r.spoonacularSourceUrl);
   if (!url) return null;
   const ings = Array.isArray(r.extendedIngredients) ? r.extendedIngredients : [];
   const lines = ings.map(toLine).filter((l): l is IngredientLine => l !== null);
@@ -77,5 +81,9 @@ export async function searchSpoonacular(query: string): Promise<RecipeOption[]> 
   if (res.status === 402) throw new SourceLimitError();
   if (!res.ok) throw new Error(`Spoonacular search failed: HTTP ${res.status}`);
   const body = (await res.json()) as { results?: SpoonResult[] };
-  return (body.results ?? []).map(toOption).filter((o): o is RecipeOption => o !== null).slice(0, 8);
+  return (body.results ?? [])
+    .map(toOption)
+    .map((o) => (o ? clampOption(o) : null))
+    .filter((o): o is RecipeOption => o !== null)
+    .slice(0, 8);
 }

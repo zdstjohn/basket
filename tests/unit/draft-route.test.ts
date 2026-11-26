@@ -86,6 +86,13 @@ describe('POST /api/meals/draft', () => {
     const res = await draftPost(req({ mode: 'text', value: 'a broken recipe' }));
     expect(res.status).toBe(422);
     expect(await res.json()).toEqual({ error: 'unreadable' });
+    // The model call cost money even though its answer was unusable.
+    expect(recordUsage).toHaveBeenCalledWith(expect.anything(), 'h1', 'parse', expect.any(String), { inputTokens: 100, outputTokens: 50 });
+  });
+
+  it('400 when a posted option carries a non-http link or image', async () => {
+    expect((await draftPost(req({ mode: 'option', option: { ...option, url: 'javascript:alert(1)' } }))).status).toBe(400);
+    expect((await draftPost(req({ mode: 'option', option: { ...option, image: 'data:image/png;base64,AA' } }))).status).toBe(400);
   });
 
   it('422 with the import error code', async () => {

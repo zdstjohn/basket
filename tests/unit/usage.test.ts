@@ -5,6 +5,11 @@ function mockSb(rows: { cost_cents: number }[], household = { ai_cap_cents: 300,
   const inserts: unknown[] = [];
   const filters: Record<string, unknown[]> = {};
   const sb = {
+    rpc: async (fn: string, args: { h: string; since: string }) => {
+      filters[`rpc.${fn}`] = [args.h, args.since];
+      // numeric comes back as a string from PostgREST when large; sum like the database would
+      return { data: String(rows.reduce((n, r) => n + r.cost_cents, 0)), error: null };
+    },
     from(table: string) {
       const b: Record<string, unknown> = {};
       b.select = () => b;
@@ -32,8 +37,24 @@ describe('checkCap', () => {
   it('only counts rows since the start of the month in the household time zone', async () => {
     const m = mockSb([]);
     await checkCap(m.sb, 'h');
-    expect(m.filters['ai_usage.household_id']).toEqual(['h']);
-    expect(typeof m.filters['ai_usage.created_at'][0]).toBe('string');
+    const [h, since] = m.filters['rpc.ai_spend_since'];
+    expect(h).toBe('h');
+    expect(since).toMatch(/^\d{4}-\d{2}-01T\d{2}:00:00\.000Z$/);
+  });
+});
+
+describe('checkCap at scale', () => {
+  it('does not depend on how many usage rows exist (summed in the database)', async () => {
+    const rows = Array.from({ length: 5000 }, () => ({ cost_cents: 0.1 }));
+    const r = await checkCap(mockSb(rows).sb, 'h');
+    expect(r.spentCents).toBeCloseTo(500, 5);
+    expect(r.ok).toBe(false);
+  });
+
+  it('throws when the database refuses', async () => {
+    const sb = { from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { ai_cap_cents: 300, time_zone: 'UTC' }, error: null }) }) }) }),
+      rpc: async () => ({ data: null, error: { message: 'not_member' } }) };
+    await expect(checkCap(sb as never, 'h')).rejects.toThrow('not_member');
   });
 });
 

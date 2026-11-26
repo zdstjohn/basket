@@ -51,13 +51,15 @@ export async function checkCap(
     .single();
   if (hErr) throw new Error(hErr.message);
   const since = monthStartUtc(household.time_zone).toISOString();
-  const { data, error } = await sb
-    .from('ai_usage')
-    .select('cost_cents')
-    .eq('household_id', householdId)
-    .gte('created_at', since);
+  // Summed in the database (migration 0003); the API would cut a plain select off at 1000 rows.
+  // Narrow local type until lib/db/types.ts is regenerated with ai_spend_since.
+  const rpc = sb as unknown as {
+    rpc(fn: 'ai_spend_since', args: { h: string; since: string }):
+      PromiseLike<{ data: number | string | null; error: { message: string } | null }>;
+  };
+  const { data, error } = await rpc.rpc('ai_spend_since', { h: householdId, since });
   if (error) throw new Error(error.message);
-  const spentCents = (data ?? []).reduce((sum, r) => sum + Number(r.cost_cents), 0);
+  const spentCents = Number(data ?? 0);
   const capCents = household.ai_cap_cents;
   return { ok: spentCents < capCents, spentCents, capCents };
 }

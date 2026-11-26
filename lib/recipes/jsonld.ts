@@ -1,3 +1,5 @@
+import { httpUrl } from './url';
+
 export interface ExtractedRecipe {
   name: string;
   servings: number | null;
@@ -51,16 +53,16 @@ function firstNumber(v: Json): number | null {
   return null;
 }
 
-function firstImage(v: Json): string | null {
-  if (typeof v === 'string') return v.trim() || null;
+function firstImage(v: Json, base?: string): string | null {
+  if (typeof v === 'string') return httpUrl(v, base);
   if (Array.isArray(v)) {
     for (const x of v) {
-      const u = firstImage(x);
+      const u = firstImage(x, base);
       if (u) return u;
     }
     return null;
   }
-  if (isObj(v)) return firstImage(v.url ?? v.contentUrl);
+  if (isObj(v)) return firstImage(v.url ?? v.contentUrl, base);
   return null;
 }
 
@@ -88,13 +90,37 @@ function num(v: Json): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Reads the first schema.org Recipe from a page's JSON-LD. Steps are parsed but never stored by callers. */
-export function extractRecipeJsonLd(html: string): ExtractedRecipe | null {
-  const blocks = html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-  for (const block of blocks) {
+const LD_TYPE = /type\s*=\s*["']application\/ld\+json["']/i;
+const MAX_TAG = 2000;
+
+/** The text of each JSON-LD script block. Scans with indexOf, so hostile input stays linear. */
+function* ldBlocks(html: string): Generator<string> {
+  const lower = html.toLowerCase();
+  const hay = lower.length === html.length ? lower : html;
+  let i = 0;
+  for (;;) {
+    const open = hay.indexOf('<script', i);
+    if (open === -1) return;
+    const tagEnd = hay.indexOf('>', open);
+    if (tagEnd === -1) return;
+    i = tagEnd + 1;
+    if (tagEnd - open > MAX_TAG || !LD_TYPE.test(html.slice(open, tagEnd))) continue;
+    const close = hay.indexOf('</script', i);
+    if (close === -1) return;
+    yield html.slice(i, close);
+    i = close + 1;
+  }
+}
+
+/**
+ * Reads the first schema.org Recipe from a page's JSON-LD. Steps are parsed but never stored by callers.
+ * Relative image URLs are resolved against `pageUrl`; only http(s) images are kept.
+ */
+export function extractRecipeJsonLd(html: string, pageUrl?: string): ExtractedRecipe | null {
+  for (const block of ldBlocks(html)) {
     let doc: Json;
     try {
-      doc = JSON.parse(block[1].trim());
+      doc = JSON.parse(block.trim());
     } catch {
       continue;
     }
@@ -109,7 +135,7 @@ export function extractRecipeJsonLd(html: string): ExtractedRecipe | null {
         servings: firstNumber(node.recipeYield),
         ingredients,
         steps: steps(node.recipeInstructions),
-        image: firstImage(node.image),
+        image: firstImage(node.image, pageUrl),
         rating: rating ? num(rating.ratingValue) : null,
         ratingCount: rating ? num(rating.ratingCount ?? rating.reviewCount) : null,
         totalMinutes: minutes(node.totalTime),

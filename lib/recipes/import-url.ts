@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { isIP, type LookupFunction } from 'node:net';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 export type ImportErrorCode =
   | 'bad_url' | 'blocked_host' | 'too_large' | 'timeout' | 'not_html' | 'fetch_failed';
@@ -12,6 +13,30 @@ export class ImportError extends Error {
 }
 
 const MAX_REDIRECTS = 3;
+const USER_AGENT = 'Mozilla/5.0 (compatible; BasketRecipeImport/1.0; +https://github.com/zdstjohn/basket)';
+
+/**
+ * Connect-time DNS lookup: the address that passes this check is the one the socket connects to,
+ * so a name cannot resolve to a public address for the up-front check and a private one for the fetch.
+ */
+export const guardedLookup: LookupFunction = (hostname, options, callback) => {
+  lookup(hostname, { all: true }).then(
+    (addrs) => {
+      if (addrs.length === 0 || addrs.some((a) => isBlockedAddress(a.address))) {
+        callback(new ImportError('blocked_host'), '', 4);
+        return;
+      }
+      if (options.all) {
+        (callback as unknown as (e: null, a: typeof addrs) => void)(null, addrs);
+      } else {
+        callback(null, addrs[0].address, addrs[0].family);
+      }
+    },
+    (err: Error) => callback(err, '', 4),
+  );
+};
+
+const agent = new Agent({ connect: { lookup: guardedLookup } });
 
 function blockedV4(a: number, b: number): boolean {
   return (
@@ -85,7 +110,12 @@ async function assertPublicHost(hostname: string): Promise<void> {
   }
 }
 
-async function readCapped(res: Response, maxBytes: number): Promise<string> {
+interface Capped {
+  headers: { get(name: string): string | null };
+  body: ReadableStream<Uint8Array> | null;
+}
+
+async function readCapped(res: Capped, maxBytes: number): Promise<string> {
   const declared = Number(res.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) {
     await res.body?.cancel().catch(() => {});
@@ -136,10 +166,11 @@ export async function fetchRecipePage(
     for (let hop = 0; ; hop++) {
       if (current.protocol !== 'http:' && current.protocol !== 'https:') throw new ImportError('bad_url');
       await assertPublicHost(current.hostname);
-      const res = await fetch(current.toString(), {
+      const res = await undiciFetch(current.toString(), {
         redirect: 'manual',
         signal,
-        headers: { accept: 'text/html,application/xhtml+xml', 'user-agent': 'BasketRecipeImport/1.0' },
+        dispatcher: agent,
+        headers: { accept: 'text/html,application/xhtml+xml', 'user-agent': USER_AGENT },
       });
       if (res.status >= 300 && res.status < 400) {
         const location = res.headers.get('location');
@@ -161,10 +192,11 @@ export async function fetchRecipePage(
         await res.body?.cancel().catch(() => {});
         throw new ImportError('not_html');
       }
-      return await readCapped(res, maxBytes);
+      return await readCapped(res as unknown as Capped, maxBytes);
     }
   } catch (e) {
     if (e instanceof ImportError) throw e;
+    if (e instanceof Error && e.cause instanceof ImportError) throw e.cause;
     if (signal.aborted || (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError'))) {
       throw new ImportError('timeout');
     }

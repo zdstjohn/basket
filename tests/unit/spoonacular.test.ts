@@ -2,11 +2,17 @@ import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sitesSearch = vi.fn();
+const fetchPageMock = vi.fn();
+vi.mock('@/lib/recipes/import-url', async (orig) => ({
+  ...(await orig<typeof import('@/lib/recipes/import-url')>()),
+  fetchRecipePage: (...a: unknown[]) => fetchPageMock(...a),
+}));
 vi.mock('@/lib/recipes/search/provider', async (orig) => ({
   ...(await orig<typeof import('@/lib/recipes/search/provider')>()),
   getWebSearch: () => ({ search: sitesSearch }),
 }));
 
+import { RecipeOptionSchema } from '@/lib/ai/schemas';
 import { searchSpoonacular } from '@/lib/recipes/search/spoonacular';
 import { searchRecipes } from '@/lib/recipes/search';
 import { SourceLimitError } from '@/lib/recipes/search/provider';
@@ -20,10 +26,30 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   fetchMock.mockReset();
   sitesSearch.mockReset();
+  fetchPageMock.mockReset();
   vi.stubGlobal('fetch', fetchMock);
   delete process.env.RECIPE_SEARCH_FAKE;
   process.env.SPOONACULAR_API_KEY = 'test-key';
   process.env.AI_FAKE = '1';
+});
+
+describe('searchSpoonacular clamping', () => {
+  it('skips zero-amount lines, drops non-http images and keeps results schema-valid', async () => {
+    const body = { results: [
+      { title: 'T'.repeat(300), image: 'https://i.example.test/a.jpg', sourceUrl: 'https://x.example.test/r', readyInMinutes: 5, servings: 2,
+        extendedIngredients: [
+          { name: 'salt', amount: 0, unit: '', aisle: 'Spices', original: 'salt to taste' },
+          { name: 'rice', amount: 1, unit: 'cup', aisle: 'Pasta and Rice', original: '1 cup rice' }] },
+      { title: 'Bad', image: 'javascript:alert(1)', sourceUrl: 'https://x.example.test/b', extendedIngredients: [] },
+      { title: 'Bad link', image: 'https://i.example.test/b.jpg', sourceUrl: 'javascript:alert(1)', extendedIngredients: [] },
+    ] };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
+    const options = await searchSpoonacular('x');
+    expect(options).toHaveLength(1);
+    expect(options[0].title).toHaveLength(120);
+    expect(options[0].structured?.map((l) => l.canonical)).toEqual(['rice']);
+    expect(RecipeOptionSchema.safeParse(options[0]).success).toBe(true);
+  });
 });
 
 describe('searchSpoonacular', () => {
@@ -76,8 +102,30 @@ describe('searchRecipes', () => {
     delete process.env.SPOONACULAR_API_KEY;
     sitesSearch.mockResolvedValue([]);
     const r = await searchRecipes('x', 'sites');
-    expect(r).toEqual({ options: [], source: 'sites', fellBack: false });
+    expect(r).toEqual({ options: [], source: 'sites', fellBack: false, toppedUp: false });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('tops up a thin sites result (fewer than 4) from Spoonacular, without duplicates', async () => {
+    sitesSearch.mockResolvedValue([{ url: 'https://www.allrecipes.com/a', title: 'a' }]);
+    fetchPageMock.mockResolvedValue(
+      '<script type="application/ld+json">{"@type":"Recipe","name":"Site Tacos","image":"https://i.example.test/a.jpg","recipeIngredient":["1 x"]}</script>',
+    );
+    fetchMock.mockResolvedValueOnce(new Response(fixture, { status: 200 }));
+    const r = await searchRecipes('x', 'sites');
+    expect(r).toMatchObject({ source: 'sites', fellBack: false, toppedUp: true });
+    expect(r.options.map((o) => o.source)).toEqual(['sites', 'spoonacular', 'spoonacular']);
+  });
+
+  it('keeps the sites options when the top-up fails', async () => {
+    sitesSearch.mockResolvedValue([{ url: 'https://www.allrecipes.com/a', title: 'a' }]);
+    fetchPageMock.mockResolvedValue(
+      '<script type="application/ld+json">{"@type":"Recipe","name":"Site Tacos","image":"https://i.example.test/a.jpg","recipeIngredient":["1 x"]}</script>',
+    );
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 402 }));
+    const r = await searchRecipes('x', 'sites');
+    expect(r.options).toHaveLength(1);
+    expect(r.toppedUp).toBe(false);
   });
 
   it('runs Spoonacular directly when chosen', async () => {

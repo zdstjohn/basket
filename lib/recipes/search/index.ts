@@ -2,6 +2,7 @@ import 'server-only';
 import { fetchRecipePage } from '../import-url';
 import { extractRecipeJsonLd } from '../jsonld';
 import { siteForHost } from '../sites';
+import { clampOption } from './clamp';
 import { fakeSiteOptions } from './fake';
 import { getWebSearch, type RecipeOption, type RecipeSource } from './provider';
 import { searchSpoonacular } from './spoonacular';
@@ -9,13 +10,15 @@ import { searchSpoonacular } from './spoonacular';
 export type { RecipeOption, RecipeSource } from './provider';
 
 const MAX_OPTIONS = 8;
+const MAX_FETCHES = 12;
+const TOP_UP_BELOW = 4;
 const PAGE_TIMEOUT_MS = 5000;
 
 async function toOption(hit: { url: string; title: string }, siteName: string): Promise<RecipeOption | null> {
   const html = await fetchRecipePage(hit.url, { timeoutMs: PAGE_TIMEOUT_MS });
-  const recipe = extractRecipeJsonLd(html);
+  const recipe = extractRecipeJsonLd(html, hit.url);
   if (!recipe || !recipe.image) return null;
-  return {
+  return clampOption({
     source: 'sites',
     url: hit.url,
     site: siteName,
@@ -27,7 +30,7 @@ async function toOption(hit: { url: string; title: string }, siteName: string): 
     servings: recipe.servings,
     ingredients: recipe.ingredients,
     structured: null,
-  };
+  });
 }
 
 export async function searchSites(query: string): Promise<RecipeOption[]> {
@@ -45,26 +48,41 @@ export async function searchSites(query: string): Promise<RecipeOption[]> {
     }
     const site = siteForHost(host);
     if (site) candidates.push({ hit, site: site.name });
-    if (candidates.length === MAX_OPTIONS) break;
+    if (candidates.length === MAX_FETCHES) break;
   }
   const settled = await Promise.allSettled(candidates.map((c) => toOption(c.hit, c.site)));
   const options: RecipeOption[] = [];
   for (const s of settled) {
     if (s.status === 'fulfilled' && s.value) options.push(s.value);
   }
-  return options;
+  return options.slice(0, MAX_OPTIONS);
 }
 
-export async function searchRecipes(
-  query: string,
-  source: RecipeSource = 'sites',
-): Promise<{ options: RecipeOption[]; source: RecipeSource; fellBack: boolean }> {
+export interface SearchResult {
+  options: RecipeOption[];
+  source: RecipeSource;
+  /** Sites found nothing, so these are all Spoonacular's. */
+  fellBack: boolean;
+  /** Sites found a few; Spoonacular's fill the rest. */
+  toppedUp: boolean;
+}
+
+export async function searchRecipes(query: string, source: RecipeSource = 'sites'): Promise<SearchResult> {
   if (source === 'spoonacular') {
-    return { options: await searchSpoonacular(query), source, fellBack: false };
+    return { options: await searchSpoonacular(query), source, fellBack: false, toppedUp: false };
   }
   const options = await searchSites(query);
-  if (options.length === 0 && process.env.SPOONACULAR_API_KEY) {
-    return { options: await searchSpoonacular(query), source: 'spoonacular', fellBack: true };
+  if (options.length >= TOP_UP_BELOW || !process.env.SPOONACULAR_API_KEY) {
+    return { options, source, fellBack: false, toppedUp: false };
   }
-  return { options, source, fellBack: false };
+  if (options.length === 0) {
+    return { options: await searchSpoonacular(query), source: 'spoonacular', fellBack: true, toppedUp: false };
+  }
+  try {
+    const have = new Set(options.map((o) => o.url));
+    const extra = (await searchSpoonacular(query)).filter((o) => !have.has(o.url));
+    return { options: [...options, ...extra].slice(0, MAX_OPTIONS), source, fellBack: false, toppedUp: extra.length > 0 };
+  } catch {
+    return { options, source, fellBack: false, toppedUp: false };
+  }
 }

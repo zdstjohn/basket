@@ -59,11 +59,11 @@ export async function estimateCents(
         `You estimate typical grocery shelf prices in Tacoma, Washington, USA at ${STORE_NAMES[store]}, in US cents. ` +
         'For each item return centsPerBase: the price of ONE base unit (one gram, one milliliter, or one item as given). ' +
         'Use ordinary non-sale prices; be realistic, not cheap.',
+      onUsage: ctx.onUsage,
       prompt:
         'Items: ' +
         JSON.stringify(missing.map((m) => ({ canonical: m.canonical, baseUnit: BASE_NAMES[m.qty.base] }))),
     });
-    ctx.onUsage?.({ model: r.model, ...r.usage });
     const byName = new Map(r.object.prices.map((p) => [p.canonical, p.centsPerBase]));
     const rows: Database['public']['Tables']['price_estimates']['Insert'][] = [];
     for (const m of missing) {

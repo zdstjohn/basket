@@ -1,5 +1,18 @@
 import { z } from 'zod';
 
+/** http(s) only: these become links other household members click. */
+export const HttpUrlSchema = z
+  .string()
+  .max(2000)
+  .refine((u) => {
+    try {
+      const p = new URL(u).protocol;
+      return p === 'http:' || p === 'https:';
+    } catch {
+      return false;
+    }
+  }, 'must be an http(s) URL');
+
 export const RoleSchema = z.enum([
   'meat', 'fish', 'veg_protein', 'produce', 'dairy', 'bakery', 'frozen', 'pantry', 'other',
 ]);
@@ -24,9 +37,9 @@ export const RecipeDraftSchema = z.object({
   baseServings: z.number().min(1).max(24),
   ingredients: z.array(IngredientLineSchema).min(1).max(60),
   vegSwap: VegSwapSchema.nullable(),
-  sourceUrl: z.string().max(2000).nullable(),
+  sourceUrl: HttpUrlSchema.nullable(),
   photo: z
-    .object({ url: z.string().max(2000), credit: z.string().max(120), creditUrl: z.string().max(2000) })
+    .object({ url: HttpUrlSchema, credit: z.string().max(120), creditUrl: HttpUrlSchema })
     .nullable(),
 });
 export type RecipeDraft = z.infer<typeof RecipeDraftSchema>;
@@ -46,10 +59,10 @@ export const EstimateResultSchema = z.object({
 /** A recipe option as the browser sends it back when a card is picked. Never trusted. */
 export const RecipeOptionSchema = z.object({
   source: z.enum(['sites', 'spoonacular']),
-  url: z.string().url().max(2000),
+  url: HttpUrlSchema,
   site: z.string().max(120),
   title: z.string().min(1).max(200),
-  image: z.string().url().max(2000),
+  image: HttpUrlSchema,
   rating: z.number().nullable(),
   ratingCount: z.number().nullable(),
   totalMinutes: z.number().nullable(),

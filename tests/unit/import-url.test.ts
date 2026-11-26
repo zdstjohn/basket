@@ -1,9 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const lookup = vi.fn();
+const { lookup, fetchMock, agentOpts } = vi.hoisted(() => ({
+  lookup: vi.fn(),
+  fetchMock: vi.fn(),
+  agentOpts: { current: undefined as undefined | { connect?: { lookup?: unknown } } },
+}));
 vi.mock('node:dns/promises', () => ({ lookup: (...a: unknown[]) => lookup(...a) }));
+vi.mock('undici', () => ({
+  fetch: (...a: unknown[]) => fetchMock(...a),
+  Agent: class {
+    constructor(o: { connect?: { lookup?: unknown } }) {
+      agentOpts.current = o;
+    }
+  },
+}));
 
-import { fetchRecipePage, ImportError } from '@/lib/recipes/import-url';
+import { fetchRecipePage, guardedLookup, ImportError } from '@/lib/recipes/import-url';
 
 const PUBLIC = [{ address: '93.184.216.34', family: 4 }];
 const codeOf = async (p: Promise<unknown>) => {
@@ -18,11 +30,9 @@ const html = (body: string, headers: Record<string, string> = {}, status = 200) 
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...headers } });
 
 describe('fetchRecipePage', () => {
-  const fetchMock = vi.fn();
   beforeEach(() => {
     lookup.mockReset();
     fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
     // Literal IPs resolve to themselves; names resolve to a public address.
     lookup.mockImplementation(async (host: string) =>
       /^[\d.]+$/.test(host) || host.includes(':') ? [{ address: host, family: host.includes(':') ? 6 : 4 }] : PUBLIC,
@@ -108,5 +118,37 @@ describe('fetchRecipePage', () => {
     expect(await codeOf(fetchRecipePage('https://good.example.test/a'))).toBe('fetch_failed');
     fetchMock.mockResolvedValueOnce(html('nope', {}, 404));
     expect(await codeOf(fetchRecipePage('https://good.example.test/a'))).toBe('fetch_failed');
+  });
+});
+
+describe('connect-time address check (DNS rebinding)', () => {
+  const callLookup = (all: boolean) =>
+    new Promise<{ err: unknown; result: unknown }>((resolve) => {
+      (guardedLookup as unknown as (h: string, o: object, cb: (e: unknown, r: unknown) => void) => void)(
+        'rebind.example.test', { all }, (err, result) => resolve({ err, result }),
+      );
+    });
+
+  it('is the lookup the fetch agent connects with', () => {
+    expect(agentOpts.current?.connect?.lookup).toBe(guardedLookup);
+  });
+
+  it('rejects a name that now resolves to a private address, even if one answer is public', async () => {
+    lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }, { address: '169.254.169.254', family: 4 }]);
+    const { err } = await callLookup(true);
+    expect(err).toBeInstanceOf(ImportError);
+    expect((err as ImportError).code).toBe('blocked_host');
+  });
+
+  it('passes public addresses through in both lookup shapes', async () => {
+    lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    expect((await callLookup(true)).result).toEqual([{ address: '93.184.216.34', family: 4 }]);
+    expect((await callLookup(false)).result).toBe('93.184.216.34');
+  });
+
+  it('surfaces a connect-time block from fetch as blocked_host', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed', { cause: new ImportError('blocked_host') }));
+    lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    expect(await codeOf(fetchRecipePage('https://rebind.example.test/'))).toBe('blocked_host');
   });
 });

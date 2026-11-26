@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(83);
+select plan(90);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -215,6 +215,23 @@ select throws_ok($q$select public.is_member(gen_random_uuid())$q$, '42501', null
 select is((select count(*)::int from storage.objects where bucket_id = 'meal-photos'), 0, 'anon sees no photos');
 select throws_ok($q$insert into storage.objects (bucket_id, name) values ('meal-photos', 'x/y.jpg')$q$, '42501', null, 'anon cannot upload photos');
 
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- Spend guard (0003): non-negative usage, locked cap, ai_spend_since
+-- ---------------------------------------------------------------------------
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+
+select throws_ok($q$insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HA'), 'parse', 'x', -5)$q$, '23514', null, 'a negative cost_cents row is rejected');
+select throws_ok($q$insert into public.ai_usage (household_id, kind, model, input_tokens) values ((select v::uuid from t_kv where k = 'HA'), 'parse', 'x', -1)$q$, '23514', null, 'negative input_tokens is rejected');
+select throws_ok($q$insert into public.ai_usage (household_id, kind, model, output_tokens) values ((select v::uuid from t_kv where k = 'HA'), 'parse', 'x', -1)$q$, '23514', null, 'negative output_tokens is rejected');
+select throws_ok($q$update public.households set ai_cap_cents = 999999 where id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'a member cannot change ai_cap_cents');
+select is(public.ai_spend_since((select v::uuid from t_kv where k = 'HA'), '-infinity'), (select coalesce(sum(cost_cents), 0) from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HA')), 'ai_spend_since sums the own household usage');
+select throws_ok($q$select public.ai_spend_since((select v::uuid from t_kv where k = 'HB'), '-infinity')$q$, 'P0001', 'not_member', 'ai_spend_since refuses another household');
+
+reset role;
+select pg_temp.act_as(null);
+select throws_ok($q$select public.ai_spend_since(gen_random_uuid(), '-infinity')$q$, '42501', null, 'anon cannot call ai_spend_since');
 reset role;
 
 select * from finish();
