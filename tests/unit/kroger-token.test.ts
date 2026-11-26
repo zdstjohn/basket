@@ -52,6 +52,12 @@ describe('getKrogerToken', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('gives the token request a timeout', async () => {
+    const { getKrogerToken } = await load();
+    await getKrogerToken();
+    expect((fetchMock.mock.calls[0] as [string, RequestInit])[1].signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('shares one request between calls made at the same time', async () => {
     const { getKrogerToken } = await load();
     const [a, b] = await Promise.all([getKrogerToken(), getKrogerToken()]);

@@ -37,6 +37,12 @@ describe('priceFor', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer tok');
   });
 
+  it('gives the products request a timeout', async () => {
+    reply(chicken);
+    await priceFor('boneless chicken thighs', 'mass', '70100390');
+    expect((fetchMock.mock.calls[0] as [string, RequestInit])[1].signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('prices weight-sold meat per pound as mass, with the front small image', async () => {
     reply(chicken);
     const r = await priceFor('boneless chicken thighs', 'mass', '70100390');

@@ -15,6 +15,7 @@ export const isKrogerConfigured = (): boolean =>
 
 const TOKEN_URL = 'https://api.kroger.com/v1/connect/oauth2/token';
 const EARLY_MS = 60_000;
+const TIMEOUT_MS = 5000;
 
 let cached: { token: string; expiresAt: number } | null = null;
 let inflight: Promise<string> | null = null;
@@ -31,6 +32,7 @@ async function fetchToken(): Promise<string> {
     },
     body: 'grant_type=client_credentials&scope=product.compact',
     cache: 'no-store',
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`kroger token ${res.status}`);
   const body = (await res.json()) as { access_token?: string; expires_in?: number };

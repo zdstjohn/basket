@@ -4,7 +4,7 @@ import type { Database } from '@/lib/db/types';
 import type { Store } from '@/lib/domain/list';
 import type { Quantity } from '@/lib/domain/types';
 import { priceFor, type KrogerPrice } from '@/lib/kroger/products';
-import { isKrogerConfigured } from '@/lib/kroger/token';
+import { isKrogerConfigured, KrogerNotConfigured } from '@/lib/kroger/token';
 import { KROGER_PRICE_MAX_AGE_MS } from '@/lib/list/prices';
 import { generateStructured } from './provider';
 import { EstimateResultSchema } from './schemas';
@@ -121,7 +121,9 @@ export async function estimatePrices(
     const found = await mapLimit(lookup, KROGER_PARALLEL, async ({ w }): Promise<KrogerPrice | null> => {
       try {
         return await priceFor(w.canonical, w.qty.kind, locationId);
-      } catch {
+      } catch (e) {
+        // Not configured is expected and silent; anything else (bad secret, 429, outage) must show in the logs.
+        if (!(e instanceof KrogerNotConfigured)) console.error('kroger price failed', e instanceof Error ? e.message : 'unknown');
         return null; // Kroger is down or says no: the item keeps its old price, or gets an estimate
       }
     });

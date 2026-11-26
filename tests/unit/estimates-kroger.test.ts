@@ -25,6 +25,7 @@ vi.mock('@/lib/kroger/products', async (orig) => {
 import { POST } from '@/app/api/estimates/route';
 import { generateStructured } from '@/lib/ai/provider';
 import { priceFor } from '@/lib/kroger/products';
+import { KrogerNotConfigured } from '@/lib/kroger/token';
 
 const mass: Quantity = { amount: 500, kind: 'mass', base: 'g' };
 const count: Quantity = { amount: 3, kind: 'count', base: 'each', countUnit: 'each' };
@@ -193,6 +194,27 @@ describe('POST /api/estimates with a Fred Meyer store chosen', () => {
     const res = await POST(req({ items: [chicken], store: 'fred_meyer' }));
     expect(res.status).toBe(200);
     expect((await res.json()).prices['boneless chicken thighs']).toBe(1);
+  });
+
+  it('logs a Kroger failure once (message only) and falls back to the model', async () => {
+    sbRef = mockSb([]).sb;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(priceFor).mockRejectedValueOnce(new Error('kroger /products 429'));
+    const res = await POST(req({ items: [chicken], store: 'fred_meyer' }));
+    expect((await res.json()).prices['boneless chicken thighs']).toBe(1);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith('kroger price failed', 'kroger /products 429');
+    log.mockRestore();
+  });
+
+  it('logs nothing when Kroger is not configured', async () => {
+    sbRef = mockSb([]).sb;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(priceFor).mockRejectedValueOnce(new KrogerNotConfigured());
+    const res = await POST(req({ items: [chicken], store: 'fred_meyer' }));
+    expect((await res.json()).prices['boneless chicken thighs']).toBe(1);
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it('asks Kroger for at most six items at a time', async () => {
