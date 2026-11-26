@@ -1,0 +1,32 @@
+{
+  "data": [
+    {
+      "productId": "0020000000001",
+      "description": "Heritage Farm Boneless Skinless Chicken Thighs",
+      "brand": "Heritage Farm",
+      "images": [
+        { "perspective": "back", "sizes": [ { "size": "small", "url": "https://www.kroger.com/product/images/small/back/0020000000001" } ] },
+        { "perspective": "front", "featured": true, "sizes": [
+          { "size": "xlarge", "url": "https://www.kroger.com/product/images/xlarge/front/0020000000001" },
+          { "size": "small", "url": "https://www.kroger.com/product/images/small/front/0020000000001" },
+          { "size": "thumbnail", "url": "https://www.kroger.com/product/images/thumbnail/front/0020000000001" }
+        ] }
+      ],
+      "items": [ { "itemId": "0020000000001", "size": "1 lb", "soldBy": "WEIGHT", "price": { "regular": 3.99, "promo": 0 } } ]
+    },
+    {
+      "productId": "0020000000002",
+      "description": "Simple Truth Organic Bone-In Chicken Thighs",
+      "brand": "Simple Truth",
+      "images": [
+        { "perspective": "back", "sizes": [ { "size": "small", "url": "https://www.kroger.com/product/images/small/back/0020000000002" } ] },
+        { "perspective": "front", "featured": true, "sizes": [
+          { "size": "xlarge", "url": "https://www.kroger.com/product/images/xlarge/front/0020000000002" },
+          { "size": "small", "url": "https://www.kroger.com/product/images/small/front/0020000000002" },
+          { "size": "thumbnail", "url": "https://www.kroger.com/product/images/thumbnail/front/0020000000002" }
+        ] }
+      ],
+      "items": [ { "itemId": "0020000000002", "size": "1 lb", "soldBy": "WEIGHT", "price": { "regular": 5.99, "promo": 0 } } ]
+    }
+  ]
+}

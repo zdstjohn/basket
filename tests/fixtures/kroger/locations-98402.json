@@ -1,0 +1,7 @@
+{
+  "data": [
+    { "locationId": "01400376", "chain": "QFC", "name": "QFC - Tacoma Proctor", "address": { "addressLine1": "2602 N Proctor St", "city": "Tacoma", "state": "WA", "zipCode": "98407" } },
+    { "locationId": "70100390", "chain": "FRED", "name": "Fred Meyer - Tacoma-Stevens", "address": { "addressLine1": "1901 S 72nd St", "city": "Tacoma", "state": "WA", "zipCode": "98408" } },
+    { "locationId": "70100112", "chain": "FRED", "name": "Fred Meyer - Tacoma-Sprague", "address": { "addressLine1": "1202 S Sprague Ave", "city": "Tacoma", "state": "WA", "zipCode": "98405" } }
+  ]
+}

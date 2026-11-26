@@ -1,13 +1,14 @@
 import type { Store } from '@/lib/domain/list';
 import type { Quantity } from '@/lib/domain/types';
-import { priceKey, type PriceRow } from './prices';
+import { krogerImageUrl, priceKey, type PriceRow } from './prices';
 
 const MAX_BATCH = 100;
 
 type Wanted = { canonical: string; qty: Quantity };
 
 /**
- * Asks the server for prices of items nobody has priced at this store: one request per call.
+ * Asks the server for prices of items nobody has priced at this store (or, at Fred Meyer, whose shelf price
+ * is due a look): one request per call.
  * The server saves what it gets, so the rows returned here match what the next load finds.
  * Resolves to [] when the request fails (offline, over the AI cap): those items just show "—".
  */
@@ -28,7 +29,13 @@ export async function requestEstimates(items: Wanted[], store: Store): Promise<P
       body: JSON.stringify({ items, store }),
     });
     if (!res.ok) return [];
-    const byName = (await res.json()) as Record<string, number>;
+    const body = (await res.json()) as {
+      prices?: Record<string, number>;
+      kroger?: Record<string, { productName: string | null; imageUrl: string | null; onSale: boolean }>;
+    };
+    const byName = body.prices ?? {};
+    const fromKroger = body.kroger ?? {};
+    const saved = new Date().toISOString();
     const out: PriceRow[] = [];
     const seen = new Set<string>();
     for (const w of items) {
@@ -36,7 +43,15 @@ export async function requestEstimates(items: Wanted[], store: Store): Promise<P
       const key = priceKey(w.canonical, store, w.qty.kind);
       if (typeof cents !== 'number' || seen.has(key)) continue;
       seen.add(key);
-      out.push({ canonical: w.canonical, store, kind: w.qty.kind, centsPerBase: cents, source: 'ai' });
+      const k = fromKroger[w.canonical];
+      out.push(
+        k
+          ? {
+              canonical: w.canonical, store, kind: w.qty.kind, centsPerBase: cents, source: 'kroger',
+              productName: k.productName, imageUrl: krogerImageUrl(k.imageUrl), onSale: k.onSale, updatedAt: saved,
+            }
+          : { canonical: w.canonical, store, kind: w.qty.kind, centsPerBase: cents, source: 'ai' },
+      );
     }
     return out;
   } catch {

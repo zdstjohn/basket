@@ -1,5 +1,6 @@
 import { createServerClient } from "@/lib/db/server";
 import { getMyHousehold, listPeople } from "@/lib/db/queries/household";
+import { isKrogerConfigured } from "@/lib/kroger/token";
 import { HouseholdScreen } from "./HouseholdScreen";
 
 export default async function HouseholdPage() {
@@ -23,6 +24,7 @@ export default async function HouseholdPage() {
       initialPeople={people}
       memberCount={Math.max(roster.length, 1)}
       isOwner={isOwner}
+      krogerEnabled={isKrogerConfigured()}
     />
   );
 }

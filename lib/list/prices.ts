@@ -2,7 +2,7 @@ import type { ScaledLine } from '@/lib/domain/scaling';
 import type { Store } from '@/lib/domain/list';
 import type { Quantity, Role } from '@/lib/domain/types';
 
-export type PriceSource = 'ai' | 'user';
+export type PriceSource = 'ai' | 'user' | 'kroger';
 
 export interface PriceRow {
   canonical: string;
@@ -11,6 +11,26 @@ export interface PriceRow {
   /** Cents for one base unit: one gram, one millilitre or one item. */
   centsPerBase: number;
   source: PriceSource;
+  /** Set for Kroger prices: the product it came from. */
+  productName?: string | null;
+  imageUrl?: string | null;
+  onSale?: boolean;
+  /** When the price was saved (ISO). */
+  updatedAt?: string;
+}
+
+/** A Kroger price older than this is looked up again. */
+export const KROGER_PRICE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** A product photo link, only when it is https on www.kroger.com. */
+export function krogerImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.hostname === 'www.kroger.com' ? u.href : null;
+  } catch {
+    return null;
+  }
 }
 
 export type PriceMap = Map<string, PriceRow>;

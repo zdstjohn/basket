@@ -1,0 +1,6 @@
+{
+  "data": [
+    { "productId": "10", "description": "Kroger Grade A Large White Eggs", "brand": "Kroger", "images": [], "items": [ { "itemId": "10", "size": "12 ct", "soldBy": "UNIT", "price": { "regular": 3.99, "promo": 0 } } ] },
+    { "productId": "11", "description": "Kroger Grade A Large White Eggs Bulk", "brand": "Kroger", "images": [], "items": [ { "itemId": "11", "size": "18 ct", "soldBy": "UNIT", "price": { "regular": 5.19, "promo": 0 } } ] }
+  ]
+}

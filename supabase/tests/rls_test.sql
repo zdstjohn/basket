@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(90);
+select plan(94);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -120,6 +120,13 @@ select is((select budget_cents from public.households where id = (select v::uuid
 -- Attempt on HB: filtered by the policy (0 rows); verified as B below.
 update public.households set budget_cents = 1 where id = (select v::uuid from t_kv where k = 'HB');
 
+-- Choosing a Fred Meyer store: members of the household may; nobody else can.
+update public.households set kroger_location_id = '70100390', kroger_location_name = 'Fred Meyer - Tacoma-Stevens' where id = (select v::uuid from t_kv where k = 'HA');
+select is((select kroger_location_id from public.households where id = (select v::uuid from t_kv where k = 'HA')), '70100390', 'A can set the HA Fred Meyer store');
+select is((select kroger_location_name from public.households where id = (select v::uuid from t_kv where k = 'HA')), 'Fred Meyer - Tacoma-Stevens', 'A can set the HA store name');
+-- Attempt on HB: filtered by the policy (0 rows); verified as B below.
+update public.households set kroger_location_id = '99999999', kroger_location_name = 'Rogue store' where id = (select v::uuid from t_kv where k = 'HB');
+
 -- ai_usage is append-only.
 select throws_ok($q$delete from public.ai_usage$q$, '42501', null, 'A cannot delete ai_usage');
 select throws_ok($q$update public.ai_usage set cost_cents = 0$q$, '42501', null, 'A cannot update ai_usage');
@@ -165,6 +172,8 @@ reset role;
 select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
 
 select is((select budget_cents from public.households where id = (select v::uuid from t_kv where k = 'HB')), 20000, 'B cannot be changed by A: HB budget is untouched');
+select is((select kroger_location_id from public.households where id = (select v::uuid from t_kv where k = 'HB')), null, 'A cannot set the HB Fred Meyer store');
+select is((select kroger_location_name from public.households where id = (select v::uuid from t_kv where k = 'HA')), null, 'B cannot see the HA store name');
 select is((select count(*)::int from public.people where household_id = (select v::uuid from t_kv where k = 'HA')), 0, 'B sees no HA people');
 select is((select count(*)::int from public.invites where household_id = (select v::uuid from t_kv where k = 'HA')), 0, 'B cannot read A''s invites');
 select is((select count(*)::int from public.ai_usage), 1, 'B still has exactly its own ai_usage row');

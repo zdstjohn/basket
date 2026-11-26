@@ -8,7 +8,7 @@ type Sb = SupabaseClient<Database>;
 export type HouseholdPatch = Partial<
   Pick<
     Household,
-    "name" | "budget_cents" | "cushion_cents" | "week_start" | "slots" | "time_zone" | "recipe_source"
+    "name" | "budget_cents" | "cushion_cents" | "week_start" | "slots" | "time_zone" | "recipe_source" | "kroger_location_id" | "kroger_location_name"
   >
 >;
 

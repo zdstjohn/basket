@@ -122,7 +122,7 @@ describe('POST /api/estimates', () => {
     sbRef = mockSb([]).sb;
     const res = await POST(req(body));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ eggs: 50 });
+    expect(await res.json()).toEqual({ prices: { eggs: 50 }, kroger: {} });
     expect(recordUsage).toHaveBeenCalledWith(expect.anything(), 'h1', 'estimate', 'fake', expect.objectContaining({ inputTokens: 100 }));
   });
 

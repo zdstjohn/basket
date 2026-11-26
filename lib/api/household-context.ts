@@ -12,13 +12,21 @@ export interface RouteContext {
   household: Household;
 }
 
-/** The signed-in user's household with the monthly cap checked, or the response to send instead. */
-export async function requireHouseholdWithinCap(): Promise<RouteContext | NextResponse> {
+/** The signed-in user's household, or the response to send instead. */
+export async function requireHousehold(): Promise<RouteContext | NextResponse> {
   const sb = await createServerClient();
   const { data } = await sb.auth.getUser();
   if (!data.user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const household = await getMyHousehold(sb);
   if (!household) return NextResponse.json({ error: 'no_household' }, { status: 404 });
+  return { sb, household };
+}
+
+/** The signed-in user's household with the monthly cap checked, or the response to send instead. */
+export async function requireHouseholdWithinCap(): Promise<RouteContext | NextResponse> {
+  const ctx = await requireHousehold();
+  if (isResponse(ctx)) return ctx;
+  const { sb, household } = ctx;
   const cap = await checkCap(sb, household.id);
   if (!cap.ok) return NextResponse.json({ error: 'cap_reached' }, { status: 402 });
   return { sb, household };

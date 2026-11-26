@@ -6,6 +6,7 @@ import { SignOutButton } from "@/components/household/SignOutButton";
 import { StaplesSection } from "@/components/household/StaplesSection";
 import { StoresSection } from "@/components/household/StoresSection";
 import { PersonRow } from "@/components/PersonRow";
+import { StorePicker, type StoreChoice } from "@/components/StorePicker";
 import { createBrowserClient } from "@/lib/db/client";
 import {
   createInviteLink,
@@ -33,11 +34,14 @@ export function HouseholdScreen({
   initialPeople,
   memberCount,
   isOwner,
+  krogerEnabled,
 }: {
   household: Household;
   initialPeople: Person[];
   memberCount: number;
   isOwner: boolean;
+  /** Whether Fred Meyer shelf prices can be looked up on this server. */
+  krogerEnabled: boolean;
 }) {
   const sb = useRef(createBrowserClient()).current;
   const [people, setPeople] = useState(initialPeople);
@@ -50,6 +54,14 @@ export function HouseholdScreen({
   const [inviteState, setInviteState] = useState<"idle" | "working" | "error">("idle");
   const [copied, setCopied] = useState(false);
   const linkInput = useRef<HTMLInputElement>(null);
+  const [fredMeyer, setFredMeyer] = useState(household.kroger_location_name);
+  const [picking, setPicking] = useState(false);
+
+  async function chooseFredMeyer(s: StoreChoice) {
+    await updateHousehold(sb, household.id, { kroger_location_id: s.id, kroger_location_name: s.name });
+    setFredMeyer(s.name);
+    setPicking(false);
+  }
 
   async function savePerson(draft: PersonDraft) {
     const person = await upsertPerson(sb, household.id, draft, draft.id ? undefined : people.length);
@@ -201,20 +213,35 @@ export function HouseholdScreen({
       <section aria-label="Stores and settings" className="mx-5 mt-4">
         <h2 className="mb-1.5 text-[15px] font-semibold">Stores and sharing</h2>
         <ul className="overflow-hidden rounded-2xl border border-line bg-white">
-          {STORES.map((s) => (
-            <li
-              key={s.label}
-              className={`flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5 ${divider}`}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-medium">{s.label}</span>
-                <span className="block text-xs text-muted">{s.detail}</span>
-              </span>
-              <button type="button" disabled className={pillButton}>
-                Coming soon
-              </button>
-            </li>
-          ))}
+          {STORES.map((s) => {
+            const shelf = krogerEnabled && s.label === "Fred Meyer";
+            return (
+              <li key={s.label} className={divider}>
+                <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15px] font-medium">{shelf ? "Your Fred Meyer" : s.label}</span>
+                    <span className="block text-xs text-muted">
+                      {shelf ? (fredMeyer ?? "Pick your store for real shelf prices") : s.detail}
+                    </span>
+                  </span>
+                  {shelf ? (
+                    !picking && (
+                      <button type="button" onClick={() => setPicking(true)} className={pillButton}>
+                        {fredMeyer ? "Change" : "Choose store"}
+                      </button>
+                    )
+                  ) : (
+                    <button type="button" disabled className={pillButton}>
+                      Coming soon
+                    </button>
+                  )}
+                </div>
+                {shelf && picking && (
+                  <StorePicker onChoose={chooseFredMeyer} onCancel={() => setPicking(false)} />
+                )}
+              </li>
+            );
+          })}
           <li className={`${divider}`}>
             <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
               <span className="min-w-0 flex-1">

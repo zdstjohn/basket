@@ -26,12 +26,15 @@ export function subscribeHousehold(
     }, COALESCE_MS);
   };
 
+  // A household's own row is keyed by id; every other table points at it with household_id.
+  const filterFor = (table: string) => `${table === 'households' ? 'id' : 'household_id'}=eq.${householdId}`;
+
   let channel = sb.channel(`household-${householdId}-${Math.random().toString(36).slice(2, 8)}`);
   for (const table of tables) {
     channel = channel
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table, filter: `household_id=eq.${householdId}` },
+        { event: '*', schema: 'public', table, filter: filterFor(table) },
         fire,
       )
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table }, fire);

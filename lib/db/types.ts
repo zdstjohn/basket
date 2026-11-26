@@ -92,6 +92,8 @@ export type Database = {
           created_at: string
           cushion_cents: number
           id: string
+          kroger_location_id: string | null
+          kroger_location_name: string | null
           name: string
           recipe_source: string
           slots: string[]
@@ -105,6 +107,8 @@ export type Database = {
           created_at?: string
           cushion_cents?: number
           id?: string
+          kroger_location_id?: string | null
+          kroger_location_name?: string | null
           name: string
           recipe_source?: string
           slots?: string[]
@@ -118,6 +122,8 @@ export type Database = {
           created_at?: string
           cushion_cents?: number
           id?: string
+          kroger_location_id?: string | null
+          kroger_location_name?: string | null
           name?: string
           recipe_source?: string
           slots?: string[]
@@ -342,8 +348,12 @@ export type Database = {
           household_id: string
           id: string
           kind: string
+          on_sale: boolean
+          product_image_url: string | null
+          product_name: string | null
           source: string
           store: string
+          updated_at: string
         }
         Insert: {
           canonical: string
@@ -352,8 +362,12 @@ export type Database = {
           household_id: string
           id?: string
           kind: string
+          on_sale?: boolean
+          product_image_url?: string | null
+          product_name?: string | null
           source?: string
           store: string
+          updated_at?: string
         }
         Update: {
           canonical?: string
@@ -362,8 +376,12 @@ export type Database = {
           household_id?: string
           id?: string
           kind?: string
+          on_sale?: boolean
+          product_image_url?: string | null
+          product_name?: string | null
           source?: string
           store?: string
+          updated_at?: string
         }
         Relationships: [
           {

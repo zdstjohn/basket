@@ -3,7 +3,7 @@ import type { Database } from '@/lib/db/types';
 import type { Store } from '@/lib/domain/list';
 import type { IngredientLine, Quantity, Role } from '@/lib/domain/types';
 import type { ItemPatch } from '@/lib/list/offline';
-import { isStore, type PriceRow, type PriceSource } from '@/lib/list/prices';
+import { isStore, krogerImageUrl, type PriceRow, type PriceSource } from '@/lib/list/prices';
 
 type Sb = SupabaseClient<Database>;
 type Json = Database['public']['Tables']['households']['Row']['category_store'];
@@ -152,7 +152,7 @@ export async function setItemStore(sb: Sb, householdId: string, canonical: strin
 export async function listPrices(sb: Sb, householdId: string): Promise<PriceRow[]> {
   const { data, error } = await sb
     .from('price_estimates')
-    .select('canonical, store, kind, cents_per_base, source')
+    .select('canonical, store, kind, cents_per_base, source, updated_at, product_name, product_image_url, on_sale')
     .eq('household_id', householdId);
   if (error) throw new Error(error.message);
   const out: PriceRow[] = [];
@@ -163,7 +163,15 @@ export async function listPrices(sb: Sb, householdId: string): Promise<PriceRow[
       store: r.store,
       kind: r.kind as Quantity['kind'],
       centsPerBase: Number(r.cents_per_base),
-      source: r.source === 'user' ? 'user' : 'ai',
+      source: r.source === 'user' ? 'user' : r.source === 'kroger' ? 'kroger' : 'ai',
+      ...(r.source === 'kroger'
+        ? {
+            productName: r.product_name,
+            imageUrl: krogerImageUrl(r.product_image_url),
+            onSale: r.on_sale,
+            updatedAt: r.updated_at,
+          }
+        : {}),
     });
   }
   return out;

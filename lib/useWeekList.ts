@@ -21,7 +21,8 @@ import {
   enqueuePatch, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
 } from "@/lib/list/offline";
 import {
-  estimateFor, priceKey, priceSourceFor, storeFor, toPriceMap, userCentsPerBase, type PriceRow, type PriceSource,
+  estimateFor, KROGER_PRICE_MAX_AGE_MS, priceKey, storeFor, toPriceMap, userCentsPerBase,
+  type PriceRow, type PriceSource,
 } from "@/lib/list/prices";
 import { subscribeHousehold } from "@/lib/realtime";
 
@@ -37,11 +38,38 @@ export interface ListInputs {
   prices: PriceRow[];
 }
 
-/** The saved prices, plus any fetched this visit that the saved ones don't have yet. */
+/** A fetched Kroger shelf price takes the place of an AI guess or an older Kroger price, never of a typed one. */
+const replaces = (fresh: PriceRow, old: PriceRow): boolean =>
+  fresh.source === "kroger" &&
+  old.source !== "user" &&
+  (old.source === "ai" || (fresh.updatedAt ?? "") > (old.updatedAt ?? ""));
+
+/** The saved prices, plus any fetched this visit that the saved ones don't have yet (or have only as older ones). */
 function withFetched(saved: PriceRow[], fetched: Map<string, PriceRow>): PriceRow[] {
   const have = new Set(saved.map((p) => priceKey(p.canonical, p.store, p.kind)));
-  return [...saved, ...[...fetched].filter(([k]) => !have.has(k)).map(([, p]) => p)];
+  const swapped = saved.map((p) => {
+    const f = fetched.get(priceKey(p.canonical, p.store, p.kind));
+    return f && replaces(f, p) ? f : p;
+  });
+  return [...swapped, ...[...fetched].filter(([k]) => !have.has(k)).map(([, p]) => p)];
 }
+
+/** Adds fetched rows to the prices on screen, upgrading AI guesses and old Kroger prices. */
+function mergeFetched(prices: PriceRow[], rows: PriceRow[]): PriceRow[] {
+  const byKey = new Map(prices.map((p) => [priceKey(p.canonical, p.store, p.kind), p]));
+  for (const r of rows) {
+    const k = priceKey(r.canonical, r.store, r.kind);
+    const old = byKey.get(k);
+    if (!old || replaces(r, old)) byKey.set(k, r);
+  }
+  return [...byKey.values()];
+}
+
+/** Fred Meyer shelf prices to look up again: AI guesses (once a store is chosen) and Kroger prices over a day old. */
+const dueForShelfPrice = (row: PriceRow | undefined): boolean =>
+  !!row &&
+  (row.source === "ai" ||
+    (row.source === "kroger" && !(Date.now() - Date.parse(row.updatedAt ?? "") < KROGER_PRICE_MAX_AGE_MS)));
 
 const RETRY_OFFLINE_MS = 5000;
 const NO_FLAGS: ItemState = { have_it: false, checked: false, outside_budget: false };
@@ -62,11 +90,14 @@ export function buildList(raw: ListInputs) {
     estimateFor: (c, q, s) => estimateFor(prices, c, q, s),
   });
   const priceSource: Record<string, PriceSource> = {};
+  const priceDetail: Record<string, PriceRow> = {};
   for (const i of items) {
-    const s = priceSourceFor(prices, i.canonical, i.qty, i.store);
-    if (s) priceSource[i.key] = s;
+    const row = prices.get(priceKey(i.canonical, i.store, i.qty.kind));
+    if (!row) continue;
+    priceSource[i.key] = row.source;
+    if (row.source === "kroger") priceDetail[i.key] = row;
   }
-  return { items, priceSource, checked: flagged("checked") };
+  return { items, priceSource, priceDetail, checked: flagged("checked") };
 }
 
 /**
@@ -179,7 +210,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     void load();
     const stop = subscribeHousehold(
       household.id,
-      ["week_meals", "week_item_state", "staples", "meals", "people"],
+      ["week_meals", "week_item_state", "staples", "meals", "people", "item_store", "always_have", "price_estimates", "households"],
       () => void load(),
       setLive,
     );
@@ -207,8 +238,14 @@ export function useWeekList(household: Household, weekId: string | null) {
   // Price whatever nobody has priced yet: one request per store.
   useEffect(() => {
     if (!raw || offline) return;
+    const saved = toPriceMap(raw.prices);
+    const shelf = !!household.kroger_location_id;
     const missing = items
-      .filter((i) => !i.haveIt && i.estimateCents === null && !requested.current.has(priceKey(i.canonical, i.store, i.qty.kind)))
+      .filter((i) => {
+        if (i.haveIt || requested.current.has(priceKey(i.canonical, i.store, i.qty.kind))) return false;
+        if (i.estimateCents === null) return true;
+        return shelf && i.store === "fred_meyer" && dueForShelfPrice(saved.get(priceKey(i.canonical, i.store, i.qty.kind)));
+      })
       .map((i) => ({ canonical: i.canonical, qty: i.qty, store: i.store }));
     if (missing.length === 0) return;
     for (const m of missing) requested.current.add(priceKey(m.canonical, m.store, m.qty.kind));
@@ -220,15 +257,10 @@ export function useWeekList(household: Household, weekId: string | null) {
       void requestEstimates(wanted, store).then((rows) => {
         if (rows.length === 0) return forget();
         for (const p of rows) fetched.current.set(priceKey(p.canonical, p.store, p.kind), p);
-        setRaw((r) => {
-          if (!r) return r;
-          const have = new Set(r.prices.map((p) => priceKey(p.canonical, p.store, p.kind)));
-          const fresh = rows.filter((p) => !have.has(priceKey(p.canonical, p.store, p.kind)));
-          return fresh.length === 0 ? r : { ...r, prices: [...r.prices, ...fresh] };
-        });
+        setRaw((r) => (r ? { ...r, prices: mergeFetched(r.prices, rows) } : r));
       }, forget);
     }
-  }, [raw, items, offline]);
+  }, [raw, items, offline, household.kroger_location_id]);
 
   /** Sets have-it, got-it or outside-budget for an item. Offline, it waits in the queue. */
   const update = useCallback(
@@ -301,6 +333,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     live,
     checked: built?.checked ?? new Set<string>(),
     priceSource: built?.priceSource ?? ({} as Record<string, PriceSource>),
+    priceDetail: built?.priceDetail ?? ({} as Record<string, PriceRow>),
     update,
     setPrice,
     moveItem,

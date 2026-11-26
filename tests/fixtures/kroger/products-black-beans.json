@@ -1,0 +1,7 @@
+{
+  "data": [
+    { "productId": "1", "description": "Kroger Pinto Beans", "brand": "Kroger", "images": [], "items": [ { "itemId": "1", "size": "15 oz", "soldBy": "UNIT", "price": { "regular": 0.69, "promo": 0 } } ] },
+    { "productId": "2", "description": "Simple Truth Organic Black Beans", "brand": "Simple Truth", "images": [], "items": [ { "itemId": "2", "size": "15 oz", "soldBy": "UNIT", "price": { "regular": 1.29, "promo": 0 } } ] },
+    { "productId": "3", "description": "Private Selection Black Bean Dip", "brand": "Private Selection", "images": [], "items": [ { "itemId": "3", "size": "15 oz", "soldBy": "UNIT", "price": { "regular": 1.49, "promo": 0 } } ] }
+  ]
+}

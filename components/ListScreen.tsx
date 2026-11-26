@@ -17,7 +17,7 @@ import { useWeekId, useWeekList } from "@/lib/useWeekList";
 export function ListScreen({ household }: { household: Household }) {
   const weekId = useWeekId(household);
   const list = useWeekList(household, weekId);
-  const { items, totals, state, checked, priceSource } = list;
+  const { items, totals, state, checked, priceSource, priceDetail } = list;
   const [store, setStore] = useState<Store>("fred_meyer");
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -45,6 +45,7 @@ export function ListScreen({ household }: { household: Household }) {
       item={i}
       checked={checked.has(i.key)}
       source={priceSource[i.key]}
+      detail={priceDetail[i.key]}
       onToggle={(c) => void run(() => list.update(i.key, { checked: c }))}
       onOpen={() => setOpenKey(i.key)}
     />
