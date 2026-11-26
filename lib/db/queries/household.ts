@@ -89,3 +89,12 @@ export async function createInviteLink(
   if (error) throw new Error(error.message);
   return `${origin}/invite/${data}`;
 }
+
+export async function countPeople(sb: Sb, householdId: string): Promise<number> {
+  const { count, error } = await sb
+    .from("people")
+    .select("id", { count: "exact", head: true })
+    .eq("household_id", householdId);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}

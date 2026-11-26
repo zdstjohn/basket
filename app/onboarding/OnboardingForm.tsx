@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import { DIETS } from "@/components/PersonRow";
 import { createBrowserClient } from "@/lib/db/client";
-import { updateHousehold, upsertPerson } from "@/lib/db/queries/household";
-import { parseMoneyToCents } from "@/lib/domain/money-input";
+import { formatDollars, formatExtra, parseMoneyToCents } from "@/lib/domain/money-input";
+import { saveOnboarding } from "@/lib/onboarding/save";
 import { householdServings } from "@/lib/domain/portions";
 import type { Diet } from "@/lib/domain/types";
 import { focusRing, primaryButton, textInput } from "@/lib/ui";
@@ -20,15 +20,22 @@ interface Row {
 const blankRow = (key: number): Row => ({ key, name: "", age: "", diet: "none" });
 const validAge = (age: string) => /^\d{1,3}$/.test(age) && Number(age) <= 120;
 
-export function OnboardingForm() {
+export interface ExistingHousehold {
+  id: string;
+  name: string;
+  budgetCents: number;
+  cushionCents: number;
+}
+
+export function OnboardingForm({ existing }: { existing: ExistingHousehold | null }) {
   const router = useRouter();
   const sb = useRef(createBrowserClient()).current;
   const nextKey = useRef(1);
-  const createdId = useRef<string | null>(null); // survives a retry after a partial save
-  const [householdName, setHouseholdName] = useState("");
+  const createdId = useRef<string | null>(existing?.id ?? null); // survives a retry after a partial save
+  const [householdName, setHouseholdName] = useState(existing?.name ?? "");
   const [rows, setRows] = useState<Row[]>([blankRow(0)]);
-  const [budget, setBudget] = useState("$200");
-  const [cushion, setCushion] = useState("+$25");
+  const [budget, setBudget] = useState(existing ? formatDollars(existing.budgetCents) : "$200");
+  const [cushion, setCushion] = useState(existing ? formatExtra(existing.cushionCents) : "+$25");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,26 +63,30 @@ export function OnboardingForm() {
       setError("Enter the budget as an amount, like $200 and +$25.");
       return;
     }
+    const name = householdName.trim();
+    if (!name || rows.some((r) => !r.name.trim())) {
+      setError("Give the household and everyone in it a name.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      if (!createdId.current) {
-        const { data, error } = await sb.rpc("create_household", {
-          p_name: householdName.trim(),
-        });
-        if (error) throw new Error(error.message);
-        createdId.current = data;
-      }
-      const id = createdId.current;
-      for (const [i, r] of rows.entries()) {
-        await upsertPerson(
-          sb,
-          id,
-          { name: r.name.trim(), age: Number(r.age), diet: r.diet, appetite: 1, dislikes: [] },
-          i,
-        );
-      }
-      await updateHousehold(sb, id, { budget_cents: budgetCents, cushion_cents: cushionCents });
+      createdId.current = await saveOnboarding(
+        sb,
+        {
+          name,
+          people: rows.map((r) => ({
+            name: r.name.trim(),
+            age: Number(r.age),
+            diet: r.diet,
+            appetite: 1,
+            dislikes: [],
+          })),
+          budgetCents,
+          cushionCents,
+        },
+        createdId.current,
+      );
       router.push("/week");
       router.refresh();
     } catch {
