@@ -1,0 +1,13 @@
+{"offset":0,"number":3,"totalResults":3,"results":[
+ {"id":1,"title":"Sheet Pan Chicken Tacos","image":"https://img.example.test/sp1.jpg","readyInMinutes":35,"servings":4,
+  "sourceUrl":"https://www.example-kitchen.test/sheet-pan-tacos","sourceName":"Example Kitchen",
+  "spoonacularSourceUrl":"https://spoonacular.com/sheet-pan-chicken-tacos-1",
+  "extendedIngredients":[
+   {"name":"chicken thighs","amount":1.5,"unit":"pounds","aisle":"Meat","original":"1.5 pounds chicken thighs"},
+   {"name":"bell pepper","amount":2,"unit":"","aisle":"Produce","original":"2 bell peppers"},
+   {"name":"chili powder","amount":2,"unit":"tablespoons","aisle":"Spices and Seasonings","original":"2 tablespoons chili powder"}]},
+ {"id":2,"title":"No Image Tacos","readyInMinutes":20,"servings":2,"sourceUrl":"https://x.test/a","extendedIngredients":[]},
+ {"id":3,"title":"Spoon-only Tacos","image":"https://img.example.test/sp3.jpg","readyInMinutes":10,"servings":2,
+  "spoonacularSourceUrl":"https://spoonacular.com/spoon-only-3",
+  "extendedIngredients":[{"name":"cheddar","amount":1,"unit":"cup","aisle":"Cheese","original":"1 cup cheddar"}]}
+]}
