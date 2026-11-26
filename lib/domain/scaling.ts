@@ -47,14 +47,22 @@ export function scaleMeal(meal: Meal, people: Person[], servingsOverride?: numbe
     });
   }
 
-  if (meal.vegSwap && !meal.everyoneVegetarian) {
-    const roles = proteinRoles.size > 0 ? [...proteinRoles] : (['meat'] as Role[]);
-    const share = Math.min(...roles.map((r) => eaterShare(people, r)));
-    if (share < 1) {
+  if (meal.vegSwap && !meal.everyoneVegetarian && proteinRoles.size > 0) {
+    // The swap goes only to people who eat none of the meat/fish roles in the meal.
+    const roles = [...proteinRoles];
+    let total = 0;
+    let none = 0;
+    for (const p of people) {
+      const f = portionFactor(p.age, p.appetite);
+      total += f;
+      if (roles.every((r) => !eatsRole(p.diet, r))) none += f;
+    }
+    const noneShare = total === 0 ? 0 : none / total;
+    if (noneShare > 0) {
       const swap = meal.vegSwap;
       lines.push({
         canonical: norm(swap.canonical),
-        qty: quantityOrCount(swap.amountPerServing * target * (1 - share), swap.unit),
+        qty: quantityOrCount(swap.amountPerServing * target * noneShare, swap.unit),
         role: swap.role,
         sources,
       });
