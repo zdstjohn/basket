@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { AlwaysHaveSection } from "@/components/household/AlwaysHaveSection";
+import { SignOutButton } from "@/components/household/SignOutButton";
 import { StaplesSection } from "@/components/household/StaplesSection";
 import { StoresSection } from "@/components/household/StoresSection";
 import { PersonRow } from "@/components/PersonRow";
@@ -263,6 +264,8 @@ export function HouseholdScreen({
           </li>
         </ul>
       </section>
+
+      <SignOutButton />
     </div>
   );
 }

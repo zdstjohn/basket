@@ -21,6 +21,10 @@ async function save(cache, path) {
 
 self.addEventListener("message", (event) => {
   const data = event.data;
+  if (data && data.type === "clear") {
+    event.waitUntil(caches.delete(CACHE));
+    return;
+  }
   if (!data || data.type !== "precache") return;
   event.waitUntil(
     (async () => {

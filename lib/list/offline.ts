@@ -10,13 +10,29 @@ export interface ItemPatch {
 }
 
 export interface QueuedPatch {
+  /** Changes whenever the entry is rewritten, so a send can tell "the one I sent" from "a newer one". */
+  id: string;
   weekId: string;
   itemKey: string;
   patch: ItemPatch;
 }
 
-const QUEUE_KEY = 'list-queue';
+/** Keys this module owns in localStorage; signing out removes them (see lib/signout.ts). */
+export const LIST_KEY_PATTERN = /^(list:|list-week$|list-queue)/;
+
+const queueKey = (householdId: string): string => `list-queue:${householdId}`;
 const cacheKey = (weekId: string): string => `list:${weekId}`;
+
+let counter = 0;
+export const newEntryId = (): string => `${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+/** True for "the network is down" failures; false for errors the server answered (4xx, row-level security). */
+export function isNetworkError(e: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  if (e instanceof TypeError) return true;
+  const msg = e instanceof Error ? e.message : String(e);
+  return /failed to fetch|load failed|network|fetch failed|offline|timed out/i.test(msg);
+}
 
 /** Adds a change to the queue. A newer change to the same item wins field by field. */
 export function mergePatch(queue: QueuedPatch[], entry: QueuedPatch): QueuedPatch[] {
@@ -27,32 +43,51 @@ export function mergePatch(queue: QueuedPatch[], entry: QueuedPatch): QueuedPatc
   return next;
 }
 
-export function loadQueue(): QueuedPatch[] {
-  const q = loadDraft<QueuedPatch[]>(QUEUE_KEY);
+export function loadQueue(householdId: string): QueuedPatch[] {
+  const q = loadDraft<QueuedPatch[]>(queueKey(householdId));
   return Array.isArray(q) ? q : [];
 }
 
-export function saveQueue(queue: QueuedPatch[]): void {
-  saveDraft(QUEUE_KEY, queue);
+export function saveQueue(householdId: string, queue: QueuedPatch[]): void {
+  saveDraft(queueKey(householdId), queue);
 }
 
-export function enqueuePatch(entry: QueuedPatch): void {
-  saveQueue(mergePatch(loadQueue(), entry));
+export function enqueuePatch(householdId: string, entry: Omit<QueuedPatch, 'id'>): void {
+  saveQueue(householdId, mergePatch(loadQueue(householdId), { ...entry, id: newEntryId() }));
 }
 
-/** Sends each queued change in order; whatever could not be sent (and everything after it) stays. */
-export async function flushQueue(
-  queue: QueuedPatch[],
+const inflight = new Map<string, Promise<number>>();
+
+/**
+ * Sends the queued changes in order, one flush at a time per household (a second call joins the first).
+ * After each send the queue is read again and only the entry that was sent is removed, so changes
+ * made while sending are kept. A change the server refuses (not a network failure) is dropped so it
+ * can't block the ones behind it. Stops at the first network failure. Resolves to how many are left.
+ */
+export function flushQueue(
+  householdId: string,
   apply: (entry: QueuedPatch) => Promise<void>,
-): Promise<QueuedPatch[]> {
-  for (let i = 0; i < queue.length; i++) {
-    try {
-      await apply(queue[i]);
-    } catch {
-      return queue.slice(i);
+  networkError: (e: unknown) => boolean = isNetworkError,
+): Promise<number> {
+  const running = inflight.get(householdId);
+  if (running) return running;
+  const run = (async () => {
+    for (;;) {
+      const [head] = loadQueue(householdId);
+      if (!head) return 0;
+      try {
+        await apply(head);
+      } catch (e) {
+        if (networkError(e)) return loadQueue(householdId).length;
+      }
+      saveQueue(
+        householdId,
+        loadQueue(householdId).filter((q) => q.id !== head.id),
+      );
     }
-  }
-  return [];
+  })().finally(() => inflight.delete(householdId));
+  inflight.set(householdId, run);
+  return run;
 }
 
 export function saveListCache(weekId: string, value: unknown): void {

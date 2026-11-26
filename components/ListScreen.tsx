@@ -45,7 +45,7 @@ export function ListScreen({ household }: { household: Household }) {
       item={i}
       checked={checked.has(i.key)}
       source={priceSource[i.key]}
-      onToggle={(c) => void list.update(i.key, { checked: c })}
+      onToggle={(c) => void run(() => list.update(i.key, { checked: c }))}
       onOpen={() => setOpenKey(i.key)}
     />
   );
@@ -142,7 +142,7 @@ export function ListScreen({ household }: { household: Household }) {
           onClose={() => setOpenKey(null)}
           onHave={(have) => {
             setOpenKey(null);
-            void list.update(open.key, { have_it: have });
+            void run(() => list.update(open.key, { have_it: have }));
           }}
           onMove={(s) => {
             setOpenKey(null);
@@ -154,7 +154,7 @@ export function ListScreen({ household }: { household: Household }) {
           }}
           onBudget={(outside) => {
             setOpenKey(null);
-            void list.update(open.key, { outside_budget: outside });
+            void run(() => list.update(open.key, { outside_budget: outside }));
           }}
         />
       )}

@@ -296,3 +296,40 @@ test("household: where things come from, staples on and off, always-have", async
   await openListFromHousehold(page);
   await expect(page.getByText("Nothing on your list yet.")).toBeVisible();
 });
+
+test("sign out: the saved list is wiped, and offline the next person sees none of it", async ({ page, context }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await expect(row(page, "Yellow onion")).toBeVisible();
+  await expect(page.locator('[data-offline-ready="on"]')).toBeAttached({ timeout: 15_000 });
+  const before = await page.evaluate(async () => ({
+    keys: Object.keys(localStorage).filter((k) => /^list/.test(k)),
+    caches: await caches.keys(),
+  }));
+  expect(before.keys.length).toBeGreaterThan(0);
+  expect(before.caches).toContain("basket-offline-v1");
+
+  await page.goto("/household");
+  const out = page.getByRole("button", { name: "Sign out" });
+  const box = await out.boundingBox();
+  expect(box && box.height >= 44).toBe(true);
+  await out.click();
+  await expect(page).toHaveURL(/\/login/);
+
+  const after = await page.evaluate(async () => ({
+    keys: Object.keys(localStorage).filter((k) => /^(list|add-meal:)/.test(k)),
+    // Scripts may be saved again by the login page; the list page itself must be gone.
+    page: await caches.open("basket-offline-v1").then((c) => c.match("/list")).then((r) => !!r),
+  }));
+  expect(after.keys).toEqual([]);
+  expect(after.page).toBe(false);
+
+  // Offline, /list has nothing saved to show: the page can't open at all.
+  await context.setOffline(true);
+  await expect(page.goto("/list")).rejects.toThrow();
+  await context.setOffline(false);
+  // Online it sends a signed-out visitor to the login page.
+  await page.goto("/list");
+  await expect(page).toHaveURL(/\/login/);
+});

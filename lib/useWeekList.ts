@@ -18,7 +18,7 @@ import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import {
-  enqueuePatch, flushQueue, loadListCache, loadQueue, saveListCache, saveQueue, type ItemPatch,
+  enqueuePatch, flushQueue, isNetworkError, loadListCache, saveListCache, type ItemPatch,
 } from "@/lib/list/offline";
 import {
   estimateFor, priceKey, priceSourceFor, storeFor, toPriceMap, userCentsPerBase, type PriceRow, type PriceSource,
@@ -35,6 +35,12 @@ export interface ListInputs {
   itemStores: [string, Store][];
   categoryStore: Record<string, unknown>;
   prices: PriceRow[];
+}
+
+/** The saved prices, plus any fetched this visit that the saved ones don't have yet. */
+function withFetched(saved: PriceRow[], fetched: Map<string, PriceRow>): PriceRow[] {
+  const have = new Set(saved.map((p) => priceKey(p.canonical, p.store, p.kind)));
+  return [...saved, ...[...fetched].filter(([k]) => !have.has(k)).map(([, p]) => p)];
 }
 
 const RETRY_OFFLINE_MS = 5000;
@@ -78,6 +84,8 @@ export function useWeekList(household: Household, weekId: string | null) {
   const latest = useRef(0);
   const rawRef = useRef<ListInputs | null>(null);
   const requested = useRef(new Set<string>());
+  // Prices fetched this visit. A load that began before the server saved them must not wipe them out.
+  const fetched = useRef(new Map<string, PriceRow>());
   const invalidate = useCallback(() => {
     latest.current++;
   }, []);
@@ -87,11 +95,23 @@ export function useWeekList(household: Household, weekId: string | null) {
     if (raw && weekId) saveListCache(weekId, raw);
   }, [raw, weekId]);
 
+  // Set when the server refuses a queued change (not a network failure): the change was dropped.
+  const refused = useRef(false);
   const flushPending = useCallback(async () => {
-    const queue = loadQueue();
-    if (queue.length === 0) return;
-    const left = await flushQueue(queue, (e) => setItemState(sb, e.weekId, e.itemKey, e.patch, household.id));
-    saveQueue(left);
+    const send = async (e: { weekId: string; itemKey: string; patch: ItemPatch }) => {
+      try {
+        await setItemState(sb, e.weekId, e.itemKey, e.patch, household.id);
+      } catch (err) {
+        if (!isNetworkError(err)) refused.current = true;
+        throw err;
+      }
+    };
+    // One flush runs at a time; a call that joined it may have missed a change added just now, so look once more.
+    let left = await flushQueue(household.id, send);
+    if (left > 0 && !(typeof navigator !== "undefined" && navigator.onLine === false)) {
+      left = await flushQueue(household.id, send);
+    }
+    return left;
   }, [sb, household.id]);
 
   const fromCache = useCallback(() => {
@@ -138,7 +158,7 @@ export function useWeekList(household: Household, weekId: string | null) {
         itemState,
         itemStores: [...itemStores],
         categoryStore: (household.category_store ?? {}) as Record<string, unknown>,
-        prices,
+        prices: withFetched(prices, fetched.current),
       });
       setOffline(false);
       setError(false);
@@ -194,7 +214,12 @@ export function useWeekList(household: Household, weekId: string | null) {
     for (const m of missing) requested.current.add(priceKey(m.canonical, m.store, m.qty.kind));
     for (const [store, wanted] of groupMissing(missing)) {
       void requestEstimates(wanted, store).then((rows) => {
-        if (rows.length === 0) return;
+        if (rows.length === 0) {
+          // No answer (offline, over the cap): let it be asked again next time the list changes.
+          for (const w of wanted) requested.current.delete(priceKey(w.canonical, store, w.qty.kind));
+          return;
+        }
+        for (const p of rows) fetched.current.set(priceKey(p.canonical, p.store, p.kind), p);
         setRaw((r) => {
           if (!r) return r;
           const have = new Set(r.prices.map((p) => priceKey(p.canonical, p.store, p.kind)));
@@ -221,21 +246,23 @@ export function useWeekList(household: Household, weekId: string | null) {
           : r,
       );
       latest.current++; // a load already under way would bring back the old value
-      const entry = { weekId, itemKey, patch };
+      // Every change goes through the queue, so an older queued write can never land after a newer one.
+      enqueuePatch(household.id, { weekId, itemKey, patch });
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        enqueuePatch(entry);
         setOffline(true);
         return;
       }
-      try {
-        await setItemState(sb, weekId, itemKey, patch, household.id);
-        void load();
-      } catch {
-        enqueuePatch(entry);
+      refused.current = false;
+      const left = await flushPending();
+      if (left > 0) {
         setOffline(true);
+        return;
       }
+      void load();
+      // The server said no (not a network problem): the screen is put back and the caller says so.
+      if (refused.current) throw new Error("refused");
     },
-    [sb, weekId, household.id, load],
+    [weekId, household.id, flushPending, load],
   );
 
   /** A price you typed: the total for the quantity on the list. Throws when it can't be saved. */
