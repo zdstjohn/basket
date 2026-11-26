@@ -80,10 +80,11 @@ On a meal containing meat/fish, vegetarian people get a **swapped portion**: the
 ## 5. Meals, favorites, weeks
 
 - **Week**: 7 days, dinner slot by default; breakfast/lunch slots can be turned on in settings. Week start day and shopping day are settings (default Sunday).
-- **Add a meal** three ways:
-  1. Type a name ("chicken tacos") → AI drafts a recipe with base servings and ingredient lines; user can edit.
-  2. Paste a URL → server fetches the page, reads schema.org `Recipe` JSON-LD; AI fallback on page text. Or paste recipe text → AI parses.
+- **Add a meal** three ways (amended 2026-11-26 by the user):
+  1. **Search**: type a dish ("chicken enchiladas") → the app searches a fixed list of big recipe sites (Allrecipes, Food Network, Serious Eats, Simply Recipes, Budget Bytes, Half Baked Harvest and others) through the Brave Search API (pending user confirmation) and shows up to 8 options, each with the site's photo, title, site name, rating and time. Tapping one imports its ingredients (AI turns them into lines and adds the vegetarian swap). Cooking steps stay on the source site, linked from the meal.
+  2. Paste recipe text or a recipe link → server reads schema.org `Recipe` JSON-LD; AI parses text.
   3. Pick a favorite.
+- **Every recipe has a photo**: the source site's photo (credited and linked), or for pasted/own recipes the photo from the top search result for that dish, or the household's own photo (camera or gallery, stored privately per household). A photo that fails to load shows an "Add a photo" tile.
 - **Ingredient line**: canonical item ("boneless chicken thighs"), quantity, unit, role (protein / produce / dairy / pantry / other), optional note.
 - **Favorites**: save any meal with recipe, ingredients, vegetarian swap and the household's chosen products. Browse, search, edit, one-tap add to a day.
 - **Staples**: a recurring weekly list (milk, bread, fruit, cereal, snacks) with quantities, added to every week unless removed.
