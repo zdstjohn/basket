@@ -1,0 +1,13 @@
+components/DayRow.tsx
+components/FavoritesBrowser.tsx
+components/FavoritesScreen.tsx
+components/MealSheet.tsx
+components/MealThumb.tsx
+components/WeekScreen.tsx
+components/add-meal/AddMealScreen.tsx
+components/add-meal/DraftPreview.tsx
+components/add-meal/FindMyDish.tsx
+components/add-meal/IngredientEditor.tsx
+components/add-meal/PasteTab.tsx
+components/add-meal/SearchTab.tsx
+components/add-meal/SortControl.tsx

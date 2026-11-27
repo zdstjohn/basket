@@ -1,18 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, DM_Sans } from "next/font/google";
+import { Figtree, Gloock } from "next/font/google";
 import "./globals.css";
 
-const head = Bricolage_Grotesque({
-  variable: "--font-head",
+const display = Gloock({
+  weight: "400",
   subsets: ["latin"],
-  weight: ["600", "700"],
+  variable: "--font-gloock",
   display: "swap",
 });
 
-const body = DM_Sans({
-  variable: "--font-body",
+const sans = Figtree({
+  weight: ["400", "600", "700"],
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  variable: "--font-figtree",
   display: "swap",
 });
 
@@ -32,7 +32,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${head.variable} ${body.variable}`}>
+    <html lang="en" className={`${display.variable} ${sans.variable}`}>
       <body className="min-h-dvh flex flex-col">{children}</body>
     </html>
   );

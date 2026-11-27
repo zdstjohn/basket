@@ -1,43 +1,265 @@
 @import "tailwindcss";
 
+/* Basket design values, round 2. One system: Butter (light) and Cast Iron (dark).
+   From docs/design/tokens.css. <html data-look="light | dark | auto">; with no attribute the light values apply. */
+
 :root {
-  --ground: #f7f8f5;
-  --ink: #17201b;
-  --muted: #5b6560;
-  --line: #e3e7e2;
-  --green: #1f7a4d;
-  --green-tint: #e6f2eb;
-  --sale: #c2410c;
-  --sale-tint: #fff1ea;
+  /* ---- Color: Butter (light) ---- */
+  --bk-ground: #F5E6A6;
+  --bk-surface: #FFFBEC;
+  --bk-raised: #FFFDF6;
+  --bk-sunk: #EBD88F;
+  --bk-ink: #2B1422;
+  --bk-ink-soft: #62414F;
+  --bk-line: #DCC98A;
+  --bk-line-strong: #8C6E6A;
+  --bk-accent: #4C1D3A;
+  --bk-on-accent: #F5E6A6;
+  --bk-accent-press: #3A152C;
+  --bk-sale: #9A3412;
+  --bk-sale-tint: #FBE3C8;
+  --bk-error: #A8123A;
+  --bk-error-tint: #FBDDDD;
+  --bk-price: #275E36;
+  --bk-estimate: #62414F;
+  --bk-on-photo: #FFFBEC;
+  --bk-on-photo-accent: #F5E6A6;
+  --bk-packshot: #FFFBEC;
+  --bk-scrim: 25 12 20; /* rgb triplet; use as rgb(var(--bk-scrim) / a) */
+  --bk-shadow-1: 0 1px 1px rgb(84 58 12 / 0.10), 0 2px 6px rgb(84 58 12 / 0.10);
+  --bk-shadow-2: 0 1px 2px rgb(84 58 12 / 0.10), 0 6px 14px rgb(84 58 12 / 0.12), 0 14px 32px rgb(84 58 12 / 0.10);
+  --bk-shadow-3: 0 2px 4px rgb(84 58 12 / 0.12), 0 12px 24px rgb(84 58 12 / 0.16), 0 28px 56px rgb(84 58 12 / 0.14);
+  --bk-photo-filter: saturate(1.06) contrast(1.03) sepia(0.06);
+  color-scheme: light;
+
+  /* ---- Type ---- */
+  --bk-font-display: var(--font-gloock), "Iowan Old Style", Georgia, serif;
+  --bk-font-sans: var(--font-figtree), system-ui, sans-serif;
+  /* numerals: proportional in prose, tabular in price columns; real fractions where a quantity is shown */
+  --bk-num-prose: "pnum" 1, "kern" 1;
+  --bk-num-price: "tnum" 1, "kern" 1;
+  --bk-num-qty: "frac" 1, "pnum" 1, "kern" 1;
+
+  /* ---- Spacing: one scale, 4 px base (Tailwind --spacing). Allowed steps: 2, 4, 8, 12, 16, 24, 32, 48, 64 px ---- */
+  --bk-gutter: 1rem;          /* screen side margin */
+  --bk-gap: 0.5rem;           /* between tiles on the pinboard */
+  --bk-tap: 2.75rem;          /* 44 px minimum touch target */
+  --bk-tap-main: 3.25rem;     /* 52 px main action */
+  --bk-safe-top: max(env(safe-area-inset-top), 0.75rem);
+  --bk-safe-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  --bk-safe-left: max(env(safe-area-inset-left), var(--bk-gutter));
+  --bk-safe-right: max(env(safe-area-inset-right), var(--bk-gutter));
+  --bk-nav-h: calc(3rem + var(--bk-safe-bottom));
+
+  /* ---- Photos ---- */
+  --bk-crop-hero: 2 / 1;      /* tonight's dinner, full bleed */
+  --bk-crop-tile: 8 / 5;      /* every pinboard, search and favorites photo */
+  --bk-crop-thumb: 1 / 1;     /* list rows, pickers, packshots */
+  --bk-photo-blur: 20px;      /* blur on the tiny color preview while the photo loads */
+  --bk-photo-min-hero: 600;   /* source px wide needed for hero; below this use tile */
+  --bk-photo-min-tile: 300;   /* below this, show the designed fallback instead */
+  --bk-packshot-pad: 12%;     /* inset of a Kroger packshot inside its tile */
+  --bk-packshot-blend: multiply; /* white packshot backgrounds take the tile color */
+
+  /* ---- Motion ---- */
+  --bk-dur-fast: 120ms;       /* press, color, small fades */
+  --bk-dur-base: 240ms;       /* most enters, exits, crossfades */
+  --bk-dur-slow: 400ms;       /* sheets, photo-to-page growth */
+  --bk-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);   /* non-spring fades and exits */
+  /* spring "snap": stiffness 600, damping 48, mass 1 (no overshoot) */
+  --bk-spring-snap: linear(0, 0.114, 0.322, 0.517, 0.672, 0.784, 0.862, 0.914, 0.947, 0.968, 0.981, 0.989, 0.993, 0.996, 0.998, 0.999, 1);
+  --bk-dur-snap: 370ms;
+  /* spring "settle": stiffness 230, damping 22, mass 1 (one soft overshoot of 3.6%). Signature moments only. */
+  --bk-spring-settle: linear(0, 0.046, 0.156, 0.295, 0.441, 0.579, 0.7, 0.803, 0.881, 0.94, 0.982, 1.01, 1.026, 1.034, 1.036, 1.034, 1.03, 1.025, 1.02, 1.015, 1.011, 1.007, 1.004, 1.002, 1.001, 1, 1);
+  --bk-dur-settle: 560ms;
+  --bk-stagger: 40ms;         /* week-open reveal; cap at 8 steps */
+  --bk-press-scale: 0.97;     /* tiles and buttons; 0.94 for icon buttons */
+  --bk-move: 1;               /* multiplier for travel distances; 0 under reduced motion */
+}
+
+/* ---- Color: Cast Iron (dark) ---- */
+[data-look="dark"] {
+  --bk-ground: #191614;
+  --bk-surface: #231F1B;
+  --bk-raised: #2E2923;
+  --bk-sunk: #110F0E;
+  --bk-ink: #F3EDE0;
+  --bk-ink-soft: #B9AE9C;
+  --bk-line: #3A332E;
+  --bk-line-strong: #80766B;
+  --bk-accent: #E9B030;
+  --bk-on-accent: #191614;
+  --bk-accent-press: #CF9A22;
+  --bk-sale: #FF9070;
+  --bk-sale-tint: #3B211A;
+  --bk-error: #FF9DAE;
+  --bk-error-tint: #3A1C22;
+  --bk-price: #A6C97C;
+  --bk-estimate: #B9AE9C;
+  --bk-on-photo: #F3EDE0;
+  --bk-on-photo-accent: #E9B030;
+  --bk-packshot: #EDE5D3;
+  --bk-scrim: 17 15 14; /* rgb triplet; use as rgb(var(--bk-scrim) / a) */
+  --bk-shadow-1: inset 0 1px 0 rgb(243 237 224 / 0.06), 0 1px 2px rgb(0 0 0 / 0.40), 0 2px 6px rgb(0 0 0 / 0.30);
+  --bk-shadow-2: inset 0 1px 0 rgb(243 237 224 / 0.06), 0 2px 4px rgb(0 0 0 / 0.40), 0 10px 24px rgb(0 0 0 / 0.45);
+  --bk-shadow-3: inset 0 1px 0 rgb(243 237 224 / 0.06), 0 4px 8px rgb(0 0 0 / 0.45), 0 20px 44px rgb(0 0 0 / 0.55);
+  --bk-photo-filter: saturate(1.02) contrast(1.02) brightness(0.9) sepia(0.06);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  [data-look="auto"] {
+    --bk-ground: #191614;
+    --bk-surface: #231F1B;
+    --bk-raised: #2E2923;
+    --bk-sunk: #110F0E;
+    --bk-ink: #F3EDE0;
+    --bk-ink-soft: #B9AE9C;
+    --bk-line: #3A332E;
+    --bk-line-strong: #80766B;
+    --bk-accent: #E9B030;
+    --bk-on-accent: #191614;
+    --bk-accent-press: #CF9A22;
+    --bk-sale: #FF9070;
+    --bk-sale-tint: #3B211A;
+    --bk-error: #FF9DAE;
+    --bk-error-tint: #3A1C22;
+    --bk-price: #A6C97C;
+    --bk-estimate: #B9AE9C;
+    --bk-on-photo: #F3EDE0;
+    --bk-on-photo-accent: #E9B030;
+    --bk-packshot: #EDE5D3;
+    --bk-scrim: 17 15 14; /* rgb triplet; use as rgb(var(--bk-scrim) / a) */
+    --bk-shadow-1: inset 0 1px 0 rgb(243 237 224 / 0.06), 0 1px 2px rgb(0 0 0 / 0.40), 0 2px 6px rgb(0 0 0 / 0.30);
+    --bk-shadow-2: inset 0 1px 0 rgb(243 237 224 / 0.06), 0 2px 4px rgb(0 0 0 / 0.40), 0 10px 24px rgb(0 0 0 / 0.45);
+    --bk-shadow-3: inset 0 1px 0 rgb(243 237 224 / 0.06), 0 4px 8px rgb(0 0 0 / 0.45), 0 20px 44px rgb(0 0 0 / 0.55);
+    --bk-photo-filter: saturate(1.02) contrast(1.02) brightness(0.9) sepia(0.06);
+    color-scheme: dark;
+  }
+}
+
+/* ---- Browsers without linear(): plain curves ---- */
+@supports not (transition-timing-function: linear(0, 1)) {
+  :root {
+    --bk-spring-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --bk-spring-settle: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+
+/* ---- Reduced motion: springs and travel become short fades ---- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --bk-dur-base: 120ms;
+    --bk-dur-slow: 120ms;
+    --bk-dur-snap: 120ms;
+    --bk-dur-settle: 120ms;
+    --bk-spring-snap: linear;
+    --bk-spring-settle: linear;
+    --bk-stagger: 0ms;
+    --bk-press-scale: 1;
+    --bk-move: 0;
+  }
 }
 
 @theme inline {
-  --color-ground: var(--ground);
-  --color-ink: var(--ink);
-  --color-muted: var(--muted);
-  --color-line: var(--line);
-  --color-green: var(--green);
-  --color-green-tint: var(--green-tint);
-  --color-sale: var(--sale);
-  --color-sale-tint: var(--sale-tint);
-  --font-heading: var(--font-head);
-  --font-sans: var(--font-body);
+  --color-ground: var(--bk-ground);
+  --color-surface: var(--bk-surface);
+  --color-raised: var(--bk-raised);
+  --color-sunk: var(--bk-sunk);
+  --color-ink: var(--bk-ink);
+  --color-ink-soft: var(--bk-ink-soft);
+  --color-line: var(--bk-line);
+  --color-line-strong: var(--bk-line-strong);
+  --color-accent: var(--bk-accent);
+  --color-on-accent: var(--bk-on-accent);
+  --color-accent-press: var(--bk-accent-press);
+  --color-sale: var(--bk-sale);
+  --color-sale-tint: var(--bk-sale-tint);
+  --color-error: var(--bk-error);
+  --color-error-tint: var(--bk-error-tint);
+  --color-price: var(--bk-price);
+  --color-estimate: var(--bk-estimate);
+  --color-on-photo: var(--bk-on-photo);
+  --color-on-photo-accent: var(--bk-on-photo-accent);
+  --color-packshot: var(--bk-packshot);
+
+  --font-display: var(--bk-font-display);
+  --font-sans: var(--bk-font-sans);
+
+  --text-display: 2.125rem;
+  --text-display--line-height: 2.375rem;
+  --text-display--letter-spacing: -0.012em;
+  --text-display--font-weight: 400;
+  --text-title: 1.5rem;
+  --text-title--line-height: 1.75rem;
+  --text-title--letter-spacing: -0.006em;
+  --text-title--font-weight: 400;
+  --text-heading: 1.125rem;
+  --text-heading--line-height: 1.5rem;
+  --text-heading--letter-spacing: -0.004em;
+  --text-heading--font-weight: 700;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+  --text-body--letter-spacing: 0em;
+  --text-body--font-weight: 400;
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.25rem;
+  --text-small--letter-spacing: 0.004em;
+  --text-small--font-weight: 400;
+  --text-label: 0.75rem;
+  --text-label--line-height: 1rem;
+  --text-label--letter-spacing: 0.02em;
+  --text-label--font-weight: 600;
+
+  --spacing: 0.25rem;
+  --radius-xs: 2px; /* under 28 px: checkboxes, day stamps */
+  --radius-sm: 4px; /* 28–56 px: thumbs, inputs, packshot tiles */
+  --radius-md: 6px; /* 56–200 px: buttons, pinboard tiles */
+  --radius-lg: 10px; /* over 200 px: hero photo inside a gutter, sheets (top corners) */
+  --radius-full: 9999px; /* avatars and the switch thumb only */
+
+  --shadow-1: var(--bk-shadow-1); /* a pressed-and-held tile, the toast */
+  --shadow-2: var(--bk-shadow-2); /* sheets, menus */
+  --shadow-3: var(--bk-shadow-3); /* a tile being dragged */
+
+  --aspect-hero: var(--bk-crop-hero);
+  --aspect-tile: var(--bk-crop-tile);
+  --aspect-thumb: var(--bk-crop-thumb);
+
+  --ease-out: var(--bk-ease-out);
+  --ease-snap: var(--bk-spring-snap);
+  --ease-settle: var(--bk-spring-settle);
+
+  /* LEGACY ALIASES: deleted in Task C2 */
+  --color-green: var(--bk-accent);
+  --color-green-tint: var(--bk-sunk);
+  --color-muted: var(--bk-ink-soft);
 }
 
-html {
-  background: var(--ground);
-}
-
+/* ---- Base rules every screen inherits ---- */
+html { background: var(--bk-ground); }
 body {
-  background: var(--ground);
-  color: var(--ink);
-  font-family: var(--font-body), system-ui, sans-serif;
+  background: var(--bk-ground);
+  color: var(--bk-ink);
+  font-family: var(--bk-font-sans);
+  font-feature-settings: var(--bk-num-prose);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  quotes: "\201C" "\201D" "\2018" "\2019";
+  /* Task S5 moves the safe areas into the shell; until then the body keeps them. */
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-
-h1,
-h2,
-h3 {
-  font-family: var(--font-head), system-ui, sans-serif;
-}
+.bk-price { font-feature-settings: var(--bk-num-price); font-variant-numeric: tabular-nums; }
+/* Put .bk-qty on the number alone (<span class="bk-qty">1/8</span> cup). On a whole line, frac also shrinks ordinary digits. */
+.bk-qty { font-feature-settings: var(--bk-num-qty); font-variant-numeric: diagonal-fractions; }
+.bk-photo { filter: var(--bk-photo-filter); background: var(--bk-sunk); object-fit: cover; }
+.bk-packshot { background: var(--bk-packshot); border-radius: var(--radius-sm); }
+.bk-packshot > img { mix-blend-mode: var(--bk-packshot-blend); padding: var(--bk-packshot-pad); object-fit: contain; }
+.bk-press { transition: transform var(--bk-dur-snap) var(--bk-spring-snap); }
+.bk-press:active:not(:disabled) { transform: scale(var(--bk-press-scale)); transition: transform var(--bk-dur-fast) var(--bk-ease-out); }
+.bk-press-icon:active:not(:disabled) { transform: scale(calc(1 - (1 - var(--bk-press-scale)) * 2)); }
+.bk-caps { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+.bk-gutter { padding-left: var(--bk-safe-left); padding-right: var(--bk-safe-right); }
+.bk-fallback-letter { font-family: var(--bk-font-display); font-size: 54px; line-height: 1; color: var(--bk-ink-soft); }
+:focus-visible { outline: 2px solid var(--bk-accent); outline-offset: 2px; }
+:disabled, [aria-disabled="true"] { opacity: 0.45; }

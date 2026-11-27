@@ -25,7 +25,7 @@ describe("money input", () => {
     expect(parseMoneyToCents(" 12.50 ")).toBe(1250);
   });
   it("rejects things that aren't an amount", () => {
-    for (const bad of ["", "abc", "-5", "$1.234", "1,000"]) {
+    for (const bad of ["", "abc", "-5", "$1.234", "1,00", "12,34"]) {
       expect(parseMoneyToCents(bad)).toBeNull();
     }
   });
