@@ -1,116 +1,88 @@
-import { expect, test, type Page } from "@playwright/test";
-import { createHousehold } from "./helpers/household";
+import { expect, test } from "@playwright/test";
+import { contrastRatio } from "../lib/design/contrast";
+import { signInAs, uniqueEmail } from "./helpers/auth";
+import { audit, measureShell, textPairs } from "./helpers/audit";
+import { addFromSearch } from "./helpers/flows-a";
 import { routeFoodImages } from "./helpers/fixtures";
+import { createHousehold } from "./helpers/household";
+import { setInsets, setLook } from "./helpers/look";
+import { SCREENS, type Screen } from "./screens";
 
-const SCREENS = [
-  { name: "week", path: "/week" },
-  { name: "add-meal", path: "/week/add?day=thu&slot=dinner" },
-  { name: "favorites", path: "/favorites" },
-  { name: "list", path: "/list" },
-  { name: "household", path: "/household" },
-];
+const MIN_CONTRAST = 4.5;
 
-interface Problem {
-  what: string;
-  detail: string;
-}
-
-/** Everything the layout rules care about, measured in the page. */
-async function audit(page: Page): Promise<Problem[]> {
-  return page.evaluate(() => {
-    const problems: { what: string; detail: string }[] = [];
-    const describe = (el: Element) =>
-      `${el.tagName.toLowerCase()}${el.getAttribute("aria-label") ? `[${el.getAttribute("aria-label")}]` : ""} "${(el.textContent ?? "").trim().slice(0, 30)}"`;
-
-    const doc = document.documentElement;
-    if (doc.scrollWidth > window.innerWidth) {
-      problems.push({ what: "horizontal scroll", detail: `${doc.scrollWidth} > ${window.innerWidth}` });
-    }
-
-    // A control may be a big label around a small native input (checkbox row), so measure its tap area:
-    // the input itself or the label that wraps it, whichever is larger.
-    const controls = [...document.querySelectorAll<HTMLElement>("button, a, input")];
-    if (controls.length === 0) problems.push({ what: "no controls found", detail: "the screen did not render" });
-    for (const el of controls) {
-      const style = getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden") continue;
-      let box = el.getBoundingClientRect();
-      const label = el instanceof HTMLInputElement ? el.closest("label") : null;
-      if (label) {
-        const lb = label.getBoundingClientRect();
-        if (lb.width * lb.height > box.width * box.height) box = lb;
-      }
-      // Skip controls that take no room at all (visually hidden inputs that a visible label stands in for).
-      if (box.width === 0 && box.height === 0) continue;
-      if (box.width < 44 || box.height < 44) {
-        problems.push({ what: "target under 44px", detail: `${describe(el)} ${Math.round(box.width)}x${Math.round(box.height)}` });
-      }
-      if (box.right > window.innerWidth + 0.5 || box.left < -0.5) {
-        problems.push({ what: "target off screen sideways", detail: describe(el) });
-      }
-    }
-
-    // Nothing sits under the bottom nav or the bottom edge: after scrolling to the end,
-    // the last thing in the page ends above the nav (or the viewport bottom when there is no nav).
-    window.scrollTo(0, document.documentElement.scrollHeight);
-    const nav = document.querySelector("nav[aria-label='Main']");
-    const limit = nav ? nav.getBoundingClientRect().top : window.innerHeight;
-    const main = document.querySelector("main") ?? document.body;
-    const visible = [...main.querySelectorAll<HTMLElement>("*")].filter((e) => {
-      const r = e.getBoundingClientRect();
-      const s = getComputedStyle(e);
-      return r.height > 0 && r.width > 0 && s.position !== "fixed" && s.position !== "sticky" && s.visibility !== "hidden";
-    });
-    let lowest = 0;
-    let lowestEl: Element | null = null;
-    for (const e of visible) {
-      const b = e.getBoundingClientRect().bottom;
-      if (b > lowest) {
-        lowest = b;
-        lowestEl = e;
-      }
-    }
-    if (lowestEl && lowest > limit + 0.5) {
-      problems.push({ what: "content under the nav or bottom edge", detail: `${describe(lowestEl)} ends ${Math.round(lowest)} > ${Math.round(limit)}` });
-    }
-    // Fixed or sticky controls must stay inside the viewport (the safe-area padding keeps them clear of the home bar).
-    for (const el of controls) {
-      const s = getComputedStyle(el);
-      if (s.position !== "fixed" && s.position !== "sticky") continue;
-      const r = el.getBoundingClientRect();
-      if (r.bottom > window.innerHeight + 0.5) problems.push({ what: "pinned control below the screen", detail: describe(el) });
-    }
-    window.scrollTo(0, 0);
-    return problems;
-  });
-}
+const VARIANTS = [
+  { name: "light", look: "light", insets: null },
+  { name: "dark", look: "dark", insets: null },
+  { name: "light, iPhone 17 insets", look: "light", insets: [62, 34] },
+  { name: "light, Pixel 7 gesture insets", look: "light", insets: [28, 24] },
+] as const;
 
 test.beforeEach(async ({ page }) => {
   await routeFoodImages(page);
 });
 
-test("layout: every screen fits, taps are 44px and nothing hides under the nav", async ({ page }, testInfo) => {
-  const shots = `e2e/screenshots/${testInfo.project.name}`;
-  await createHousehold(page, "layout");
+for (const variant of VARIANTS) {
+  test(`layout (${variant.name}): every screen fits, taps are 44px, nothing hides under the nav, text has contrast`, async ({
+    page,
+    context,
+  }, testInfo) => {
+    const shots = `e2e/screenshots/${testInfo.project.name}`;
+    const tag = variant.name.replace(/[^a-z0-9]+/gi, "-");
+    await setLook(page, variant.look);
+    if (variant.insets) await setInsets(page, variant.insets[0], variant.insets[1]);
+    await createHousehold(page, "layout");
 
-  // Put a planned meal on the week so the list and week screens have real content.
-  await page.goto("/week/add?day=thu&slot=dinner");
-  await page.getByLabel("What's for dinner?").fill("tacos");
-  await page.getByRole("button", { name: "Search" }).click();
-  await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
-  await page.getByRole("button", { name: "Add to Thursday" }).click();
-  await expect(page).toHaveURL(/\/week$/);
+    // Put a planned meal on the week so the list and week screens have real content.
+    await addFromSearch(page, { day: "thu", query: "tacos", pick: "Chicken tacos · Allrecipes" });
 
-  const found: string[] = [];
-  for (const screen of SCREENS) {
-    await page.goto(screen.path);
-    await page.waitForLoadState("networkidle");
-    if (screen.name === "list") {
-      await expect(page.getByTestId("list-row").first()).toBeVisible();
-    }
-    const problems = await audit(page);
-    await page.screenshot({ path: `${shots}/layout-${screen.name}.png`, fullPage: true });
-    for (const p of problems) found.push(`${screen.path}: ${p.what}: ${p.detail}`);
-  }
-  expect(found, found.join("\n")).toEqual([]);
-});
+    const found: string[] = [];
+    const visit = async (screen: Screen) => {
+      await page.goto(screen.path);
+      await page.waitForLoadState("networkidle");
+      await screen.setup?.(page);
+      const where = `${screen.path}`;
+
+      for (const p of await audit(page)) found.push(`${where}: ${p.what}: ${p.detail}`);
+
+      // The shell: the first heading clears the top inset, the tab bar clears the bottom inset and ends at the screen's edge.
+      const shell = await measureShell(page);
+      if (variant.insets) {
+        if (shell.insetTop !== variant.insets[0] || shell.insetBottom !== variant.insets[1]) {
+          found.push(`${where}: insets are ${shell.insetTop}/${shell.insetBottom}, expected ${variant.insets.join("/")}`);
+        }
+      }
+      if (shell.h1Top === null) found.push(`${where}: no h1`);
+      else if (shell.h1Top < shell.insetTop - 0.5) found.push(`${where}: h1 starts at ${shell.h1Top}, above the top inset ${shell.insetTop}`);
+      if (shell.nav) {
+        if (shell.nav.paddingBottom < shell.insetBottom - 0.5) {
+          found.push(`${where}: nav bottom padding ${shell.nav.paddingBottom} is under the bottom inset ${shell.insetBottom}`);
+        }
+        if (Math.abs(shell.nav.bottom - shell.innerHeight) > 1) {
+          found.push(`${where}: nav ends at ${shell.nav.bottom}, not at the screen bottom ${shell.innerHeight}`);
+        }
+      }
+
+      // Text contrast (the ratios use the real contrastRatio, not a copy of the maths).
+      const weak = (await textPairs(page)).filter(([fg, bg]) => contrastRatio(fg, bg) < MIN_CONTRAST);
+      if (screen.contrastPending) {
+        if (weak.length) testInfo.annotations.push({ type: "contrast-pending", description: `${screen.name}: ${weak.length} pair(s) under ${MIN_CONTRAST}` });
+      } else {
+        for (const [fg, bg, text] of weak) {
+          found.push(`${where}: contrast ${contrastRatio(fg, bg).toFixed(2)} for "${text}" (${fg} on ${bg})`);
+        }
+      }
+      await page.screenshot({ path: `${shots}/layout-${screen.name}-${tag}.png`, fullPage: true });
+    };
+
+    for (const screen of SCREENS.filter((s) => !s.signedOut && !s.fresh)) await visit(screen);
+
+    // A signed-in person with no household yet, then no one at all.
+    await context.clearCookies();
+    await signInAs(page, uniqueEmail("layout-fresh"));
+    for (const screen of SCREENS.filter((s) => s.fresh)) await visit(screen);
+    await context.clearCookies();
+    for (const screen of SCREENS.filter((s) => s.signedOut)) await visit(screen);
+
+    expect(found, found.join("\n")).toEqual([]);
+  });
+}

@@ -2,6 +2,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHousehold, joinAsPartner } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
 import { clientFor } from "./helpers/db";
+import { addFromSearch, favoritesKept, readWeekBudget, weekBudget } from "./helpers/flows-a";
+import { listTotal, openItemSheet, openList } from "./helpers/flows-b";
 
 test.beforeEach(async ({ page }) => {
   await routeFoodImages(page);
@@ -9,31 +11,15 @@ test.beforeEach(async ({ page }) => {
 
 /** Chicken tacos on Thursday: for the five-person family that is 11.2 oz of chicken, 1 can of beans, 12 tortillas, 1 onion. */
 async function planTacos(page: Page) {
-  await page.goto("/week/add?day=thu&slot=dinner");
-  await page.getByLabel("What's for dinner?").fill("tacos");
-  await page.getByRole("button", { name: "Search" }).click();
-  await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
-  await page.getByRole("button", { name: "Add to Thursday" }).click();
-  await expect(page).toHaveURL(/\/week$/);
-}
-
-async function openList(page: Page) {
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "List" }).click();
-  await expect(page).toHaveURL(/\/list$/);
-  await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();
+  await addFromSearch(page, { day: "thu", query: "tacos", pick: "Chicken tacos · Allrecipes" });
 }
 
 const row = (page: Page, name: string): Locator => page.getByTestId("list-row").filter({ hasText: name });
-const total = (page: Page): Locator => page.getByTestId("list-total");
+const total = listTotal;
 const dollars = async (loc: Locator): Promise<number> =>
   Math.round(Number(/\$([\d.]+)/.exec(await loc.innerText())?.[1]) * 100);
 
-async function openSheet(page: Page, name: string): Promise<Locator> {
-  await row(page, name).getByRole("button", { name: new RegExp(name) }).click();
-  const sheet = page.getByRole("dialog", { name });
-  await expect(sheet).toBeVisible();
-  return sheet;
-}
+const openSheet = openItemSheet;
 
 async function setPrice(page: Page, name: string, price: string) {
   const sheet = await openSheet(page, name);
@@ -84,9 +70,7 @@ test("list: tabs, groups, scaled amounts and estimates", async ({ page }, testIn
   await page.screenshot({ path: `${shots}/list.png`, fullPage: true });
 
   // Favorites: "Under $15" keeps meals whose lines all have prices and add up to $15 or less.
-  await page.goto("/favorites");
-  await page.getByRole("button", { name: "Under $15" }).click();
-  await expect(page.getByTestId("favorite-row")).toHaveCount(1);
+  expect(await favoritesKept(page, "Under $15")).toBe(1);
 });
 
 test("list: have it moves an item to Skipped and drops the total; checking off crosses it out", async ({ page }) => {
@@ -125,7 +109,7 @@ test("list: have it moves an item to Skipped and drops the total; checking off c
   await expect(page.getByRole("checkbox", { name: "Got Black beans" })).toBeChecked();
 });
 
-test("budget: the week meter turns amber at $201 and red at $226", async ({ page }) => {
+test("budget: the list bar turns amber at $201 and red at $226, and the week follows the total", async ({ page }) => {
   await createHousehold(page);
   await planTacos(page);
   await openList(page);
@@ -138,17 +122,16 @@ test("budget: the week meter turns amber at $201 and red at $226", async ({ page
   await expect(total(page)).toContainText("$201");
   await expect(page.getByTestId("list-bar")).toContainText("A little over");
 
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Week" }).click();
-  const budget = page.getByRole("region", { name: "Budget" });
-  await expect(budget).toContainText("$201 of $200");
-  await expect(budget).toContainText("A little over");
+  // The week's budget follows the list's total. (How the week words it is checked in week.spec.ts.)
+  await weekBudget(page);
+  await expect.poll(async () => (await readWeekBudget(page)).totalCents).toBe(20100);
 
   await openList(page);
   await setPrice(page, "Boneless chicken thighs", "223");
   await expect(total(page)).toContainText("$226");
   await expect(page.getByTestId("list-bar")).toContainText("Over budget");
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Week" }).click();
-  await expect(page.getByRole("region", { name: "Budget" })).toContainText("Over budget");
+  await weekBudget(page);
+  await expect.poll(async () => (await readWeekBudget(page)).totalCents).toBe(22600);
 
   // Leaving one out of the budget brings the total back down.
   await openList(page);

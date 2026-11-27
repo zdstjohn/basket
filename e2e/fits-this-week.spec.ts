@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { Day } from "../lib/domain/weeks";
 import { createHousehold } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
+import { addFromSearch } from "./helpers/flows-a";
 
 // Requests from a worker-controlled page can skip page.route on WebKit; keep parity with the other add-meal specs.
 test.use({ serviceWorkers: "block" });
@@ -15,12 +17,8 @@ async function searchFor(page: Page, query: string) {
 }
 
 /** Plans a Spoonacular fixture dinner (its ingredient lines come from the fixture, not the AI fake). */
-async function plan(page: Page, day: string, dayLabel: string, query: string, card: string) {
-  await page.goto(`/week/add?day=${day}&slot=dinner`);
-  await searchFor(page, query);
-  await page.getByRole("button", { name: card }).click();
-  await page.getByRole("button", { name: `Add to ${dayLabel}` }).click();
-  await expect(page).toHaveURL(/\/week$/);
+async function plan(page: Page, day: Day, query: string, pick: string) {
+  await addFromSearch(page, { day, query, pick });
 }
 
 const titles = (page: Page) => page.getByTestId("result-title").allTextContents();
@@ -28,8 +26,8 @@ const titles = (page: Page) => page.getByTestId("result-title").allTextContents(
 test("fits this week: orders by shared foods, shows what is shared, and fits 360 px", async ({ page }, testInfo) => {
   const shots = `e2e/screenshots/${testInfo.project.name}`;
   await createHousehold(page);
-  await plan(page, "mon", "Monday", "lasagna", "Easy lasagna · Spoonacular");
-  await plan(page, "tue", "Tuesday", "pot pie", "Easy pot pie · Spoonacular");
+  await plan(page, "mon", "lasagna", "Easy lasagna · Spoonacular");
+  await plan(page, "tue", "pot pie", "Easy pot pie · Spoonacular");
 
   await page.goto("/week/add?day=wed&slot=dinner");
   await searchFor(page, "tacos");

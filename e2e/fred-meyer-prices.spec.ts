@@ -1,6 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHousehold } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
+import { addFromSearch, readWeekBudget, weekBudget } from "./helpers/flows-a";
+import { chooseStore as chooseFredMeyer, openList } from "./helpers/flows-b";
 
 // Runs against the Kroger fixtures (KROGER_FAKE=1): no call ever leaves the machine.
 test.beforeEach(async ({ page }) => {
@@ -9,35 +11,17 @@ test.beforeEach(async ({ page }) => {
 
 const row = (page: Page, name: string): Locator => page.getByTestId("list-row").filter({ hasText: name });
 
-async function chooseStore(page: Page) {
-  await page.goto("/household");
-  const stores = page.getByRole("region", { name: "Stores and settings" });
-  await stores.getByRole("button", { name: "Choose store" }).click();
-  await stores.getByLabel("ZIP code").fill("98402");
-  await stores.getByRole("button", { name: "Search" }).click();
-  await stores.getByRole("button", { name: /Fred Meyer - Tacoma-Stevens/ }).click();
-  await expect(stores.getByText("Your Fred Meyer")).toBeVisible();
-  await expect(stores.getByText("Fred Meyer - Tacoma-Stevens")).toBeVisible();
-  await expect(stores.getByRole("button", { name: "Choose store" })).toHaveCount(0);
-}
-
 test("Fred Meyer prices: choose a store, then the list shows real shelf prices", async ({ page }, testInfo) => {
   const shots = `e2e/screenshots/${testInfo.project.name}`;
   await createHousehold(page);
-  await chooseStore(page);
+  await chooseFredMeyer(page);
 
   // The choice is saved for the household.
   await page.reload();
   await expect(page.getByText("Fred Meyer - Tacoma-Stevens")).toBeVisible();
 
-  await page.goto("/week/add?day=thu&slot=dinner");
-  await page.getByLabel("What's for dinner?").fill("tacos");
-  await page.getByRole("button", { name: "Search" }).click();
-  await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
-  await page.getByRole("button", { name: "Add to Thursday" }).click();
-  await expect(page).toHaveURL(/\/week$/);
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "List" }).click();
-  await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();
+  await addFromSearch(page, { day: "thu", query: "tacos", pick: "Chicken tacos · Allrecipes" });
+  await openList(page);
 
   const chicken = row(page, "Boneless chicken thighs");
   await expect(chicken.getByText("Heritage Farm Boneless Skinless Chicken Thighs")).toBeVisible();
@@ -83,10 +67,9 @@ test("Fred Meyer prices: choose a store, then the list shows real shelf prices",
   expect(dollars(await page.getByTestId("list-total").textContent())).toBe(sum);
 
   // The Week screen's budget meter follows the same number.
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Week" }).click();
-  await expect(page.getByRole("meter", { name: "Weekly budget" })).toHaveAttribute("aria-valuenow", String(sum));
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "List" }).click();
-  await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();
+  await weekBudget(page);
+  await expect.poll(async () => (await readWeekBudget(page)).totalCents).toBe(sum);
+  await openList(page);
 
   // Moving a food to Amazon drops its guess: only a price you type counts there.
   const sheetButton = row(page, "Corn tortillas").getByRole("button", { name: /^Corn tortillas/ });

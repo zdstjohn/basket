@@ -1,2 +1,1 @@
 app/manifest.ts
-components/BottomNav.tsx

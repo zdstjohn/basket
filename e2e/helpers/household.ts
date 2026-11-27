@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { routeFoodImages } from "./fixtures";
 import { signInAs, uniqueEmail } from "./auth";
+import { inviteLink } from "./flows-b";
 
 export interface PersonInput {
   name: string;
@@ -48,11 +49,7 @@ export async function joinAsPartner(
   owner: Page,
   browser: Browser,
 ): Promise<{ context: BrowserContext; page: Page }> {
-  await owner.goto("/household");
-  await owner.getByRole("button", { name: "Invite" }).click();
-  const link = owner.getByLabel("Invite link");
-  await expect(link).toHaveValue(/\/invite\/[0-9a-f]{64}$/);
-  const url = await link.inputValue();
+  const url = await inviteLink(owner);
 
   const baseURL = test.info().project.use.baseURL;
   const context = await browser.newContext({ baseURL });

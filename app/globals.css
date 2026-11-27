@@ -245,10 +245,10 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   quotes: "\201C" "\201D" "\2018" "\2019";
-  /* Task S5 moves the safe areas into the shell; until then the body keeps them. */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right)
-    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: 0;
 }
+/* A screen that renders a [data-bk-header] owns its own top inset; every other screen keeps it from here. Task C2 deletes this rule. */
+body:not(:has([data-bk-header])) { padding-top: var(--bk-safe-top); }
 .bk-price { font-feature-settings: var(--bk-num-price); font-variant-numeric: tabular-nums; }
 /* Put .bk-qty on the number alone (<span class="bk-qty">1/8</span> cup). On a whole line, frac also shrinks ordinary digits. */
 .bk-qty { font-feature-settings: var(--bk-num-qty); font-variant-numeric: diagonal-fractions; }

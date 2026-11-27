@@ -2,11 +2,13 @@ import { expect, test, type Page } from "@playwright/test";
 import { createHousehold, joinAsPartner } from "./helpers/household";
 import { FOOD_JPG, routeFoodImages } from "./helpers/fixtures";
 import { clientFor } from "./helpers/db";
+import { addFavoriteToDay, addFromSearch as plan, readWeekBudget, weekBudget } from "./helpers/flows-a";
+import { setBudget } from "./helpers/flows-b";
 import { getOrCreateWeek, setWeekMeal } from "../lib/db/queries/weeks";
 import { getMyHousehold } from "../lib/db/queries/household";
 import { listFavorites } from "../lib/db/queries/meals";
 import { formatWeekRange, previousWeekStart } from "../lib/week/format";
-import { weekStartFor } from "../lib/domain/weeks";
+import { weekStartFor, type Day } from "../lib/domain/weeks";
 
 // The household defaults: Sunday starts the week, Los Angeles time.
 const thisWeekStart = () => weekStartFor(new Date(), "sun", "America/Los_Angeles");
@@ -25,15 +27,8 @@ async function searchFor(page: Page, query: string) {
   await page.getByRole("button", { name: "Search" }).click();
 }
 
-/** Search → pick the first card whose name matches → "Add to <Day>". */
-async function addFromSearch(page: Page, day: string, dayLabel: string, query: string, card: string) {
-  await page.goto(`/week/add?day=${day}&slot=dinner`);
-  await searchFor(page, query);
-  await page.getByRole("button", { name: card }).click();
-  await expect(page.getByRole("button", { name: `Add to ${dayLabel}` })).toBeVisible();
-  await page.getByRole("button", { name: `Add to ${dayLabel}` }).click();
-  await expect(page).toHaveURL(/\/week$/);
-}
+/** Search → pick the card with this name → "Add to <Day>". */
+const addFromSearch = (page: Page, day: Day, query: string, pick: string) => plan(page, { day, query, pick });
 
 test("this week: add a search result to Thursday, with a photo and a swap", async ({ page }, testInfo) => {
   const shots = `e2e/screenshots/${testInfo.project.name}`;
@@ -101,6 +96,33 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
   await expect(thu.locator("img")).toHaveAttribute("src", "https://images.example.test/tacos.jpg");
   await expect(thu.getByRole("img", { name: "Favorite" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Add dinner/ })).toHaveCount(6);
+});
+
+test("budget: the week says on budget, a little over or over budget, with the amounts", async ({ page }) => {
+  await createHousehold(page);
+  await addFromSearch(page, "thu", "tacos", "Chicken tacos · Allrecipes");
+  // The dinner's estimate arrives a moment after the week opens.
+  await expect.poll(async () => (await readWeekBudget(page)).totalCents).toBeGreaterThan(0);
+  const { totalCents } = await readWeekBudget(page);
+  const dollars = Math.ceil(totalCents / 100);
+
+  const says = async (target: number, words: string, left: RegExp) => {
+    await weekBudget(page);
+    await expect.poll(async () => (await readWeekBudget(page)).text).toContain(words);
+    const budget = page.getByRole("region", { name: "Budget" });
+    await expect(budget).toContainText(`of $${target}`);
+    await expect(budget).toContainText(left);
+  };
+
+  // At or under the target.
+  await setBudget(page, { target: dollars, wiggle: 5 });
+  await says(dollars, "On budget", /left/);
+  // Over the target by less than the wiggle room.
+  await setBudget(page, { target: dollars - 1 });
+  await says(dollars - 1, "A little over", /over/);
+  // Over by more than the wiggle room.
+  await setBudget(page, { target: dollars - 1, wiggle: 0 });
+  await says(dollars - 1, "Over budget", /over/);
 });
 
 test("sources: the toggle, the Spoonacular footer, the fallback note and the limit message", async ({ page }) => {
@@ -229,8 +251,8 @@ test("interruption: a half-finished meal comes back after a reload, and is clear
 test("two phones: changes show up live, and a Friday tie ends with one meal", async ({ page, browser }) => {
   const a = page;
   await createHousehold(a);
-  await addFromSearch(a, "sat", "Saturday", "pot pie", "Chicken pot pie · Taste of Home");
-  await addFromSearch(a, "thu", "Thursday", "tacos", "Chicken tacos · Allrecipes");
+  await addFromSearch(a, "sat", "pot pie", "Chicken pot pie · Taste of Home");
+  await addFromSearch(a, "thu", "tacos", "Chicken tacos · Allrecipes");
 
   const { context, page: b } = await joinAsPartner(a, browser);
   await b.goto("/week");
@@ -238,10 +260,7 @@ test("two phones: changes show up live, and a Friday tie ends with one meal", as
   await expect(b.getByTestId("day-row-thu")).toContainText("Chicken tacos");
 
   // A sets Monday to a favorite; B sees it without reloading.
-  await a.goto("/week/add?day=mon&slot=dinner");
-  await a.getByRole("tab", { name: "Favorites" }).click();
-  await a.getByRole("button", { name: "Add Chicken tacos to Monday" }).click();
-  await expect(a).toHaveURL(/\/week$/);
+  await addFavoriteToDay(a, { day: "mon", name: "Chicken tacos" });
   await expect(b.getByTestId("day-row-mon")).toContainText("Chicken tacos", { timeout: 5000 });
 
   // Both pick a different meal for Friday at the same moment.
@@ -283,7 +302,7 @@ test("favorites: listed with a photo and tag, searchable, adds to the first empt
 }, testInfo) => {
   const shots = `e2e/screenshots/${testInfo.project.name}`;
   const email = await createHousehold(page);
-  await addFromSearch(page, "thu", "Thursday", "tacos", "Chicken tacos · Allrecipes");
+  await addFromSearch(page, "thu", "tacos", "Chicken tacos · Allrecipes");
 
   await page.goto("/favorites");
   await expect(page.getByRole("heading", { name: "Favorites" })).toBeVisible();

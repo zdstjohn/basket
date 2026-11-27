@@ -1,6 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHousehold, joinAsPartner } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
+import { addFromSearch } from "./helpers/flows-a";
+import { chooseStore, openList } from "./helpers/flows-b";
 
 // Runs against the Kroger fixtures (KROGER_FAKE=1): no call ever leaves the machine.
 test.beforeEach(async ({ page }) => {
@@ -16,25 +18,9 @@ const cents = (text: string | null): number => {
   return m ? Math.round(Number(m[1].replace(/,/g, "")) * 100) : NaN;
 };
 
-async function chooseStore(page: Page) {
-  await page.goto("/household");
-  const stores = page.getByRole("region", { name: "Stores and settings" });
-  await stores.getByRole("button", { name: "Choose store" }).click();
-  await stores.getByLabel("ZIP code").fill("98402");
-  await stores.getByRole("button", { name: "Search" }).click();
-  await stores.getByRole("button", { name: /Fred Meyer - Tacoma-Stevens/ }).click();
-  await expect(stores.getByText("Your Fred Meyer")).toBeVisible();
-}
-
 async function addTacos(page: Page) {
-  await page.goto("/week/add?day=thu&slot=dinner");
-  await page.getByLabel("What's for dinner?").fill("tacos");
-  await page.getByRole("button", { name: "Search" }).click();
-  await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
-  await page.getByRole("button", { name: "Add to Thursday" }).click();
-  await expect(page).toHaveURL(/\/week$/);
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "List" }).click();
-  await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();
+  await addFromSearch(page, { day: "thu", query: "tacos", pick: "Chicken tacos · Allrecipes" });
+  await openList(page);
 }
 
 async function openSwap(page: Page): Promise<Locator> {
