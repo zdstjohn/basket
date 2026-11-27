@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { clientFor } from "./helpers/db";
+import { setLook } from "./helpers/look";
 import { routeFoodImages } from "./helpers/fixtures";
 import { createHousehold, joinAsPartner } from "./helpers/household";
 import { chooseStore, dollarsToCents, openReview, planTacos } from "./helpers/fred-meyer";
@@ -49,7 +50,7 @@ test("review and fill the Fred Meyer cart, then send only what is new", async ({
 
   // 1. Not connected: the screen says so, and connecting brings the family back here.
   await openReview(page);
-  await expect(page.getByText("You'll sign in on Fred Meyer's own page. Basket never sees your password.")).toBeVisible();
+  await expect(page.getByText("You’ll sign in on Fred Meyer’s own page. Basket never sees your password.")).toBeVisible();
   await expect(sendButton(page)).toBeDisabled();
   await page.getByRole("link", { name: "Connect Fred Meyer" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Fred Meyer is connected." })).toBeVisible();
@@ -135,7 +136,7 @@ test("review and fill the Fred Meyer cart, then send only what is new", async ({
   await page.waitForTimeout(6000);
   await page.getByRole("button", { name: "Send these again" }).click();
   const warning = page.getByRole("dialog", { name: "Send these again" });
-  await expect(warning.getByText("This adds them a second time. Fred Meyer can't tell Basket what's already in your cart.")).toBeVisible();
+  await expect(warning.getByText("This adds them a second time. Fred Meyer can’t tell Basket what’s already in your cart.")).toBeVisible();
   await warning.getByRole("button", { name: "Add again" }).click();
   await expect(sendButton(page)).toHaveText(/^Add \d+ items? to my Fred Meyer cart$/);
   await sendButton(page).click();
@@ -183,7 +184,7 @@ test("over budget: the family is asked first, and Go back sends nothing", async 
 
   await sendButton(page).click();
   const ask = page.getByRole("dialog", { name: "Over budget" });
-  await expect(ask.getByText(/^You're \$[\d,.]+ over your budget\. Add to cart anyway\?$/)).toBeVisible();
+  await expect(ask.getByText(/^You’re \$[\d,.]+ over your budget\. Add to cart anyway\?$/)).toBeVisible();
   await ask.getByRole("button", { name: "Go back" }).click();
   await expect(ask).toBeHidden();
   expect(await sendRows(email)).toHaveLength(0);
@@ -239,7 +240,7 @@ test("what the family is told when a send does not simply work", async ({ page }
   // A retry after an unsure send asks first, and sends nothing until it is confirmed. It leaves out what was added.
   await sendButton(page).click();
   const warning = page.getByRole("dialog", { name: "Send these again" });
-  await expect(warning.getByText("This adds them a second time. Fred Meyer can't tell Basket what's already in your cart.")).toBeVisible();
+  await expect(warning.getByText("This adds them a second time. Fred Meyer can’t tell Basket what’s already in your cart.")).toBeVisible();
   expect(bodies).toHaveLength(2);
   await warning.getByRole("button", { name: "Add again" }).click();
   await expect(result).toContainText("Added.");
@@ -251,4 +252,99 @@ test("what the family is told when a send does not simply work", async ({ page }
   await sendButton(page).click();
   await expect(result).toContainText("Connect Fred Meyer again.");
   await expect(page.getByRole("link", { name: "Connect Fred Meyer" })).toBeVisible();
+});
+
+/** The body the route sends back when a send may or may not have reached the cart. */
+const UNSURE_BODY = { error: "unsure", ok: [] as string[], rejected: [] as { key: string; name: string }[] };
+const ADVICE = "Basket couldn’t confirm every item reached your Fred Meyer cart. Wait about 5 minutes and check the cart in the Fred Meyer app before sending again.";
+
+for (const look of ["light", "dark"] as const) {
+  test(`the unsure-send warning stays on screen in both looks (${look})`, async ({ page }) => {
+    await setLook(page, look);
+    await readyToSend(page, `cartunsure${look}`);
+    await page.route("**/api/kroger/cart", (route) => route.fulfill({ status: 504, json: UNSURE_BODY }));
+    await sendButton(page).click();
+    const warning = page.getByTestId("send-result").getByRole("alert");
+    await expect(warning).toContainText(ADVICE);
+    await expect(warning).toBeInViewport();
+    // It stays until the next send: a tap elsewhere or a reload of the lines does not clear it.
+    await page.getByRole("radio", { name: "Pickup" }).click();
+    await expect(warning).toContainText(ADVICE);
+  });
+}
+
+test("in the send-again sheet the filled button is Cancel", async ({ page }) => {
+  await readyToSend(page, "cartagain");
+  const bodies: unknown[] = [];
+  await page.route("**/api/kroger/cart", (route) => {
+    bodies.push(route.request().postDataJSON());
+    return route.fulfill({ status: 504, json: UNSURE_BODY });
+  });
+  await sendButton(page).click();
+  await expect(page.getByTestId("send-result")).toContainText(ADVICE);
+  await sendButton(page).click(); // a retry after an unsure send asks first
+  const sheet = page.getByRole("dialog", { name: "Send these again" });
+  const cancel = sheet.getByRole("button", { name: "Cancel" });
+  const addAgain = sheet.getByRole("button", { name: "Add again" });
+  const fill = (b: typeof cancel) => b.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(await fill(addAgain)).toBe("rgba(0, 0, 0, 0)");
+  expect(await fill(cancel)).not.toBe("rgba(0, 0, 0, 0)");
+  expect(bodies).toHaveLength(1); // nothing is sent until "Add again"
+  await cancel.click();
+  await expect(sheet).toBeHidden();
+  expect(bodies).toHaveLength(1);
+});
+
+test("a long product name keeps the stepper and total on screen at 360 px", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await readyToSend(page, "cartlong");
+  const line = page.getByTestId("review-line").first();
+  await line.getByTestId("review-name").evaluate((el) => {
+    el.textContent = "Extra Long Name Organic Free Range Boneless Skinless Chicken Thighs Family Value Pack With A Very Long Description Indeed";
+  });
+  const width = 360;
+  for (const box of [
+    await line.getByTestId("review-total").boundingBox(),
+    await line.getByRole("button", { name: /^One more / }).boundingBox(),
+    await line.getByRole("button", { name: /^One fewer / }).boundingBox(),
+  ]) {
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width + 0.5);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+});
+
+test("every warning from the cart plan is still present", async ({ page }) => {
+  await readyToSend(page, "cartwarnings");
+  const rejectedName = "Simple Truth Organic Black Beans";
+  // Each tap gets the next answer from the route; nothing reaches Fred Meyer.
+  const answers: { status: number; json: unknown; text: string }[] = [
+    { status: 409, json: { error: "already_sending" }, text: "A send for this list is already in progress. Wait a moment, then check the Fred Meyer app." },
+    { status: 200, json: { sent: 1, rejected: [{ key: "black beans", name: rejectedName }] }, text: `Fred Meyer wouldn’t take: ${rejectedName}.` },
+    { status: 409, json: { error: "already_sent" }, text: "Everything here is already in your cart." },
+    { status: 502, json: { error: "rejected" }, text: "Fred Meyer wouldn’t take these items. Try swapping them." },
+    { status: 429, json: { error: "too_many" }, text: "You’ve sent this list a lot today. Try again tomorrow." },
+    { status: 429, json: { error: "slow_down" }, text: "Fred Meyer is busy. Try again in a minute." },
+    { status: 429, json: { error: "allowance_spent" }, text: "Basket has looked up a lot of Fred Meyer prices today. Try again tomorrow." },
+    { status: 409, json: { error: "unavailable" }, text: "That didn’t go through. Nothing was added." },
+    { status: 500, json: {}, text: ADVICE },
+    { status: 409, json: { error: "not_connected" }, text: "Connect Fred Meyer again." },
+  ];
+  let step = 0;
+  await page.route("**/api/kroger/cart", (route) => {
+    const a = answers[step++];
+    return route.fulfill({ status: a.status, json: a.json });
+  });
+  const result = page.getByTestId("send-result");
+  for (const a of answers) {
+    await expect(sendButton(page)).toBeEnabled();
+    await sendButton(page).click();
+    await expect(result).toContainText(a.text);
+  }
+  expect(step).toBe(answers.length);
+  // The words that stand beside the screen.
+  await expect(page.getByText("You’ll sign in on Fred Meyer’s own page. Basket never sees your password.")).toBeVisible();
+  await expect(page.getByText("Basket never places an order. You check out at Fred Meyer.")).toBeVisible();
+  await expect(page.getByText("A new week starts a new list, so Basket may add items again that you didn’t buy last week.")).toBeVisible();
 });

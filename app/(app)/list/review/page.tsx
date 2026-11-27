@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ReviewScreen } from "@/components/ReviewScreen";
 import { createServerClient } from "@/lib/db/server";
 import { getMyHouseholdOnce } from "@/lib/db/queries/household-server";
 import { linkStatus } from "@/lib/kroger/link";
 import { isCartConfigured } from "@/lib/kroger/oauth";
+
+export const metadata: Metadata = { title: "Review your cart" };
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ fm?: string | string[] }> }) {
   const { fm } = await searchParams;

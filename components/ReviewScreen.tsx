@@ -1,23 +1,30 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BUDGET_LOOK } from "@/components/BudgetMeter";
+import { ExternalLink, Check } from "lucide-react";
+import { BudgetSentence } from "@/components/BudgetSentence";
 import { displayName } from "@/components/ListRow";
 import { ReviewLine } from "@/components/ReviewLine";
-import { Sheet } from "@/components/Sheet";
+import { Sheet, useSheetClose } from "@/components/Sheet";
 import { SwapSheet } from "@/components/SwapSheet";
+import { Banner } from "@/components/ui/Banner";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { Segmented } from "@/components/ui/Segmented";
+import { ErrorBanner } from "@/components/ui/states";
 import { createBrowserClient } from "@/lib/db/client";
 import { updateHousehold } from "@/lib/db/queries/household";
 import { listCartSends } from "@/lib/db/queries/kroger";
 import type { Household } from "@/lib/db/rows";
 import { cartDiff, type CartLine, type CartSend, type Modality } from "@/lib/domain/cart";
 import type { ListItem } from "@/lib/domain/list";
-import { formatDollars } from "@/lib/domain/money-input";
+import { formatMoney } from "@/lib/domain/money-input";
 import { sendCart } from "@/lib/list/cart-client";
 import { FRED_MEYER_CART_URL, lastSendNote, MAX_PER_PRODUCT, otherCartNote, resendScope, reviewLines, SENT_CHECK_ADVICE, sendPlan } from "@/lib/list/review";
 import { subscribeHousehold } from "@/lib/realtime";
-import { bigGreenLink, focusRing, pillButton, primaryButton, stickyAboveNav } from "@/lib/ui";
+import { curly } from "@/lib/text/typography";
+import { barAboveNav, ghostButton, mainAction, quietLink } from "@/lib/ui";
 import { FM_NOTICES } from "@/lib/list/fm-notices";
 import { listView, useWeekId, useWeekList } from "@/lib/useWeekList";
 
@@ -45,6 +52,22 @@ interface Retry {
 }
 
 const signature = (lines: CartLine[]): string => lines.map((l) => `${l.key}:${l.upc}:${l.quantity}`).join("|");
+/** A Close button for a sheet: it leaves with the same exit as a drag or Escape. */
+function SheetCloseButton({ variant, children }: { variant: "main" | "ghost"; children: string }) {
+  const close = useSheetClose();
+  return (
+    <Button variant={variant} onClick={close}>
+      {children}
+    </Button>
+  );
+}
+
+/** The connect address is a route handler that redirects to Fred Meyer's sign-in, so it needs a full page load. */
+function connectAgain() {
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- an API route, not a page
+  location.assign(CONNECT_HREF);
+}
+
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
 export function ReviewScreen({
@@ -127,7 +150,7 @@ export function ReviewScreen({
     try {
       await fn();
     } catch {
-      setProblem("That didn't save. Check your connection and try again.");
+      setProblem("That didn’t save. Check your connection and try again.");
     }
   }
 
@@ -150,7 +173,7 @@ export function ReviewScreen({
       await fn();
     } catch (e) {
       if (rethrow) throw e;
-      setProblem("That didn't save. Check your connection and try again.");
+      setProblem("That didn’t save. Check your connection and try again.");
     } finally {
       setSwapBusy(false);
     }
@@ -238,14 +261,13 @@ export function ReviewScreen({
   const note = sends ? lastSendNote(sends, me, household.time_zone) : null;
   const otherNote = sends ? otherCartNote(sends, me, household.time_zone) : null;
   const unsureNow = outcome?.kind === "unsure" || (diff?.unsure ?? false);
-  const look = BUDGET_LOOK[state];
 
   const label = !connected
     ? "Connect Fred Meyer first"
     : sending
       ? "Adding…"
       : offline
-        ? "You're offline."
+        ? "You’re offline."
         : !diff
           ? sendsFailed
             ? "Can’t send yet"
@@ -255,142 +277,122 @@ export function ReviewScreen({
             : `Add ${plural(sendCount, "item", "items")} to my Fred Meyer cart`;
   const canSend = connected && cartEnabled && !sending && !offline && !!diff && sendCount > 0;
 
+  const sectionTitle = "mb-1 mt-6 text-heading text-ink";
+  // The unsure warning shows once: in the result after a send that came to it, otherwise from what was recorded earlier.
+  const unsureInResult = outcome?.kind === "unsure" || outcome?.kind === "no_answer";
+
   return (
     <section className="flex flex-1 flex-col">
-      <header className="px-5 pb-2.5 pt-5">
-        <Link href="/list" className={`-ml-1 inline-flex min-h-11 items-center px-1 text-sm font-semibold text-green underline ${focusRing}`}>
-          Back to list
-        </Link>
-        <h1 className="text-[28px] font-bold leading-tight tracking-tight">Review your Fred Meyer cart</h1>
-      </header>
+      <ScreenHeader title="Review your Fred Meyer cart" size="title" back={{ href: "/list", label: "Back to list" }} />
 
-      {fmNotice && (
-        <p role="status" className="mx-5 mb-2 text-[13px] font-medium text-[#4A544F]">
-          {FM_NOTICES[fmNotice]}
-        </p>
-      )}
-      {list.offline && (
-        <p role="status" className="mx-5 mb-2 text-[13px] text-muted">
-          Offline, showing your last list
-        </p>
-      )}
-      {problem && (
-        <p role="alert" className="mx-5 mb-2 text-[13px] font-medium text-[#A6261B]">
-          {problem}
-        </p>
-      )}
+      <div className="bk-gutter flex flex-col gap-2">
+        {fmNotice && <Banner>{curly(FM_NOTICES[fmNotice])}</Banner>}
+        {list.offline && <Banner>Offline, showing your last list</Banner>}
+        {problem && <ErrorBanner message={problem} />}
+      </div>
 
       {!cartEnabled ? (
-        <p className="mx-5 mb-3 rounded-[14px] border border-line bg-white p-4 text-[15px]">Cart filling isn&apos;t set up yet.</p>
+        <p className="bk-gutter mt-2 text-body text-ink">Cart filling isn’t set up yet.</p>
       ) : !connected ? (
-        <div className="mx-5 mb-3 rounded-[14px] border border-line bg-white p-4">
-          <a href={CONNECT_HREF} className={bigGreenLink}>
+        <div className="bk-gutter mt-2 flex flex-col gap-2">
+          <a href={CONNECT_HREF} className={mainAction}>
             Connect Fred Meyer
           </a>
-          <p className="mt-2 text-[13px] text-muted">You&apos;ll sign in on Fred Meyer&apos;s own page. Basket never sees your password.</p>
+          <p className="text-small text-ink-soft">You’ll sign in on Fred Meyer’s own page. Basket never sees your password.</p>
         </div>
       ) : null}
 
-      <div className="mx-5 flex flex-col">
+      <div className="bk-gutter mt-2 flex flex-col">
         {view === "error" ? (
-          <div role="alert" className="rounded-[14px] border border-line bg-white p-4 text-[15px]">
-            <p>We couldn&apos;t load your list.</p>
-            <button type="button" onClick={() => { week.retry(); void list.reload(); }} className={`${pillButton} mt-2`}>
-              Try again
-            </button>
-          </div>
+          <ErrorBanner
+            message="We couldn’t load your list."
+            actionLabel="Try again"
+            onAction={() => {
+              week.retry();
+              void list.reload();
+            }}
+          />
         ) : view === "skeleton" ? (
           <div className="flex flex-col gap-2" aria-hidden="true">
             {[0, 1, 2].map((n) => (
-              <div key={n} className="h-[72px] animate-pulse rounded-[14px] bg-[#EDF0EC]" />
+              <div key={n} className="bk-skeleton h-20 rounded-md" />
             ))}
           </div>
         ) : (
           <>
-            <fieldset className="mb-1">
-              <legend className="sr-only">How you&apos;ll get it</legend>
-              <div role="radiogroup" aria-label="How you'll get it" className="grid grid-cols-2 gap-1 rounded-[14px] bg-[#EAEEE9] p-1">
-                {(["PICKUP", "DELIVERY"] as const).map((m) => (
-                  <label
-                    key={m}
-                    className={`relative flex min-h-11 cursor-pointer items-center justify-center rounded-xl text-sm font-semibold has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-green ${
-                      modality === m ? "bg-white text-ink shadow-sm" : "text-muted"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="fulfillment"
-                      value={m}
-                      checked={modality === m}
-                      onChange={() => void chooseModality(m)}
-                      className="absolute inset-0 cursor-pointer opacity-0"
-                    />
-                    {m === "PICKUP" ? "Pickup" : "Delivery"}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+            <div className="flex flex-col gap-2">
+              <p className="text-small font-semibold text-ink">How you’ll get it</p>
+              <Segmented
+                label="How you’ll get it"
+                options={[
+                  { id: "PICKUP" as const, label: "Pickup" },
+                  { id: "DELIVERY" as const, label: "Delivery" },
+                ]}
+                value={modality}
+                onChange={(m) => void chooseModality(m)}
+              />
+            </div>
 
-            {note && (
-              <p data-testid="last-send" role="status" className="mt-2 text-[13px] font-medium text-[#4A544F]">
-                {note}
-              </p>
-            )}
-            {otherNote && (
-              <p data-testid="other-cart" role="status" className="mt-2 rounded-xl bg-[#FFF1CC] p-3 text-[13px] font-medium text-[#7A4B00]">
-                {otherNote}
-              </p>
-            )}
-            {capped.length > 0 && (
-              <p data-testid="capped" role="status" className="mt-2 text-[13px] font-medium text-[#7A4B00]">
-                Capped at {MAX_PER_PRODUCT}: {capped.join(", ")}. Basket sends at most {MAX_PER_PRODUCT} of one product.
-              </p>
-            )}
-            {unsureNow && (
-              <p data-testid="unsure-note" role="status" className="mt-2 rounded-xl bg-[#FFF1CC] p-3 text-[13px] font-medium text-[#7A4B00]">
-                {SENT_CHECK_ADVICE}
-              </p>
-            )}
+            <div className="mt-2 flex flex-col gap-2">
+              {note && (
+                <div data-testid="last-send">
+                  <Banner>{note}</Banner>
+                </div>
+              )}
+              {otherNote && (
+                <div data-testid="other-cart">
+                  <Banner>{otherNote}</Banner>
+                </div>
+              )}
+              {capped.length > 0 && (
+                <div data-testid="capped">
+                  <Banner>
+                    Capped at {MAX_PER_PRODUCT}: {capped.join(", ")}. Basket sends at most {MAX_PER_PRODUCT} of one product.
+                  </Banner>
+                </div>
+              )}
+              {unsureNow && !unsureInResult && (
+                <div data-testid="unsure-note">
+                  <ErrorBanner message={SENT_CHECK_ADVICE} />
+                </div>
+              )}
+            </div>
 
-            {lines.length === 0 && unmatched.length === 0 && (
-              <p className="mt-4 text-[15px] text-muted">Nothing to buy at Fred Meyer this week.</p>
-            )}
+            {lines.length === 0 && unmatched.length === 0 && <p className="mt-4 text-body text-ink-soft">Nothing to buy at Fred Meyer this week.</p>}
 
             {diff && diff.toSend.length > 0 && (
               <div data-testid="to-send">
-                <h2 className="mb-1 mt-3.5 text-xs font-semibold uppercase tracking-[0.6px] text-muted">
+                <h2 className={sectionTitle}>
                   {diff.alreadySent.length > 0 || diff.toRemove.length > 0 || note ? "New since then" : "Your Fred Meyer cart"}
                 </h2>
-                <ul>{diff.toSend.map((l) => lineRow(lineByKey.get(l.key) ?? l))}</ul>
+                <ul className="divide-y divide-line">{diff.toSend.map((l) => lineRow(lineByKey.get(l.key) ?? l))}</ul>
               </div>
             )}
-            {!diff && lines.length > 0 && (
-              <ul className="mt-3.5">{lines.map(lineRow)}</ul>
-            )}
+            {!diff && lines.length > 0 && <ul className="mt-4 divide-y divide-line">{lines.map(lineRow)}</ul>}
 
             {diff && diff.alreadySent.length > 0 && (
               <div data-testid="already-sent">
-                <h2 className="mb-1 mt-3.5 text-xs font-semibold uppercase tracking-[0.6px] text-muted">Already in your cart</h2>
-                <ul>{diff.alreadySent.map(lineRow)}</ul>
+                <h2 className={sectionTitle}>Already in your cart</h2>
+                <ul className="divide-y divide-line">{diff.alreadySent.map(lineRow)}</ul>
                 {again ? (
-                  <p className="mt-2 text-[13px] font-medium text-[#4A544F]">These will be added a second time.</p>
+                  <p className="mt-2 text-small text-ink-soft">These will be added a second time.</p>
                 ) : (
-                  <button type="button" onClick={() => setAsking("again")} className={`${pillButton} mt-2`}>
+                  <Button variant="ghost" className="mt-2" onClick={() => setAsking("again")}>
                     Send these again
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
 
             {diff && diff.toRemove.length > 0 && (
               <div data-testid="to-remove">
-                <h2 className="mb-1 mt-3.5 text-xs font-semibold uppercase tracking-[0.6px] text-muted">
-                  Take these out in the Fred Meyer app
-                </h2>
-                <ul>
+                <h2 className={sectionTitle}>Take these out in the Fred Meyer app</h2>
+                <ul className="divide-y divide-line">
                   {diff.toRemove.map((r) => (
-                    <li key={r.upc} className="border-b border-[#E8EBE7] py-2 text-sm">
-                      {r.name} <span className="text-muted">× {r.quantity}</span>
+                    <li key={r.upc} className="flex min-h-13 items-center py-2 text-small text-ink">
+                      <span>
+                        {r.name} <span className="bk-price text-ink-soft">× {r.quantity}</span>
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -399,16 +401,16 @@ export function ReviewScreen({
 
             {unmatched.length > 0 && (
               <div data-testid="not-in-order">
-                <h2 className="mb-1 mt-3.5 text-xs font-semibold uppercase tracking-[0.6px] text-muted">Not in this order</h2>
-                <ul>
+                <h2 className={sectionTitle}>Not in this order</h2>
+                <ul className="divide-y divide-line">
                   {unmatched.map((i: ListItem) => (
-                    <li key={i.key} className="flex min-h-[52px] items-center justify-between gap-2 border-b border-[#E8EBE7]">
-                      <span className="text-sm font-semibold">{displayName(i.canonical)}</span>
+                    <li key={i.key} className="flex min-h-13 items-center justify-between gap-2 py-2">
+                      <span className="min-w-0 text-small font-semibold text-ink">{displayName(i.canonical)}</span>
                       <button
                         type="button"
                         aria-label={`Find a product for ${displayName(i.canonical)}`}
                         onClick={() => setSwapKey(i.key)}
-                        className={`inline-flex min-h-11 items-center px-2 text-xs font-semibold text-green underline ${focusRing}`}
+                        className={ghostButton}
                       >
                         Find a product
                       </button>
@@ -418,41 +420,34 @@ export function ReviewScreen({
               </div>
             )}
 
-            <div className="mt-4 rounded-2xl border border-line bg-white px-4 py-3">
-              <div className="flex items-baseline justify-between">
-                <p className="text-sm font-medium">Fred Meyer total</p>
-                <p data-testid="fm-total" className="font-heading text-[20px] font-semibold">
-                  {formatDollars(fmTotal)}
-                </p>
-              </div>
-              <div className="mt-1.5 flex items-center justify-between">
-                <p className="text-sm text-muted">
-                  This week{" "}
-                  <span data-testid="week-total" className="font-semibold text-ink">
-                    {formatDollars(totals.totalCents)}
-                  </span>{" "}
-                  <span className="text-[13px]">of {formatDollars(household.budget_cents)}</span>
-                </p>
-                <p className={`rounded-xl px-2.5 py-1 text-[13px] font-semibold ${look.pill}`}>{look.label}</p>
-              </div>
+            <div className="mt-6 flex items-baseline justify-between gap-3 border-t border-line pt-3">
+              <p className="text-body text-ink">Fred Meyer total</p>
+              <p data-testid="fm-total" className="bk-price whitespace-nowrap text-heading text-ink">
+                {formatMoney(fmTotal)}
+              </p>
+            </div>
+            <div className="mt-2">
+              <BudgetSentence
+                totalCents={totals.totalCents}
+                targetCents={household.budget_cents}
+                cushionCents={household.cushion_cents}
+                exact
+                totalTestId="week-total"
+              />
             </div>
 
-            <p className="mt-3 text-xs text-muted">
-              A new week starts a new list, so Basket may add items again that you didn&apos;t buy last week.
+            <p className="mb-4 mt-4 text-label text-ink-soft">
+              A new week starts a new list, so Basket may add items again that you didn’t buy last week.
             </p>
-            <p className="mb-3 mt-1 text-xs text-muted">Basket never places an order. You check out at Fred Meyer.</p>
           </>
         )}
       </div>
 
       <div className="mt-auto" />
-      <div data-testid="review-bar" className={stickyAboveNav}>
+      <div data-testid="review-bar" className={barAboveNav}>
         {sendsFailed && !sends && (
-          <div role="alert" className="mb-2 flex items-center justify-between gap-2 text-[13px] font-medium text-[#A6261B]">
-            <p>Couldn’t check what’s already in your cart.</p>
-            <button type="button" onClick={() => void loadSends()} className={pillButton}>
-              Retry
-            </button>
+          <div className="mb-2">
+            <ErrorBanner message="Couldn’t check what’s already in your cart." actionLabel="Retry" onAction={() => void loadSends()} />
           </div>
         )}
         <div
@@ -461,86 +456,89 @@ export function ReviewScreen({
           role="status"
           aria-live="polite"
           data-testid="send-result"
-          className={`text-[13px] font-medium text-[#4A544F] outline-none ${outcome ? "mb-2" : ""}`}
+          className={`flex max-h-[40dvh] flex-col gap-2 overflow-y-auto text-small text-ink outline-none ${outcome ? "mb-2" : ""}`}
         >
           {outcome && (
             <>
-            {outcome.kind === "sent" && (
-              <>
-                <p>Added. Check out in the Fred Meyer app.</p>
-                {outcome.rejected.length > 0 && <p className="mt-0.5">Fred Meyer wouldn&apos;t take: {outcome.rejected.join(", ")}.</p>}
-                <a
-                  href={FRED_MEYER_CART_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`mt-1 inline-flex min-h-11 items-center font-semibold text-green underline ${focusRing}`}
-                >
-                  Open my Fred Meyer cart
-                </a>
-              </>
-            )}
-            {outcome.kind === "unsure" && (
-              <>
-                <p>{SENT_CHECK_ADVICE}</p>
-                {outcome.rejected.length > 0 && (
-                  <p className="mt-0.5">Not added: {outcome.rejected.map((r) => r.name).join(", ")}.</p>
-                )}
-              </>
-            )}
-            {outcome.kind === "already_sending" && (
-              <p>A send for this list is already in progress. Wait a moment, then check the Fred Meyer app.</p>
-            )}
-            {outcome.kind === "already_sent" && <p>Everything here is already in your cart.</p>}
-            {outcome.kind === "not_connected" && <p>Connect Fred Meyer again.</p>}
-            {outcome.kind === "rejected" && <p>Fred Meyer wouldn&apos;t take these items. Try swapping them.</p>}
-            {outcome.kind === "too_many" && <p>You’ve sent this list a lot today. Try again tomorrow.</p>}
-            {outcome.kind === "busy" && <p>Fred Meyer is busy. Try again in a minute.</p>}
-            {outcome.kind === "allowance_spent" && <p>Basket has looked up a lot of Fred Meyer prices today. Try again tomorrow.</p>}
-            {outcome.kind === "no_answer" && <p>{SENT_CHECK_ADVICE}</p>}
-            {outcome.kind === "failed" && <p role="alert" className="text-[#A6261B]">That didn&apos;t go through. Nothing was added.</p>}
+              {outcome.kind === "sent" && (
+                <>
+                  <Banner role={null} icon={Check}>
+                    <span className="flex flex-col items-start">
+                      <span>Added. Check out in the Fred Meyer app.</span>
+                      <a href={FRED_MEYER_CART_URL} target="_blank" rel="noopener noreferrer" className={quietLink}>
+                        Open my Fred Meyer cart
+                        <Icon icon={ExternalLink} size={18} />
+                      </a>
+                    </span>
+                  </Banner>
+                  {outcome.rejected.length > 0 && <ErrorBanner message={`Fred Meyer wouldn’t take: ${outcome.rejected.join(", ")}.`} />}
+                </>
+              )}
+              {outcome.kind === "unsure" && (
+                <ErrorBanner
+                  message={
+                    outcome.rejected.length > 0
+                      ? `${SENT_CHECK_ADVICE} Not added: ${outcome.rejected.map((r) => r.name).join(", ")}.`
+                      : SENT_CHECK_ADVICE
+                  }
+                />
+              )}
+              {outcome.kind === "already_sending" && (
+                <Banner role={null}>A send for this list is already in progress. Wait a moment, then check the Fred Meyer app.</Banner>
+              )}
+              {outcome.kind === "already_sent" && <Banner role={null}>Everything here is already in your cart.</Banner>}
+              {outcome.kind === "not_connected" && <ErrorBanner message="Connect Fred Meyer again." actionLabel="Connect Fred Meyer" onAction={connectAgain} />}
+              {outcome.kind === "rejected" && <ErrorBanner message="Fred Meyer wouldn’t take these items. Try swapping them." />}
+              {outcome.kind === "too_many" && <ErrorBanner message="You’ve sent this list a lot today. Try again tomorrow." />}
+              {outcome.kind === "busy" && <ErrorBanner message="Fred Meyer is busy. Try again in a minute." />}
+              {outcome.kind === "allowance_spent" && <ErrorBanner message="Basket has looked up a lot of Fred Meyer prices today. Try again tomorrow." />}
+              {outcome.kind === "no_answer" && <ErrorBanner message={SENT_CHECK_ADVICE} />}
+              {outcome.kind === "failed" && <ErrorBanner message="That didn’t go through. Nothing was added." />}
             </>
           )}
         </div>
-        <button type="button" data-testid="send-cart" disabled={!canSend} aria-disabled={!canSend} onClick={tapSend} className={primaryButton}>
+        <button
+          type="button"
+          data-testid="send-cart"
+          disabled={!canSend}
+          aria-disabled={!canSend}
+          onClick={tapSend}
+          className={connected ? mainAction : `${ghostButton} w-full`}
+        >
           {label}
         </button>
+        <p className="mt-2 text-label text-ink-soft">Basket never places an order. You check out at Fred Meyer.</p>
       </div>
 
       {asking === "over" && (
-        <Sheet label="Over budget" onClose={() => setAsking(null)}>
-          <div className="p-5">
-            <p className="text-base font-semibold">
-              You&apos;re {formatDollars(Math.max(0, totals.totalCents - household.budget_cents))} over your budget. Add to cart anyway?
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              <button
-                type="button"
-                className={primaryButton}
-                onClick={() => {
-                  setAsking(null);
-                  void doSend();
-                }}
-              >
-                Add anyway
-              </button>
-              <button type="button" className={pillButton} onClick={() => setAsking(null)}>
-                Go back
-              </button>
-            </div>
+        <Sheet
+          label="Over budget"
+          title={`You’re ${formatMoney(Math.max(0, totals.totalCents - household.budget_cents))} over your budget. Add to cart anyway?`}
+          onClose={() => setAsking(null)}
+        >
+          <div className="flex flex-col gap-2 px-4 pb-4 pt-2">
+            <Button
+              variant="main"
+              onClick={() => {
+                setAsking(null);
+                void doSend();
+              }}
+            >
+              Add anyway
+            </Button>
+            <SheetCloseButton variant="ghost">Go back</SheetCloseButton>
           </div>
         </Sheet>
       )}
 
       {asking === "again" && (
-        <Sheet label="Send these again" onClose={() => setAsking(null)}>
-          <div className="p-5">
-            <p className="text-base font-semibold">
-              This adds them a second time. Fred Meyer can&apos;t tell Basket what&apos;s already in your cart.
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              <button
-                type="button"
-                className={primaryButton}
+        <Sheet label="Send these again" title="Send these again" onClose={() => setAsking(null)}>
+          <div className="flex flex-col gap-4 px-4 pb-4 pt-2">
+            <p className="text-body text-ink">This adds them a second time. Fred Meyer can’t tell Basket what’s already in your cart.</p>
+            <div className="flex flex-col gap-2">
+              <SheetCloseButton variant="main">Cancel</SheetCloseButton>
+              <Button
+                variant="ghost"
                 onClick={() => {
                   setAsking(null);
                   if (!payload.retry) setAgain(true);
@@ -549,10 +547,7 @@ export function ReviewScreen({
                 }}
               >
                 Add again
-              </button>
-              <button type="button" className={pillButton} onClick={() => setAsking(null)}>
-                Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </Sheet>
