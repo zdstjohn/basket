@@ -83,6 +83,10 @@ describe('isRefusal / isNetworkError', () => {
     ['JWT expired, status only', Object.assign(new Error('JWT expired'), { status: 401 })],
     ['PGRST302', { message: 'x', code: 'PGRST302' }],
     ['PGRST303', { message: 'x', code: 'PGRST303' }],
+    ['500 with no code', Object.assign(new Error('Internal Server Error'), { status: 500 })],
+    ['500 with a PostgREST code (PGRST000)', Object.assign(new Error('x'), { code: 'PGRST000', status: 500 })],
+    ['500 with a code of the wrong shape', Object.assign(new Error('x'), { code: 'oops', status: 500 })],
+    ['a Postgres-style code without a 5xx status (P0001)', { message: 'x', code: 'P0001' }],
     ['Bad Gateway (502)', Object.assign(new Error('Bad Gateway'), { status: 502 })],
     ['upstream request timeout (504)', Object.assign(new Error('upstream request timeout'), { status: 504 })],
     ['The operation was aborted', new Error('The operation was aborted')],
@@ -99,6 +103,10 @@ describe('isRefusal / isNetworkError', () => {
     ['status 404', Object.assign(new Error('Not Found'), { status: 404 })],
     ['status 409', Object.assign(new Error('Conflict'), { status: 409 })],
     ['status 422', Object.assign(new Error('Unprocessable'), { status: 422 })],
+    ['status 500 with a Postgres code (P0001)', Object.assign(new Error('raised by a trigger'), { code: 'P0001', status: 500 })],
+    ['status 503 with a Postgres code (XX000)', Object.assign(new Error('internal'), { code: 'XX000', status: 503 })],
+    ['status 406', Object.assign(new Error('Not Acceptable'), { status: 406 })],
+    ['status 413', Object.assign(new Error('Payload Too Large'), { status: 413 })],
   ];
 
   it.each(kept)('keeps in the queue: %s', (_n, err) => {
@@ -193,5 +201,98 @@ describe('flushQueue', () => {
 
   it('is empty-safe', async () => {
     expect(await flushQueue('h9', async () => {})).toBe(0);
+  });
+
+  describe('giving up on a stuck entry', () => {
+    const HOUR = 3600_000;
+    const stuck = () => Object.assign(new Error('weird permanent failure'), {});
+    const stored = (): QueuedPatch[] => loadQueue('h1');
+
+    it('drops a 500 with code P0001, carries on, and reports the drop', async () => {
+      saveQueue('h1', [e('a', { checked: true }), e('b', { checked: true })]);
+      const seen: string[] = [];
+      const dropped: string[] = [];
+      const left = await flushQueue(
+        'h1',
+        async (x) => {
+          if (x.itemKey === 'a') throw Object.assign(new Error('trigger'), { code: 'P0001', status: 500 });
+          seen.push(x.itemKey);
+        },
+        undefined,
+        (x) => void dropped.push(x.itemKey),
+      );
+      expect(left).toBe(0);
+      expect(seen).toEqual(['b']);
+      expect(dropped).toEqual(['a']);
+    });
+
+    it.each([406, 413])('drops status %i', async (status) => {
+      saveQueue('h1', [e('a', { checked: true })]);
+      expect(await flushQueue('h1', async () => { throw Object.assign(new Error('x'), { status }); })).toBe(0);
+      expect(stored()).toEqual([]);
+    });
+
+    it('keeps a code-less error for 9 attempts and drops it on the 10th', async () => {
+      saveQueue('h1', [e('a', { checked: true }), e('b', { checked: true })]);
+      const dropped: string[] = [];
+      const apply = async () => { throw stuck(); };
+      for (let i = 1; i <= 9; i++) {
+        expect(await flushQueue('h1', apply, undefined, (x) => void dropped.push(x.itemKey))).toBe(2);
+        expect(stored().map((x) => x.itemKey)).toEqual(['a', 'b']);
+        expect(stored()[0].attempts).toBe(i);
+      }
+      expect(dropped).toEqual([]);
+      // The 10th failure drops 'a'; 'b' is then the head and fails once itself.
+      expect(await flushQueue('h1', apply, undefined, (x) => void dropped.push(x.itemKey))).toBe(1);
+      expect(dropped).toEqual(['a']);
+      expect(stored().map((x) => x.itemKey)).toEqual(['b']);
+      expect(stored()[0].attempts).toBe(1);
+    });
+
+    it('drops an entry first tried 24 hours and a minute ago on its next failure, but not one just inside the day', async () => {
+      const now = Date.now();
+      saveQueue('h1', [{ ...e('old', { checked: true }), attempts: 2, firstTriedAt: now - (24 * HOUR + 60_000) }]);
+      const dropped: string[] = [];
+      expect(await flushQueue('h1', async () => { throw stuck(); }, undefined, (x) => void dropped.push(x.itemKey))).toBe(0);
+      expect(dropped).toEqual(['old']);
+
+      saveQueue('h1', [{ ...e('young', { checked: true }), attempts: 2, firstTriedAt: now - (24 * HOUR - 60_000) }]);
+      expect(await flushQueue('h1', async () => { throw stuck(); })).toBe(1);
+      expect(stored()[0].attempts).toBe(3);
+    });
+
+    it('still works for a stored entry without the new fields', async () => {
+      const before = Date.now();
+      saveQueue('h1', [e('a', { checked: true })]);
+      expect(await flushQueue('h1', async () => { throw stuck(); })).toBe(1);
+      const [x] = stored();
+      expect(x.attempts).toBe(1);
+      expect(x.firstTriedAt).toBeGreaterThanOrEqual(before);
+      expect(await flushQueue('h1', async () => {})).toBe(0);
+    });
+
+    it('does not count a failure while the phone says it is offline', async () => {
+      saveQueue('h1', [e('a', { checked: true })]);
+      vi.stubGlobal('navigator', { onLine: false });
+      for (let i = 0; i < 12; i++) await flushQueue('h1', async () => { throw offlineErr(); });
+      expect(stored().map((x) => x.itemKey)).toEqual(['a']);
+      expect(stored()[0].attempts ?? 0).toBe(0);
+    });
+
+    it('a success leaves the other entries alone', async () => {
+      const t0 = Date.now() - 3600_000;
+      const q = [
+        { ...e('a', { checked: true }), attempts: 4, firstTriedAt: t0 },
+        e('b', { checked: true }),
+        { ...e('c', { checked: true }), attempts: 7, firstTriedAt: t0 + 1000 },
+      ];
+      saveQueue('h1', q);
+      await flushQueue('h1', async (x) => {
+        if (x.itemKey === 'c') throw stuck();
+      });
+      expect(stored().map((x) => x.itemKey)).toEqual(['c']);
+      expect(stored()[0]).toMatchObject({ attempts: 8, firstTriedAt: t0 + 1000 });
+      // 'a' succeeded; 'b' succeeded; 'c' failed and kept its own history.
+    });
   });
 });
