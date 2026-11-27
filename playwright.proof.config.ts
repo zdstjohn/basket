@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * The visual proof: before/after shots, motion clips and measurements.
  * Run with `npm run proof` (builds and serves against the local Supabase). Output goes to /proof-out/.
- * Two workers, so the WebKit (iPhone 17) and Chromium (Pixel 7) projects run at the same time.
+ * Two workers. They are not guaranteed to be one per browser: for WebKit and Chromium at the same time use `npm run proof:parallel`.
  */
 export default defineConfig({
   testDir: "./proof",
@@ -13,7 +13,8 @@ export default defineConfig({
   workers: 2,
   retries: 0,
   timeout: 90_000,
-  outputDir: "proof-out/.raw",
+  // Each process of scripts/proof-run.sh gets its own, since Playwright empties it at the start of a run.
+  outputDir: process.env.PROOF_OUT_DIR ?? "proof-out/.raw",
   reporter: [["list"]],
   use: {
     baseURL: "http://localhost:3000",
@@ -40,7 +41,8 @@ export default defineConfig({
   webServer: {
     command: process.env.CI ? "npm run start" : "npm run build && npm run start",
     url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+    // scripts/proof-run.sh starts the server once and shares it between its two Playwright processes.
+    reuseExistingServer: true,
     timeout: 240_000,
   },
 });

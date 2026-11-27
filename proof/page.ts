@@ -122,6 +122,19 @@ ${sections.join("\n")}
 /** Runs once after the whole proof run (Playwright's global teardown), even when every test was skipped. */
 export default async function writeProofPage(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
+  // scripts/proof-run.sh runs one process per browser: only the last one to finish builds the page, once.
+  const parts = process.env.PROOF_PARTS?.split(",").filter(Boolean) ?? [];
+  if (parts.length > 0) {
+    const marks = path.join(OUT, ".parts");
+    mkdirSync(marks, { recursive: true });
+    writeFileSync(path.join(marks, `${process.env.PROOF_PART ?? "one"}.done`), "");
+    if (!parts.every((p) => existsSync(path.join(marks, `${p}.done`)))) return;
+    try {
+      writeFileSync(path.join(marks, "page.lock"), "", { flag: "wx" });
+    } catch {
+      return; // the other process won the race and builds it
+    }
+  }
   const clips = convertClips();
   copyBefore();
   writeFileSync(path.join(OUT, "index.html"), build(clips));

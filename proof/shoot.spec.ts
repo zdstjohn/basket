@@ -1,11 +1,12 @@
 import { test } from "@playwright/test";
 import { LOOKS, dress, outDir, pendingReason, settle, signInFor } from "./helpers";
-import { Pending, STATES } from "./states";
+import { skipReason } from "./pending";
+import { STATES } from "./states";
 
 /**
  * The "after" shots: every state, in both looks, on this project's phone, with its insets.
  * Saves proof-out/after/{state}-{device}-{look}.png (the viewport) and ...-full.png (the whole page).
- * A state whose screen is still contrastPending (or not registered) is skipped with a printed note; one that cannot be reached is skipped with the reason.
+ * A state whose screen is still contrastPending (or not registered) is skipped with a printed note; one that says it is Pending is skipped with its reason; any other error fails the test.
  */
 test.describe.configure({ mode: "parallel" });
 
@@ -24,7 +25,9 @@ for (const state of STATES) {
       try {
         await state.run({ page, context, email });
       } catch (err) {
-        const reason = err instanceof Pending ? err.message : `could not reach the state: ${(err as Error).message.split("\n")[0]}`;
+        // Only a state that says it is not reachable yet is skipped. Any other error is a finished screen breaking: it fails.
+        const reason = skipReason(err);
+        if (reason === null) throw err;
         console.log(`[proof] skipped ${state.name} (${look}, ${device}): ${reason}`);
         test.skip(true, reason);
       }

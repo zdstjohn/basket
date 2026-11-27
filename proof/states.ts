@@ -11,9 +11,9 @@ import { getMyHousehold } from "../lib/db/queries/household";
 import { todayIn, weekStartFor, type Day } from "../lib/domain/weeks";
 import { addDays } from "../lib/week/format";
 import type { Who } from "./helpers";
+import { Pending } from "./pending";
 
-/** Thrown by a state that cannot be reached until a later task lands; the proof prints the reason and moves on. */
-export class Pending extends Error {}
+export { Pending };
 
 export interface StateCtx {
   page: Page;

@@ -12,4 +12,6 @@ rm -rf .next
 npm run build
 if ! grep -rlE "(127\.0\.0\.1|localhost):54321" .next >/dev/null; then echo "build does not point at local Supabase" >&2; exit 1; fi
 if grep -rl "xzafofgzlgmdvafrkqkx" .next >/dev/null; then echo "build contains the production project" >&2; exit 1; fi
+# E2E_RUNNER lets another script (scripts/proof-run.sh) run in place of one Playwright process, after the same build and local-only checks.
+if [ -n "${E2E_RUNNER:-}" ]; then exec "$E2E_RUNNER" "$@"; fi
 npx playwright test "$@"

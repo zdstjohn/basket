@@ -3,6 +3,7 @@ import { addFromSearch } from "../e2e/helpers/flows-a";
 import { chooseStore, openItemSheet } from "../e2e/helpers/flows-b";
 import { dress, expect, outDir, pendingReason, recordingContext, settle, signInFor } from "./helpers";
 import { watchTransforms } from "./measure";
+import { skipReason } from "./pending";
 
 /**
  * Motion clips: week open, a meal settling, photo into the dinner sheet and back, sheet drag and flick, the budget total
@@ -145,7 +146,8 @@ for (const clip of CLIPS) {
       try {
         await clip.setup(page);
       } catch (err) {
-        const reason = `setup failed: ${(err as Error).message.split("\n")[0]}`;
+        const reason = skipReason(err);
+        if (reason === null) throw err;
         console.log(`[proof] skipped clip ${name} (${device}): ${reason}`);
         test.skip(true, reason);
       }
@@ -157,22 +159,25 @@ for (const clip of CLIPS) {
       await dress(rpage, "light", testInfo);
       const stop = reduced && !clip.skipTransformCheck ? await watchTransforms(rpage) : null;
 
-      let failure: string | null = null;
+      let failure: unknown = null;
       try {
         await clip.act(rpage);
       } catch (err) {
-        failure = (err as Error).message.split("\n")[0];
+        failure = err;
       }
+      // The transform check runs even when the clip failed halfway: what it saw until then still counts.
       const moved = stop ? await stop() : [];
       const video = rpage.video();
       await rec.close();
-      if (video && !failure) await video.saveAs(`${rawDir}/${name}-${device}.webm`);
+      if (failure === null && video) await video.saveAs(`${rawDir}/${name}-${device}.webm`);
 
-      if (failure) {
-        console.log(`[proof] skipped clip ${name} (${device}): could not play it: ${failure}`);
-        test.skip(true, failure);
+      expect.soft(moved, `reduced motion must not change a transform, only opacity:\n${moved.join("\n")}`).toEqual([]);
+      if (failure !== null) {
+        const reason = skipReason(failure);
+        if (reason === null) throw failure;
+        console.log(`[proof] skipped clip ${name} (${device}): ${reason}`);
+        test.skip(true, reason);
       }
-      expect(moved, `reduced motion must not change a transform, only opacity:\n${moved.join("\n")}`).toEqual([]);
     });
   }
 }

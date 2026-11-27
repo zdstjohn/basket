@@ -10,7 +10,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "proof": "scripts/e2e-local.sh --config=playwright.proof.config.ts"
+    "proof": "scripts/e2e-local.sh --config=playwright.proof.config.ts",
+    "proof:parallel": "E2E_RUNNER=scripts/proof-run.sh scripts/e2e-local.sh --config=playwright.proof.config.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

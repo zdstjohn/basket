@@ -109,7 +109,7 @@ export async function zoomContext(browser: Browser, testInfo: TestInfo, from: Br
   const context = await browser.newContext({
     baseURL: use.baseURL,
     viewport: use.viewport ?? { width: 402, height: 874 },
-    deviceScaleFactor: (use.deviceScaleFactor ?? 1) * 2,
+    deviceScaleFactor: Math.min(4, (use.deviceScaleFactor ?? 1) * 2),
     isMobile: use.isMobile,
     hasTouch: use.hasTouch,
     userAgent: use.userAgent,

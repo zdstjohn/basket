@@ -7,7 +7,11 @@ npm run proof                                  # everything
 npm run proof -- proof/shoot.spec.ts -g login  # one slice
 ```
 
-`npm run proof` goes through `scripts/e2e-local.sh`: it builds and serves against the local Supabase only. Output goes to `proof-out/` (gitignored). Open `proof-out/index.html`.
+`npm run proof:parallel` is the way to run WebKit and Chromium at the same time: it builds once (through the same local-only guard), starts the app once, then runs `--project=iphone-17` and `--project=pixel-7` as two parallel Playwright processes against it (`scripts/proof-run.sh`); the last one to finish writes the page. Arguments pass through (`npm run proof:parallel -- -g login`).
+
+`npm run proof` is the default and the simple form: one Playwright process with two workers. It is not guaranteed to be one worker per browser, so it may do WebKit and then Chromium. Use it for a quick slice (`-g login`) or when you want one report.
+
+Both go through `scripts/e2e-local.sh`: they build and serve against the local Supabase only. Output goes to `proof-out/` (gitignored). Open `proof-out/index.html`.
 
 | Spec | Writes | What it does |
 |---|---|---|
@@ -21,8 +25,8 @@ Specs reuse `e2e/helpers` (sign-in, household, flows, look, insets) and `e2e/scr
 ## What gets skipped
 
 - A state whose registry screen is still `contrastPending` (or not registered yet) is skipped with a `[proof] skipped ...` line. This is how the "after" shots stay honest: a screen appears once its own task has redesigned it.
-- A state that cannot be reached (its trigger does not exist yet, or a step failed) is skipped with the reason: `week-long-names`, `week-error`, `list-stale` and `review-sent` have no trigger yet; add one in `states.ts` when the screen's task lands.
-- A clip is skipped the same way. Clips need: a meal tile that is a button named after the dish and opens a dialog (`photo-sheet`), the list item sheet (`sheet-drag`), `list-row` checkboxes (`list-strike`).
+- A state that throws `Pending` (its trigger does not exist yet) is skipped with the reason: `week-long-names`, `week-error`, `list-stale` and `review-sent` have no trigger yet; add one in `states.ts` when the screen's task lands.
+- Any other error fails the test: a screen that is registered and no longer `contrastPending` is finished, so a step that breaks on it is a bug. The same goes for clips, and a failed reduced-motion clip still reports its transform check. Clips need: a meal tile that is a button named after the dish and opens a dialog (`photo-sheet`), the list item sheet (`sheet-drag`), `list-row` checkboxes (`list-strike`).
 - On a `contrastPending` screen, `measure.spec.ts` writes its findings to `proof-out/measure/` and as a test annotation but passes; on any other screen findings fail the test.
 
 ## Measurements (`measure.spec.ts`)
