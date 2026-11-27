@@ -4,7 +4,7 @@ import { eatsRole } from '@/lib/domain/portions';
 import { fetchRecipePage } from '@/lib/recipes/import-url';
 import { extractRecipeJsonLd } from '@/lib/recipes/jsonld';
 import { searchRecipes } from '@/lib/recipes/search';
-import type { RecipeOption, RecipeSource } from '@/lib/recipes/search/provider';
+import type { RecipeOption, RecipeSource, SearchMeter } from '@/lib/recipes/search/provider';
 import { generateStructured, UnreadableError, type UsageReport } from './provider';
 import {
   LinesResultSchema, RecipeDraftSchema, VegSwapResultSchema, type RecipeDraft,
@@ -12,13 +12,19 @@ import {
 
 export { UnreadableError } from './provider';
 
-export type UsageEvent =
-  | { kind: 'parse'; model: string; inputTokens: number; outputTokens: number }
-  | { kind: 'search' };
+export interface UsageEvent {
+  kind: 'parse';
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  assumed?: boolean;
+}
 
 export interface DraftOptions {
-  /** Called once per model call (parse) and once when a photo search ran (search). */
+  /** Called once per model call. */
   onUsage?: (e: UsageEvent) => void;
+  /** Counts the Brave requests the photo lookup sends; the caller bills them. */
+  meter?: SearchMeter;
   /** Source for the photo lookup in draftFromText; defaults to the big sites. */
   source?: RecipeSource;
 }
@@ -179,8 +185,7 @@ export async function draftFromText(
   if (!draft.photo) {
     const source = opts.source ?? 'sites';
     try {
-      const found = await searchRecipes(draft.name, source);
-      if (source === 'sites') opts.onUsage?.({ kind: 'search' });
+      const found = await searchRecipes(draft.name, source, opts.meter);
       const first = found.options[0];
       if (first) draft.photo = { url: first.image, credit: first.site, creditUrl: first.url };
     } catch {

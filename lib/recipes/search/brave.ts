@@ -1,6 +1,6 @@
 import 'server-only';
 import { RECIPE_SITES, siteForHost } from '../sites';
-import type { SearchHit, WebSearchProvider } from './provider';
+import type { SearchHit, SearchMeter, WebSearchProvider } from './provider';
 
 interface BraveResponse {
   web?: { results?: { url?: unknown; title?: unknown }[] };
@@ -8,10 +8,11 @@ interface BraveResponse {
 
 const SITE_CLAUSE = `(${RECIPE_SITES.slice(0, 8).map((s) => `site:${s.domain}`).join(' OR ')})`;
 
-async function run(query: string, count: number, key: string): Promise<SearchHit[]> {
+async function run(query: string, count: number, key: string, meter?: SearchMeter): Promise<SearchHit[]> {
   const url = new URL('https://api.search.brave.com/res/v1/web/search');
   url.searchParams.set('q', query);
   url.searchParams.set('count', String(Math.min(count, 20)));
+  if (meter) meter.braveCalls++; // counted when sent: a request that fails or times out is still billed
   const res = await fetch(url, {
     headers: { accept: 'application/json', 'x-subscription-token': key },
     signal: AbortSignal.timeout(4000),
@@ -37,11 +38,11 @@ const onList = (hits: SearchHit[]): number =>
 
 /** One site-limited query; when it finds nothing on the allow-list, one retry with the plain query. */
 export const braveSearch: WebSearchProvider = {
-  async search(query, count) {
+  async search(query, count, meter) {
     const key = process.env.BRAVE_SEARCH_API_KEY;
     if (!key) throw new Error('BRAVE_SEARCH_API_KEY is not set');
-    const limited = await run(`${query} ${SITE_CLAUSE}`, count, key);
+    const limited = await run(`${query} ${SITE_CLAUSE}`, count, key, meter);
     if (onList(limited) > 0) return limited;
-    return run(query, count, key);
+    return run(query, count, key, meter);
   },
 };

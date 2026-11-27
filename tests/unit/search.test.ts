@@ -48,7 +48,7 @@ describe('searchSites', () => {
     fetchPage.mockImplementation(async (url: string) => page(`R-${new URL(url).host}`));
 
     const options = await searchSites('chicken tacos');
-    expect(search).toHaveBeenCalledWith('chicken tacos recipe', 20);
+    expect(search).toHaveBeenCalledWith('chicken tacos recipe', 20, undefined);
     const fetched = fetchPage.mock.calls.map((c) => new URL(c[0] as string).host);
     expect(fetched).not.toContain('blog.random.test');
     expect(fetched).not.toContain('notallrecipes.com');
