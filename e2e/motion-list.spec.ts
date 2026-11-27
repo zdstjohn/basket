@@ -204,6 +204,18 @@ test("reduced motion: no transforms on the list; the total crossfades", async ({
   await expect(bar.locator(".bk-fade-in").first()).toBeAttached();
 });
 
+test("focus stays on the item you ticked after its row moves", async ({ page }) => {
+  await tacosList(page);
+  const box = tickBox(page, "Yellow onion");
+  await box.focus();
+  await page.keyboard.press("Space");
+  await expect(box).toBeChecked();
+  await expect(gotIt(page).getByTestId("list-row").filter({ hasText: "Yellow onion" })).toBeVisible();
+  await settledDown(page);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Got Yellow onion");
+  expect(await page.evaluate(() => !!document.activeElement?.closest("section[aria-labelledby]"))).toBe(true);
+});
+
 test("a tick made offline strikes, moves and is still ticked after coming back", async ({ page, context }) => {
   const email = await tacosList(page);
   await expect(page.locator('[data-offline-ready="on"]')).toBeAttached({ timeout: 15_000 });

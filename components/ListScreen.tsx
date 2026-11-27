@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Clock, MapPin } from "lucide-react";
 import { BudgetSentence } from "@/components/BudgetSentence";
 import { ListRow } from "@/components/ListRow";
@@ -63,17 +63,37 @@ export function ListScreen({ household }: { household: Household }) {
   // has already happened at the tap; this only decides where the row is drawn.
   const [settled, setSettled] = useState<ReadonlySet<string>>(checked);
   const [primed, setPrimed] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const refocus = useRef<{ key: string; box: boolean } | null>(null);
   if (!primed && !list.loading) {
     setPrimed(true);
     setSettled(checked);
   }
   useEffect(() => {
     if (!primed || sameSet(settled, checked)) return;
-    const t = setTimeout(() => setSettled(checked), prefersReducedMotion() ? 0 : MOVE_DELAY_MS);
+    const t = setTimeout(
+      () => {
+        // The row is about to be remounted in its new list; note where focus is so it can be put back.
+        const a = document.activeElement;
+        const at = a instanceof HTMLElement ? a.closest<HTMLElement>("[data-flip-key]") : null;
+        refocus.current =
+          at && listRef.current?.contains(at) ? { key: at.getAttribute("data-flip-key") ?? "", box: a instanceof HTMLInputElement } : null;
+        setSettled(checked);
+      },
+      prefersReducedMotion() ? 0 : MOVE_DELAY_MS,
+    );
     return () => clearTimeout(t);
   }, [primed, settled, checked]);
+  // A moved row is a new element, so keyboard and screen-reader focus would fall to the page: put it back on the same item.
+  useLayoutEffect(() => {
+    const want = refocus.current;
+    refocus.current = null;
+    if (!want?.key) return;
+    const li = [...(listRef.current?.querySelectorAll<HTMLElement>("[data-flip-key]") ?? [])].find((e) => e.getAttribute("data-flip-key") === want.key);
+    const target = li?.querySelector<HTMLElement>(want.box ? 'input[type="checkbox"]' : "button");
+    if (target && document.activeElement !== target) target.focus({ preventScroll: true });
+  }, [settled]);
   const { toBuy, gotIt } = useMemo(() => splitGotIt(toBuyHere, settled), [toBuyHere, settled]);
-  const listRef = useRef<HTMLDivElement>(null);
   useFlipList(listRef, `${store}|${toBuy.map((g) => g.items.map((i) => i.key).join(",")).join(";")}|${gotIt.map((i) => i.key).join(",")}`);
   const skipped = useMemo(() => here.filter((i) => i.haveIt), [here]);
   const reviewable = useMemo(() => reviewLines(items, products).lines.length, [items, products]);

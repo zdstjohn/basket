@@ -449,10 +449,7 @@ test("check off all works offline, and Undo too, then everything is sent", async
     .toBe(4);
 });
 
-test("the Undo toast rises above the pinned bar", async ({ page }) => {
-  await createHousehold(page);
-  await planTacos(page);
-  await openList(page);
+async function toastRisesAboveBar(page: Page) {
   await expect(page.getByTestId("list-row")).toHaveCount(4);
   await checkAll(page).click();
   const toast = page.getByTestId("check-all-undo");
@@ -460,6 +457,26 @@ test("the Undo toast rises above the pinned bar", async ({ page }) => {
   const t = (await toast.boundingBox())!;
   const bar = (await page.getByTestId("list-bar").boundingBox())!;
   expect(t.y + t.height).toBeLessThanOrEqual(bar.y + 0.5);
+}
+
+test("the Undo toast rises above the pinned bar", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await toastRisesAboveBar(page);
+});
+
+test("the Undo toast rises above the tall bar with Review and send", async ({ page }) => {
+  await createHousehold(page);
+  await chooseStore(page);
+  await planTacos(page);
+  await openList(page);
+  const review = page.getByRole("link", { name: "Review and send to Fred Meyer" });
+  await expect(review).toBeVisible();
+  const barBefore = (await page.getByTestId("list-bar").boundingBox())!;
+  await toastRisesAboveBar(page);
+  // The bar is the tall one: the button sits inside it.
+  expect(barBefore.height).toBeGreaterThan(80);
 });
 
 test("a ticked item moves to Got it", async ({ page }) => {
