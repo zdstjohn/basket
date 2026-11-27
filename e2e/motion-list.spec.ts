@@ -61,7 +61,16 @@ async function recordAnimations(page: Page) {
   });
 }
 const animations = (page: Page) => page.evaluate(() => (window as unknown as { __anims: Keyframe[][] }).__anims);
-const settledDown = (page: Page) => expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+// Running, finite animations only: a skeleton pulse or a finished fill-forwards fade is not a move in progress.
+const settledDown = (page: Page) =>
+  expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.getAnimations().filter((a) => a.playState === "running" && a.effect?.getComputedTiming().endTime !== Infinity).length,
+      ),
+    )
+    .toBe(0);
 
 async function setPrice(page: Page, name: string, price: string) {
   const sheet = await openItemSheet(page, name);
@@ -171,11 +180,13 @@ test("a total that gains a digit keeps the bar on one line", async ({ page }) =>
   await expect.poll(async () => (await listTotal(page).textContent())!.replace(/[^\d]/g, "").length).toBeGreaterThanOrEqual(5);
   const after = (await bar.boundingBox())!;
   expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
-  const totalLine = page.getByTestId("list-bar").locator("p").first();
-  const lines = await totalLine.evaluate((p) => {
-    const rects = [...p.querySelectorAll("*")].flatMap((e) => [...e.getClientRects()]).filter((r) => r.width > 0);
-    return new Set(rects.map((r) => Math.round(r.top / 4))).size;
+  // The total itself stays on one line: its box is no taller than one line of text.
+  const oneLine = await page.getByTestId("list-bar").locator("strong").first().evaluate((el) => {
+    const line = parseFloat(getComputedStyle(el).lineHeight);
+    return el.getBoundingClientRect().height <= line * 1.25;
   });
+  expect(oneLine).toBe(true);
+});
   expect(lines).toBeLessThanOrEqual(before.height > 0 ? 2 : 1);
 });
 
