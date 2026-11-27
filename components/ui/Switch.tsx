@@ -11,14 +11,14 @@ export function Switch({
   label: string;
 }) {
   return (
-    <label className="inline-flex min-h-12 min-w-12 cursor-pointer items-center justify-center">
+    <label className="relative inline-flex min-h-12 min-w-12 cursor-pointer items-center justify-center">
       <input
         type="checkbox"
         role="switch"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         aria-label={label}
-        className="peer sr-only"
+        className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
       />
       <span
         aria-hidden="true"

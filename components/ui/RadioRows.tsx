@@ -24,7 +24,7 @@ export function RadioRows<T extends string>({
         const labelId = `${uid}-${o.value}-label`;
         const detailId = `${uid}-${o.value}-detail`;
         return (
-          <label key={o.value} className="flex min-h-13 cursor-pointer items-center gap-3 py-2">
+          <label key={o.value} className="relative flex min-h-13 cursor-pointer items-center gap-3 py-2">
             <input
               type="radio"
               name={name}
@@ -33,7 +33,7 @@ export function RadioRows<T extends string>({
               onChange={() => onChange(o.value)}
               aria-labelledby={labelId}
               aria-describedby={o.detail ? detailId : undefined}
-              className="peer sr-only"
+              className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
             />
             <span
               aria-hidden="true"

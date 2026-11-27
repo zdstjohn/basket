@@ -17,13 +17,13 @@ export function Check({
   children?: ReactNode;
 }) {
   return (
-    <label className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-2">
+    <label className="relative inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-2">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         aria-label={label}
-        className="peer sr-only"
+        className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
       />
       <span
         aria-hidden="true"
