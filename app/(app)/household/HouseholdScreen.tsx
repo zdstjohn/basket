@@ -71,7 +71,7 @@ export function HouseholdScreen({
   const [cushion, setCushion] = useState(formatExtra(household.cushion_cents));
   const saved = useRef({ budget: household.budget_cents, cushion: household.cushion_cents });
   const [fieldError, setFieldError] = useState<{ field: "budget" | "cushion"; message: string } | null>(null);
-  const [saveFailed, setSaveFailed] = useState(false);
+  const [saveFailed, setSaveFailed] = useState<"budget" | "cushion" | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteState, setInviteState] = useState<"idle" | "working" | "error">("idle");
@@ -150,7 +150,7 @@ export function HouseholdScreen({
     const cents = parseMoneyToCents(text);
     const show = field === "budget" ? setBudget : setCushion;
     const format = field === "budget" ? formatDollars : formatExtra;
-    setSaveFailed(false);
+    setSaveFailed(null);
     setJustSaved(false);
     if (cents === null) {
       show(format(saved.current[field]));
@@ -169,8 +169,8 @@ export function HouseholdScreen({
       saved.current[field] = cents;
       setJustSaved(true);
     } catch {
-      show(format(saved.current[field]));
-      setSaveFailed(true);
+      // What was typed stays in the box, so Retry sends the same amount.
+      setSaveFailed(field);
     }
   }
 
@@ -271,7 +271,7 @@ export function HouseholdScreen({
               onBlur={() => void saveBudget("cushion")}
             />
           </div>
-          {saveFailed && <ErrorBanner message="That didn’t save. Try again." />}
+          {saveFailed && <ErrorBanner message="That didn’t save." actionLabel="Retry" onAction={() => void saveBudget(saveFailed)} />}
           <div role="status">{justSaved && <Banner role={null}>Saved.</Banner>}</div>
         </section>
 
