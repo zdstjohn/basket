@@ -19,6 +19,13 @@ const SLOW_MS = 4000; // the list waits this long for the network before opening
 
 const save = (cache, path) => self.saveOnce(cache, path, (p) => fetch(p, { credentials: "same-origin" }));
 
+// The page is saved again (not skipped) when the plan says so; the copy carries the time it was saved.
+async function savePage(cache, path) {
+  const res = await fetch(path, { credentials: "same-origin" });
+  // A redirect means signed out: never keep a login page as the list.
+  if (res.ok && !res.redirected) await cache.put(path, await self.stampSaved(res, Date.now()));
+}
+
 self.addEventListener("message", (event) => {
   const data = event.data;
   if (data && data.type === "clear") {
@@ -29,8 +36,13 @@ self.addEventListener("message", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
-      const paths = [data.page, ...(data.assets || [])].filter((p) => typeof p === "string" && p.startsWith("/"));
-      await Promise.all(paths.map((p) => save(cache, p).catch(() => {})));
+      const ok = (p) => typeof p === "string" && p.startsWith("/");
+      const assets = (data.assets || []).filter(ok);
+      const plan = ok(data.page) ? await self.precachePlan((p) => cache.match(p), data.page, assets, Date.now()) : { page: false, assets };
+      await Promise.all([
+        ...plan.assets.map((p) => save(cache, p).catch(() => {})),
+        ...(plan.page ? [savePage(cache, data.page).catch(() => {})] : []),
+      ]);
       await trimStatic(cache, MAX_STATIC).catch(() => {});
       if (event.source) event.source.postMessage({ type: "precached" });
     })(),
@@ -71,7 +83,11 @@ self.addEventListener("fetch", (event) => {
       if (res.ok && !res.redirected) {
         const copy = res.clone();
         // Keep the worker alive until the copy is saved, even if the page was already served from the saved one.
-        event.waitUntil(caches.open(CACHE).then((c) => c.put(PAGE, copy)).catch(() => {}));
+        event.waitUntil(
+          Promise.all([caches.open(CACHE), self.stampSaved(copy, Date.now())])
+            .then(([c, stamped]) => c.put(PAGE, stamped))
+            .catch(() => {}),
+        );
       }
       return res;
     });

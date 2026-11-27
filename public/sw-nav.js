@@ -39,5 +39,26 @@ async function saveOnce(cache, path, fetchPath) {
   const res = await fetchPath(path);
   if (res.ok && !res.redirected) await cache.put(path, res);
 }
-if (typeof self !== "undefined") Object.assign(self, { offlineStart, raceSaved, saveOnce });
-if (typeof module !== "undefined") module.exports = { offlineStart, raceSaved, saveOnce };
+
+const SAVED_AT = "x-basket-saved-at";
+const PAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+// The same response with the time it was saved, so a later visit can tell how old the saved page is.
+async function stampSaved(res, now) {
+  const headers = new Headers(res.headers);
+  headers.set(SAVED_AT, String(now));
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+// What a precache message needs done: the assets not yet saved, and whether the page itself is to be saved again
+// (it is missing or unstamped, older than a day, or the message names an asset not saved yet, which means a new build).
+async function precachePlan(match, page, assets, now) {
+  const missing = [];
+  for (const a of assets) if (!(await match(a))) missing.push(a);
+  const hit = await match(page);
+  const at = hit ? Number(hit.headers.get(SAVED_AT)) : NaN;
+  const stale = !hit || !Number.isFinite(at) || now - at > PAGE_MAX_AGE_MS;
+  return { page: stale || missing.length > 0, assets: missing };
+}
+if (typeof self !== "undefined") Object.assign(self, { offlineStart, raceSaved, saveOnce, stampSaved, precachePlan });
+if (typeof module !== "undefined") module.exports = { offlineStart, raceSaved, saveOnce, stampSaved, precachePlan };

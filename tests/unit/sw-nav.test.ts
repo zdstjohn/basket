@@ -1,7 +1,14 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
-const { offlineStart, raceSaved, saveOnce } = createRequire(import.meta.url)("../../public/sw-nav.js") as {
+const { offlineStart, raceSaved, saveOnce, precachePlan, stampSaved } = createRequire(import.meta.url)("../../public/sw-nav.js") as {
+  stampSaved: (res: Response, now: number) => Promise<Response>;
+  precachePlan: (
+    match: (p: string) => Promise<{ headers: { get: (n: string) => string | null } } | undefined>,
+    page: string,
+    assets: string[],
+    now: number,
+  ) => Promise<{ page: boolean; assets: string[] }>;
   saveOnce: (
     cache: { match: (p: string) => Promise<unknown>; put: (p: string, r: unknown) => Promise<void> },
     path: string,
@@ -86,5 +93,37 @@ describe("saveOnce", () => {
     await saveOnce(t.cache, "/list", t.fetchPath(true, true));
     await saveOnce(t.cache, "/x", t.fetchPath(false));
     expect(t.put).toEqual([]);
+  });
+});
+
+describe("precachePlan", () => {
+  const NOW = Date.parse("2026-11-26T12:00:00Z");
+  const H = 3600_000;
+  const entry = (savedAt?: number) => ({ headers: { get: (n: string) => (n === "x-basket-saved-at" && savedAt !== undefined ? String(savedAt) : null) } });
+  const world = (cached: Record<string, ReturnType<typeof entry>>) => async (p: string) => cached[p];
+  it("a new asset re-saves the page and fetches only that asset", async () => {
+    const m = world({ "/list": entry(NOW - H), "/a.js": entry() });
+    expect(await precachePlan(m, "/list", ["/a.js", "/b.js"], NOW)).toEqual({ page: true, assets: ["/b.js"] });
+  });
+  it("a page saved 25 h ago re-saves", async () => {
+    const m = world({ "/list": entry(NOW - 25 * H), "/a.js": entry() });
+    expect(await precachePlan(m, "/list", ["/a.js"], NOW)).toEqual({ page: true, assets: [] });
+  });
+  it("a page saved 1 h ago with every asset cached does not refetch", async () => {
+    const m = world({ "/list": entry(NOW - H), "/a.js": entry() });
+    expect(await precachePlan(m, "/list", ["/a.js"], NOW)).toEqual({ page: false, assets: [] });
+  });
+  it("a page with no stamp (saved by an older worker) or no copy re-saves", async () => {
+    expect((await precachePlan(world({ "/list": entry() }), "/list", [], NOW)).page).toBe(true);
+    expect((await precachePlan(world({}), "/list", [], NOW)).page).toBe(true);
+  });
+});
+
+describe("stampSaved", () => {
+  it("keeps body and status and adds the save time", async () => {
+    const out = await stampSaved(new Response("hi", { status: 200, headers: { "content-type": "text/html" } }), 1234);
+    expect(out.headers.get("x-basket-saved-at")).toBe("1234");
+    expect(out.headers.get("content-type")).toBe("text/html");
+    expect(await out.text()).toBe("hi");
   });
 });
