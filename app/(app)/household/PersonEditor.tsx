@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { DIETS } from "@/components/PersonRow";
-import { FoodChips } from "@/components/household/FoodChips";
-import { COMMON_ALLERGENS, coversLine } from "@/lib/domain/families";
+import { FoodChips, addFood, allergyHelp, mergeList } from "@/components/household/FoodChips";
+import { COMMON_ALLERGENS } from "@/lib/domain/families";
 import type { Diet, Person } from "@/lib/domain/types";
 import { focusRing, pillButton, textInput } from "@/lib/ui";
 
@@ -35,7 +35,32 @@ export function PersonEditor({
   const [appetite, setAppetite] = useState(initial.appetite);
   const [dislikes, setDislikes] = useState(initial.dislikes);
   const [allergies, setAllergies] = useState(initial.allergies ?? []);
+  const [dislikeTyped, setDislikeTyped] = useState("");
+  const [allergyTyped, setAllergyTyped] = useState("");
+  const [dislikeError, setDislikeError] = useState<string | null>(null);
+  const [allergyError, setAllergyError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const cancelDelete = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirmingDelete) cancelDelete.current?.focus();
+  }, [confirmingDelete]);
+
+  // The person changed on another phone while this editor was open: keep my edits, take the rest from the fresh row.
+  const [base, setBase] = useState(initial);
+  const [changedElsewhere, setChangedElsewhere] = useState(false);
+  const fields = (p: PersonDraft) =>
+    JSON.stringify([p.name, p.age, p.diet, p.appetite, p.dislikes, p.allergies ?? []]);
+  if (initial.id && fields(initial) !== fields(base)) {
+    const baseAge = base.age > 0 || base.id ? String(base.age) : "";
+    setName(name === base.name ? initial.name : name);
+    setAge(age === baseAge ? String(initial.age) : age);
+    setDiet(diet === base.diet ? initial.diet : diet);
+    setAppetite(appetite === base.appetite ? initial.appetite : appetite);
+    setDislikes(mergeList(base.dislikes, dislikes, initial.dislikes));
+    setAllergies(mergeList(base.allergies ?? [], allergies, initial.allergies ?? []));
+    setBase(initial);
+    setChangedElsewhere(true);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +81,12 @@ export function PersonEditor({
 
   function submit(e: FormEvent) {
     e.preventDefault();
+    // Text left in a box is a food the parent meant to add: add it now, or say why it can't be.
+    const d = addFood(dislikes, dislikeTyped);
+    const a = addFood(allergies, allergyTyped);
+    setDislikeError(d.error);
+    setAllergyError(a.error);
+    if (d.error || a.error) return;
     return run(() =>
       onSave({
         ...initial,
@@ -63,8 +94,8 @@ export function PersonEditor({
         age: Number(age),
         diet,
         appetite,
-        dislikes,
-        allergies,
+        dislikes: d.list,
+        allergies: a.list,
       }),
     );
   }
@@ -75,6 +106,11 @@ export function PersonEditor({
       aria-label={initial.id ? `Edit ${initial.name}` : "Add a person"}
       className="grid gap-3 border-t border-[#F0F2EF] bg-ground px-3.5 py-3"
     >
+      {changedElsewhere && (
+        <p role="status" className="text-[13px] font-medium text-[#4A544F]">
+          Changed on the other phone. Your edits are kept; check before saving.
+        </p>
+      )}
       <label className="grid gap-1 text-xs text-muted">
         Name
         <input
@@ -137,18 +173,22 @@ export function PersonEditor({
         }
         value={dislikes}
         onChange={setDislikes}
+        typed={dislikeTyped}
+        onTyped={setDislikeTyped}
+        error={dislikeError}
+        onError={setDislikeError}
         placeholder="Add a food"
         addLabel="Add"
       />
       <FoodChips
         label="Allergies"
-        help={
-          allergies.length === 0
-            ? "None. Tap one, or type your own."
-            : (coversLine(allergies[allergies.length - 1], { wide: true }) ?? "")
-        }
+        help={allergyHelp(allergies)}
         value={allergies}
         onChange={setAllergies}
+        typed={allergyTyped}
+        onTyped={setAllergyTyped}
+        error={allergyError}
+        onError={setAllergyError}
         placeholder="Add an allergy"
         addLabel="Add"
         suggestions={COMMON_ALLERGENS}
@@ -196,6 +236,7 @@ export function PersonEditor({
               Delete
             </button>
             <button
+              ref={cancelDelete}
               type="button"
               disabled={busy}
               onClick={() => setConfirmingDelete(false)}
