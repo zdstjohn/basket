@@ -1,6 +1,6 @@
 /** One word, lower case, singular: "limes" and "lime" both become "lime". */
 export function singular(w: string): string {
-  if (w === 'chilies') return 'chili';
+  if (w === 'chilies' || w === 'chillies') return 'chili';
   if (w.length > 5 && w.endsWith('leaves')) return `${w.slice(0, -6)}leaf`;
   if (w.length > 4 && w.endsWith('ies')) return `${w.slice(0, -3)}y`;
   if (w.length > 4 && /(?:o|ch|sh|x|z)es$/.test(w)) return w.slice(0, -2);

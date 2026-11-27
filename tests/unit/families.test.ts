@@ -161,6 +161,12 @@ describe('food families', () => {
     ['milk', 'dulce de leche'],
     ['soy', '1 cup soymilk'],
     ['soy', '8 oz bean curd'],
+    ['fish', '8 oz imitation crab'],
+    ['fish', '6 crab sticks'],
+    ['fish', '2 steelhead fillets'],
+    ['wheat', '8 oz orecchiette'],
+    ['wheat', '4 English muffins'],
+    ['wheat', '1 lb rotelle'],
     ['soy', '2 tbsp liquid aminos'],
     ['soy', 'textured vegetable protein'],
     ['wheat', '1 cup breadcrumbs'],
@@ -183,11 +189,12 @@ describe('food families', () => {
     ['sesame', 'everything but the bagel seasoning'],
     ['sesame', '1 tbsp furikake'],
     ['sesame', '2 tbsp dukkah'],
-    ['fish', '8 oz imitation crab'],
     ['shellfish', '2 tbsp red curry paste'],
     ['milk', '1 cup tzatziki'],
     ['eggs', 'bearnaise sauce'],
     ['soy', '2 tbsp oyster sauce'],
+    ['eggs', '1/4 cup tartar sauce'],
+    ['soy', '2 tbsp kecap manis'],
     ['soy', '1 tbsp gochujang'],
   ])('%s is often in "%s"', (food, line) => expect(matchFood(food, line, { wide: true })?.often).toBe(true));
   it.each([
@@ -247,4 +254,28 @@ describe('food families', () => {
     expect(matchFood('peppers', '2 green chiles')?.often).toBe(false);
     expect(matchFood('peppers', '2 red chilies')?.often).toBe(false);
   });
+
+  // Fix round 2
+  it.each([
+    ['dairy products', '1 cup milk'], ['all dairy', '2 tbsp butter'], ['gluten and dairy', '1 cup milk'],
+    ['gluten and dairy', '1 lb spaghetti'], ['eggs and dairy', '2 large eggs'], ['eggs and dairy', '4 oz cheddar'],
+    ['all shell fish', '1 lb shrimp'], ['gluten free dairy free', '1 cup milk'], ['no gluten', '1 cup rye flour'],
+  ])('typed "%s" is found in "%s" (aliases read inside longer text)', (food, line) => {
+    expect(matchFood(food, line, { wide: true })).not.toBeNull();
+  });
+  it('"all shell fish" is shellfish, never fish', () => {
+    expect(matchFood('all shell fish', '2 salmon fillets', { wide: true })).toBeNull();
+    expect(coversLine('all shell fish', { wide: true })).toBe('Shellfish covers shrimp, crab, lobster, scallops and the rest.');
+    expect(coversLine('dairy products', { wide: true })).toBe('Milk covers cheese, butter, yogurt, cream and the rest.');
+  });
+  it.each([
+    ['milk', 'almond or oat milk'], ['milk', 'water or coconut milk'], ['milk', 'jam or peanut butter'],
+    ['wheat', 'lettuce wraps or corn tortillas'], ['wheat', 'zucchini or rice noodles'],
+    ['tree nuts', 'bamboo shoots or water chestnuts'], ['beans', 'asparagus or green beans'], ['milk', '8 oz bean curd'],
+  ])('%s is not found in "%s"', (food, line) => expect(matchFood(food, line, { wide: true })).toBeNull());
+  it.each([
+    ['milk', 'whole or oat milk'], ['milk', 'skim or almond milk'], ['milk', 'low-fat or coconut milk'],
+    ['milk', "cow's or oat milk"], ['wheat', 'all-purpose or almond flour'], ['wheat', 'white or rice flour'],
+  ])('%s is still found in "%s"', (food, line) => expect(matchFood(food, line, { wide: true })).not.toBeNull());
+  it('chillies is chili', () => expect(words('2 red chillies')).toEqual(['red', 'chili']));
 });
