@@ -34,6 +34,9 @@ const BASIC_MODIFIERS = new Set(
   ].flatMap(words),
 );
 
+// Only for water: "hot pepper" is produce, "hot water" is from the tap.
+const WATER_MODIFIERS = new Set(['hot', 'boiling', 'lukewarm', 'ice']);
+
 /**
  * True for salt, oil, flour and the rest of the pantry basics, and for a basic with only everyday modifiers:
  * "kosher salt", "extra virgin olive oil", "unsalted butter", "ground black pepper", "brown sugar".
@@ -41,7 +44,11 @@ const BASIC_MODIFIERS = new Set(
  */
 export function isBasic(food: string): boolean {
   const w = words(food);
-  return BASIC_WORDS.some((b) => b.every((x) => w.includes(x)) && w.every((x) => b.includes(x) || BASIC_MODIFIERS.has(x)));
+  return BASIC_WORDS.some(
+    (b) =>
+      b.every((x) => w.includes(x)) &&
+      w.every((x) => b.includes(x) || BASIC_MODIFIERS.has(x) || (b.includes('water') && WATER_MODIFIERS.has(x))),
+  );
 }
 
 // A recipe word like these next to a food makes a different food: "cream cheese" is not cheese.
