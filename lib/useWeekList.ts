@@ -21,7 +21,8 @@ import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
 import { foldItemState, mergeFlags } from "@/lib/list/state";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
-import { MATCH_MAX_AGE_MS, type Choice, type MatchRow } from "@/lib/list/matches";
+import { type Choice, type MatchRow } from "@/lib/list/matches";
+import { foodsToAsk, forget, pricesStale, type Asked } from "@/lib/list/match-requests";
 import { requestMatches } from "@/lib/list/matches-client";
 import {
   enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
@@ -66,12 +67,6 @@ function withFetchedMatches(saved: MatchRow[], fetched: Map<string, MatchRow>): 
 export function trimForCache(raw: ListInputs, foods: ReadonlySet<string>): ListInputs {
   return raw.matches ? { ...raw, matches: raw.matches.filter((m) => foods.has(m.canonical)) } : raw;
 }
-
-/** A search that is missing, a day old, or made with other words than the household's chosen ones. */
-const matchDue = (row: MatchRow | undefined, choice: Choice | undefined): boolean =>
-  !row ||
-  !(Date.now() - Date.parse(row.fetchedAt) < MATCH_MAX_AGE_MS) ||
-  (!!choice?.searchTerm && row.term !== choice.searchTerm);
 
 /** A fetched Kroger shelf price takes the place of an AI guess or an older Kroger price, never of a typed one. */
 const replaces = (fresh: PriceRow, old: PriceRow): boolean =>
@@ -168,7 +163,9 @@ export function useWeekList(household: Household, weekId: string | null) {
   const requested = useRef(new Set<string>());
   // Fred Meyer searches fetched this visit, kept for the same reason as the prices.
   const fetchedMatches = useRef(new Map<string, MatchRow>());
-  const requestedMatches = useRef(new Set<string>());
+  const requestedMatches = useRef<Asked>(new Map());
+  // Ticks each minute, so a list left open past a day notices its prices have aged and asks again.
+  const [now, setNow] = useState(() => Date.now());
   // A product lookup came back limited or failed this visit.
   const [lookupBad, setLookupBad] = useState(false);
   // Prices fetched this visit. A load that began before the server saved them must not wipe them out.
@@ -298,6 +295,11 @@ export function useWeekList(household: Household, weekId: string | null) {
   const products = useMemo(() => built?.products ?? {}, [built]);
   const productMode = built?.productMode ?? false;
 
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   // Offline use needs only the searches for foods on this week's list.
   useEffect(() => {
     if (raw && built && weekId) saveListCache(weekId, trimForCache(raw, new Set(built.items.map((i) => i.key))));
@@ -310,35 +312,39 @@ export function useWeekList(household: Household, weekId: string | null) {
     const locationId = raw.locationId;
     const have = new Map((raw.matches ?? []).filter((m) => m.locationId === locationId).map((m) => [m.canonical, m]));
     const choice = new Map((raw.choices ?? []).map((c) => [c.canonical, c]));
-    const wanted = [
-      ...new Set(
-        items
-          .filter((i) => i.store === "fred_meyer" && !i.haveIt && !requestedMatches.current.has(matchKey(locationId, i.canonical)))
-          .filter((i) => matchDue(have.get(i.canonical), choice.get(i.canonical)))
-          .map((i) => i.canonical),
-      ),
-    ];
+    const wanted = foodsToAsk(
+      items.filter((i) => i.store === "fred_meyer" && !i.haveIt).map((i) => i.canonical),
+      (f) => matchKey(locationId, f),
+      have,
+      choice,
+      requestedMatches.current,
+      now,
+    );
     if (wanted.length === 0) return;
-    for (const w of wanted) requestedMatches.current.add(matchKey(locationId, w));
-    void requestMatches(wanted).then(({ matches, limited, failed }) => {
+    for (const w of wanted) requestedMatches.current.set(matchKey(locationId, w), Date.now());
+    void requestMatches(wanted).then(({ matches, limited, failed, unreached }) => {
+      // The request never got an answer: ask again at the next look, not tomorrow.
+      if (unreached) forget(requestedMatches.current, wanted.map((w) => matchKey(locationId, w)));
       const got = new Set(matches.map((m) => m.canonical));
       // A food the server didn't answer for is as good as a failed lookup.
-      if (limited || failed || wanted.some((w) => !got.has(w))) setLookupBad(true);
+      setLookupBad(limited || failed || wanted.some((w) => !got.has(w)));
       if (matches.length === 0) return;
       for (const m of matches) fetchedMatches.current.set(matchKey(m.locationId, m.canonical), m);
       setRaw((r) =>
         r && r.locationId === locationId ? { ...r, matches: withFetchedMatches(r.matches ?? [], fetchedMatches.current) } : r,
       );
     });
-  }, [raw, items, offline]);
+  }, [raw, items, offline, now]);
 
   // Prices may be old when a lookup failed or ran out and a food still has no search from the last day.
   const stalePrices = useMemo(() => {
-    if (!lookupBad || !raw?.locationId) return false;
-    const have = new Map((raw.matches ?? []).filter((m) => m.locationId === raw.locationId).map((m) => [m.canonical, m]));
+    if (!raw?.locationId) return false;
+    const locationId = raw.locationId;
+    const have = new Map((raw.matches ?? []).filter((m) => m.locationId === locationId).map((m) => [m.canonical, m]));
     const choice = new Map((raw.choices ?? []).map((c) => [c.canonical, c]));
-    return items.some((i) => i.store === "fred_meyer" && !i.haveIt && matchDue(have.get(i.canonical), choice.get(i.canonical)));
-  }, [lookupBad, raw, items]);
+    const foods = items.filter((i) => i.store === "fred_meyer" && !i.haveIt).map((i) => i.canonical);
+    return pricesStale(foods, have, choice, lookupBad, now);
+  }, [lookupBad, raw, items, now]);
 
   // Price whatever nobody has priced yet: one request per store.
   useEffect(() => {
