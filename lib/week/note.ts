@@ -1,7 +1,6 @@
-import { matchFood } from '@/lib/domain/families';
 import { personLabel } from '@/lib/domain/flags';
 import { eatsRole, householdServings } from '@/lib/domain/portions';
-import { liveChanges } from '@/lib/domain/scaling';
+import { hasChange, liveChanges } from '@/lib/domain/scaling';
 import type { Meal, Person, Role } from '@/lib/domain/types';
 
 const isProtein = (role: Role): boolean => role === 'meat' || role === 'fish';
@@ -47,7 +46,7 @@ export function dayNote(meal: Meal, people: Person[], servingsOverride: number |
     const swapFood = meal.vegSwap?.canonical;
     // Someone with a change on the swap's own food is named by their change, not here.
     const skipping = swapFood
-      ? all.filter((p) => !(meal.personChanges ?? []).some((c) => c.personId === p.id && matchFood(c.food, swapFood) !== null))
+      ? all.filter((p) => !hasChange(meal, p, swapFood))
       : all;
     if (all.length === 0) main = 'Everyone eats this';
     else if (skipping.length === 0) main = null;
