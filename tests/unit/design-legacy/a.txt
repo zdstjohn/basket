@@ -11,3 +11,9 @@ components/add-meal/IngredientEditor.tsx
 components/add-meal/PasteTab.tsx
 components/add-meal/SearchTab.tsx
 components/add-meal/SortControl.tsx
+components/flags/AllergyBox.tsx
+components/flags/DislikeBox.tsx
+components/flags/FlagLines.tsx
+components/flags/IngredientSwapSheet.tsx
+components/verdicts/VerdictCard.tsx
+components/verdicts/VerdictSheet.tsx
