@@ -27,6 +27,8 @@ export interface ProofState {
   /** The registry screens it shows; if any is missing or contrastPending the state is skipped with a note. */
   screens: string[];
   who: Who;
+  /** Set while the state has no trigger yet: it is skipped with this reason before anything is set up (no sign-in, no household). */
+  pending?: string;
   /** The household's people (five by default). */
   people?: PersonInput[];
   /** Gets the page to the state. */
@@ -95,9 +97,8 @@ const BUILT_IN: ProofState[] = [
     name: "week-long-names",
     screens: ["week"],
     who: "household",
-    run: async () => {
-      throw new Pending("no long-named dish fixture exists yet; add one to the fake recipe search with the week task");
-    },
+    pending: "no long-named dish fixture exists yet; add one to the fake recipe search with the week task",
+    run: async () => {},
   },
   {
     name: "week-loading",
@@ -118,9 +119,8 @@ const BUILT_IN: ProofState[] = [
     name: "week-error",
     screens: ["week"],
     who: "household",
-    run: async () => {
-      throw new Pending("the week's error screen has no trigger yet");
-    },
+    pending: "the week's error screen has no trigger yet",
+    run: async () => {},
   },
   {
     name: "week-verdict-card",
@@ -194,9 +194,8 @@ const BUILT_IN: ProofState[] = [
     name: "list-stale",
     screens: ["list"],
     who: "household",
-    run: async () => {
-      throw new Pending("the list's stale-prices state has no trigger yet");
-    },
+    pending: "the list's stale-prices state has no trigger yet",
+    run: async () => {},
   },
   { name: "list-empty", screens: ["list"], who: "household", run: goto("/list") },
   {
@@ -224,9 +223,8 @@ const BUILT_IN: ProofState[] = [
     name: "review-sent",
     screens: ["review"],
     who: "household",
-    run: async () => {
-      throw new Pending("the sent-to-Fred-Meyer confirmation has no stable trigger yet");
-    },
+    pending: "the sent-to-Fred-Meyer confirmation has no stable trigger yet",
+    run: async () => {},
   },
   { name: "household", screens: ["household"], who: "household", run: goto("/household") },
   {

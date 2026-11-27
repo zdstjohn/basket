@@ -1,6 +1,6 @@
 import { test } from "@playwright/test";
 import { LOOKS, dress, outDir, pendingReason, settle, signInFor } from "./helpers";
-import { skipReason } from "./pending";
+import { skipBeforeSetup, skipReason } from "./pending";
 import { STATES } from "./states";
 
 /**
@@ -14,7 +14,8 @@ for (const state of STATES) {
   for (const look of LOOKS) {
     test(`${state.name} (${look})`, async ({ page, context }, testInfo) => {
       const device = testInfo.project.name;
-      const pending = pendingReason(state.screens);
+      // Decided before any sign-in or household: a state with no trigger must never fail on setup it does not need.
+      const pending = skipBeforeSetup(state.pending, pendingReason(state.screens));
       if (pending) {
         console.log(`[proof] skipped ${state.name} (${look}, ${device}): ${pending}`);
         test.skip(true, pending);

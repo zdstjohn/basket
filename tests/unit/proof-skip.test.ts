@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Pending, skipReason } from "../../proof/pending";
+import { Pending, skipBeforeSetup, skipReason } from "../../proof/pending";
 
 describe("proof: when a test may skip", () => {
   it("skips for a Pending, with its reason", () => {
@@ -11,5 +11,12 @@ describe("proof: when a test may skip", () => {
     expect(skipReason(new TypeError("x is undefined"))).toBeNull();
     expect(skipReason("a thrown string")).toBeNull();
     expect(skipReason(undefined)).toBeNull();
+  });
+
+  it("skips a state that declares itself pending before setup, ahead of the screen check", () => {
+    expect(skipBeforeSetup("no trigger yet", null)).toBe("no trigger yet");
+    expect(skipBeforeSetup("no trigger yet", "screen is pending")).toBe("no trigger yet");
+    expect(skipBeforeSetup(undefined, "screen is pending")).toBe("screen is pending");
+    expect(skipBeforeSetup(undefined, null)).toBeNull();
   });
 });

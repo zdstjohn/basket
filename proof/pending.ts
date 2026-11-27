@@ -8,3 +8,8 @@ export class Pending extends Error {}
 export function skipReason(err: unknown): string | null {
   return err instanceof Pending ? err.message : null;
 }
+
+/** Why a state is skipped before anything is set up: it declares itself pending, or its screen is not finished. */
+export function skipBeforeSetup(declared: string | undefined, screenReason: string | null): string | null {
+  return declared ?? screenReason;
+}

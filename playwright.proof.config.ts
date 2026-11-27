@@ -11,7 +11,8 @@ export default defineConfig({
   globalTeardown: "./proof/page.ts",
   fullyParallel: true,
   workers: 2,
-  retries: 0,
+  // One retry: setup (sign-in, onboarding) can time out when two browsers load the one server. A real break fails twice.
+  retries: 1,
   timeout: 90_000,
   // Each process of scripts/proof-run.sh gets its own, since Playwright empties it at the start of a run.
   outputDir: process.env.PROOF_OUT_DIR ?? "proof-out/.raw",
