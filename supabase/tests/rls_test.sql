@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(206);
+select plan(207);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -592,6 +592,8 @@ select ok((select a = (select count(*) from public.always_have) and c = (select 
                   and w = (select count(*) from public.week_item_state)
                   and names = (select string_agg(canonical, ',' order by canonical) from public.always_have) from t_tidy_before),
           '0016 run twice changes nothing');
+
+select ok(not has_function_privilege('anon', 'public.tidy_food(text)', 'execute') and not has_function_privilege('authenticated', 'public.tidy_food(text)', 'execute') and not has_function_privilege('public', 'public.tidy_food(text)', 'execute'), '0016 tidy_food is not callable by anon or signed-in people');
 
 select * from finish();
 rollback;

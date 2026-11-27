@@ -18,17 +18,11 @@ import type { Household } from "@/lib/db/rows";
 import { formatDollars, formatExtra, parseMoneyToCents } from "@/lib/domain/money-input";
 import { householdServings } from "@/lib/domain/portions";
 import type { Person } from "@/lib/domain/types";
+import { FM_NOTICES } from "@/lib/list/fm-notices";
 import { focusRing, pillButton, textInput } from "@/lib/ui";
 import { PersonEditor, type PersonDraft } from "./PersonEditor";
 
 const NEW_PERSON: PersonDraft = { name: "", age: 0, diet: "none", appetite: 1, dislikes: [] };
-
-const FM_NOTICES = {
-  connected: "Fred Meyer is connected.",
-  denied: "Fred Meyer wasn't connected.",
-  failed: "That didn't work. Try connecting again.",
-  disconnectFailed: "That didn't disconnect. Try again.",
-} as const;
 
 const STORES = [
   { label: "Fred Meyer", detail: "Pickup and delivery" },

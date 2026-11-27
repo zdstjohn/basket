@@ -25,10 +25,30 @@ describe('sendCart', () => {
     expect(await sendCart(body)).toEqual({ ok: false, reason: 'failed' });
   });
   it('maps the other statuses', async () => {
-    for (const [status, reason] of [[502, 'rejected'], [429, 'too_many'], [500, 'failed'], [503, 'failed'], [400, 'failed']] as const) {
+    for (const [status, reason] of [[502, 'rejected'], [500, 'no_answer'], [503, 'no_answer'], [400, 'no_answer']] as const) {
       answer(status, { error: 'x' });
       expect(await sendCart(body)).toEqual({ ok: false, reason });
     }
+  });
+  it('says nothing was added only for the route\'s known pre-send codes', async () => {
+    for (const [status, error] of [[400, 'bad_request'], [400, 'unknown_product'], [409, 'no_store'], [503, 'not_configured'], [503, 'unavailable'], [500, 'save_failed'], [403, 'forbidden']] as const) {
+      answer(status, { error });
+      expect(await sendCart(body)).toEqual({ ok: false, reason: 'failed' });
+    }
+  });
+  it('an unknown 503 is no_answer, not failed', async () => {
+    answer(503, { error: 'something_new' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'no_answer' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>', { status: 503 })));
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'no_answer' });
+  });
+  it('tells Basket\'s daily limit from Kroger\'s rate limit by the 429 body', async () => {
+    answer(429, { error: 'too_many' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'too_many' });
+    answer(429, { error: 'slow_down' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'busy' });
+    answer(429, {});
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'no_answer' });
   });
   it('reads the 504 body: what was added and what Fred Meyer refused', async () => {
     answer(504, { error: 'unsure', ok: ['0001', '0002'], rejected: [{ key: 'k', name: 'Milk' }] });
@@ -40,8 +60,8 @@ describe('sendCart', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>', { status: 504 })));
     expect(await sendCart(body)).toEqual({ ok: false, reason: 'unsure', added: [], rejected: [] });
   });
-  it('a thrown fetch is failed', async () => {
+  it('a thrown fetch is no_answer', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));
-    expect(await sendCart(body)).toEqual({ ok: false, reason: 'failed' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'no_answer' });
   });
 });

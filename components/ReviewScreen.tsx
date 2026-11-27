@@ -18,15 +18,10 @@ import { sendCart } from "@/lib/list/cart-client";
 import { FRED_MEYER_CART_URL, lastSendNote, MAX_PER_PRODUCT, otherCartNote, resendScope, reviewLines, SENT_CHECK_ADVICE, sendPlan } from "@/lib/list/review";
 import { subscribeHousehold } from "@/lib/realtime";
 import { bigGreenLink, focusRing, pillButton, primaryButton, stickyAboveNav } from "@/lib/ui";
+import { FM_NOTICES } from "@/lib/list/fm-notices";
 import { listView, useWeekId, useWeekList } from "@/lib/useWeekList";
 
 const CONNECT_HREF = "/api/kroger/connect?next=/list/review";
-
-const FM_NOTICES = {
-  connected: "Fred Meyer is connected.",
-  denied: "Fred Meyer wasn't connected.",
-  failed: "That didn't work. Try connecting again.",
-} as const;
 
 /** What the last tap on the send button came to. */
 type Outcome =
@@ -37,7 +32,9 @@ type Outcome =
   | { kind: "not_connected" }
   | { kind: "rejected" }
   | { kind: "too_many" }
-  | { kind: "failed" };
+  | { kind: "busy" }
+  | { kind: "failed" }
+  | { kind: "no_answer" };
 
 /** A send to try again after an unsure one: only the lines Fred Meyer did not report as added. */
 interface Retry {
@@ -490,12 +487,14 @@ export function ReviewScreen({
               </>
             )}
             {outcome.kind === "already_sending" && (
-              <p>Someone in your family is already sending this list. Wait a moment, then check back.</p>
+              <p>A send for this list is already in progress. Wait a moment, then check the Fred Meyer app.</p>
             )}
             {outcome.kind === "already_sent" && <p>Everything here is already in your cart.</p>}
             {outcome.kind === "not_connected" && <p>Connect Fred Meyer again.</p>}
             {outcome.kind === "rejected" && <p>Fred Meyer wouldn&apos;t take these items. Try swapping them.</p>}
-            {outcome.kind === "too_many" && <p>That&apos;s a lot of sends for one day. Try again tomorrow.</p>}
+            {outcome.kind === "too_many" && <p>You’ve sent this list a lot today. Try again tomorrow.</p>}
+            {outcome.kind === "busy" && <p>Fred Meyer is busy. Try again in a minute.</p>}
+            {outcome.kind === "no_answer" && <p>{SENT_CHECK_ADVICE}</p>}
             {outcome.kind === "failed" && <p role="alert" className="text-[#A6261B]">That didn&apos;t go through. Nothing was added.</p>}
             </>
           )}

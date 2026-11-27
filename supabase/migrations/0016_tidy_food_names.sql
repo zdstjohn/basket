@@ -5,10 +5,14 @@
 
 create function public.tidy_food(s text) returns text
 language sql immutable
+set search_path = ''
 as $$
-  select lower(btrim(regexp_replace(normalize(s, NFC),
+  select pg_catalog.lower(pg_catalog.btrim(pg_catalog.regexp_replace(normalize(s, NFC),
     '[\s   -     　﻿]+', ' ', 'g')))
 $$;
+
+-- Only tidy_food_names (below, run by the migration as the owner) calls this, so nobody else needs to execute it.
+revoke all on function public.tidy_food(text) from public, anon, authenticated;
 
 create function public.tidy_food_names() returns void
 language plpgsql

@@ -226,7 +226,7 @@ test("what the family is told when a send does not simply work", async ({ page }
   // Someone else is sending: said plainly, with no error styling.
   await sendButton(page).click();
   const result = page.getByTestId("send-result");
-  await expect(result).toContainText("Someone in your family is already sending this list. Wait a moment, then check back.");
+  await expect(result).toContainText("A send for this list is already in progress. Wait a moment, then check the Fred Meyer app.");
   await expect(result.getByRole("alert")).toHaveCount(0); // no error styling
 
   // Unsure: the advice, what was added, what was not.
