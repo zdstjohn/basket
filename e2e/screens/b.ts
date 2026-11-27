@@ -13,7 +13,6 @@ export const SCREENS_B: Screen[] = [
   {
     name: "review",
     path: "/list/review",
-    contrastPending: true,
     setup: async (page) => {
       await expect(page.getByTestId("review-line").first()).toBeVisible();
     },

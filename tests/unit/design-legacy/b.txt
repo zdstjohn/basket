@@ -3,8 +3,6 @@ app/(app)/household/PersonEditor.tsx
 components/BudgetMeter.tsx
 components/ListSheet.tsx
 components/PersonRow.tsx
-components/ReviewLine.tsx
-components/ReviewScreen.tsx
 components/StorePicker.tsx
 components/SwapSheet.tsx
 components/household/AlwaysHaveSection.tsx
