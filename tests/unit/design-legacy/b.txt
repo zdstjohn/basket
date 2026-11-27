@@ -1,8 +1,5 @@
 app/(app)/household/HouseholdScreen.tsx
 app/(app)/household/PersonEditor.tsx
-app/invite/[token]/page.tsx
-app/login/LoginForm.tsx
-app/login/page.tsx
 app/onboarding/OnboardingForm.tsx
 app/onboarding/page.tsx
 components/BudgetMeter.tsx

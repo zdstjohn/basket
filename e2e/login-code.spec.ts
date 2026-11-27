@@ -40,7 +40,7 @@ test("signing in with the 6-digit code from the email", async ({ page }) => {
   await expect(field).toHaveAttribute("inputmode", "numeric");
   await field.fill("000000");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByText("That code didn't work. Check the newest email, or send a new one.")).toBeVisible();
+  await expect(page.getByText("That code didn’t work. Check the newest email, or send a new one.")).toBeVisible();
 
   await field.fill(await codeFromInbox(page, email));
   await page.getByRole("button", { name: "Sign in" }).click();
