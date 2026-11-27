@@ -27,10 +27,12 @@ export const FAMILIES: readonly Family[] = [
   {
     id: 'tree_nut', label: 'tree nut', plural: 'tree nuts',
     members: [
+      'nut', 'pinenut', 'almondmilk',
       'almond', 'walnut', 'pecan', 'cashew', 'pistachio', 'hazelnut', 'filbert', 'macadamia', 'brazil nut', 'pine nut',
       'pignoli', 'chestnut', 'mixed nut',
     ],
     often: [
+      'amaretti',
       'pesto', 'marzipan', 'frangipane', 'amaretto', 'nutella', 'praline', 'nougat', 'baklava', 'granola', 'trail mix',
       'macaron', 'gianduja', 'nut butter', 'nut milk', 'nut flour', 'nut meal',
     ],
@@ -40,13 +42,15 @@ export const FAMILIES: readonly Family[] = [
   {
     id: 'peanut', label: 'peanut', plural: 'peanuts',
     members: ['peanut', 'groundnut'],
-    often: ['satay', 'trail mix', 'mixed nut', 'nut butter', 'pad thai', 'kung pao', 'mole'],
+    often: [
+      'nut','satay', 'trail mix', 'mixed nut', 'nut butter', 'pad thai', 'kung pao', 'mole'],
     not: [],
     examples: ['peanuts', 'peanut butter', 'groundnuts'],
   },
   {
     id: 'milk', label: 'milk', plural: 'milk',
     members: [
+      'half half', 'crema', 'cotija', 'fontina', 'curd', 'dulce de leche',
       'milk', 'buttermilk', 'butter', 'buttercream', 'butterscotch', 'ghee', 'cream', 'half and half', 'cheese',
       'yogurt', 'yoghurt', 'kefir', 'whey', 'casein', 'caseinate', 'lactose', 'paneer', 'ricotta', 'mascarpone',
       'feta', 'brie', 'camembert', 'cheddar', 'parmesan', 'parmigiano', 'pecorino', 'romano', 'asiago', 'mozzarella',
@@ -54,8 +58,10 @@ export const FAMILIES: readonly Family[] = [
       'manchego', 'halloumi', 'burrata', 'gorgonzola', 'queso', 'quark', 'labneh', 'skyr', 'creme fraiche',
       'crème fraîche',
     ],
-    often: ['alfredo', 'ranch', 'caramel', 'custard', 'pudding', 'bechamel', 'béchamel', 'creamer'],
+    often: [
+      'tzatziki','alfredo', 'ranch', 'caramel', 'custard', 'pudding', 'bechamel', 'béchamel', 'creamer'],
     not: [
+      'swiss chard', 'romano bean', 'cashew cream', 'cacao butter',
       'coconut milk', 'almond milk', 'oat milk', 'soy milk', 'rice milk', 'cashew milk', 'coconut cream',
       'peanut butter', 'almond butter', 'cashew butter', 'sunflower butter', 'nut butter', 'apple butter',
       'cocoa butter', 'butter lettuce', 'butter bean', 'cream of tartar', 'coconut butter', 'shea butter',
@@ -66,13 +72,15 @@ export const FAMILIES: readonly Family[] = [
   {
     id: 'egg', label: 'egg', plural: 'eggs',
     members: ['egg', 'eggnog', 'yolk', 'albumin', 'albumen'],
-    often: ['mayonnaise', 'mayo', 'aioli', 'meringue', 'hollandaise', 'brioche', 'challah', 'custard'],
+    often: [
+      'béarnaise', 'bearnaise','mayonnaise', 'mayo', 'aioli', 'meringue', 'hollandaise', 'brioche', 'challah', 'custard'],
     not: [],
     examples: ['egg whites', 'yolks', 'egg noodles'],
   },
   {
     id: 'wheat', label: 'wheat', plural: 'wheat',
     members: [
+      'breadcrumb', 'fusilli', 'rotini', 'ziti', 'angel hair', 'farfalle', 'bow tie', 'cavatappi', 'gemelli', 'ditalini', 'tagliatelle', 'pappardelle', 'vermicelli', 'capellini', 'bucatini', 'cannelloni', 'manicotti', 'spaghettini', 'fettucine', 'baguette', 'flatbread', 'puff pastry', 'phyllo', 'filo', 'wonton wrapper', 'dumpling wrapper', 'biscuit', 'ciabatta', 'sourdough', 'focaccia', 'brioche',
       'wheat', 'flour', 'bread', 'panko', 'crouton', 'cracker', 'pretzel', 'croissant', 'bagel', 'bun', 'pita', 'naan',
       'tortilla', 'dough', 'crust', 'stuffing', 'pasta', 'spaghetti', 'macaroni', 'penne', 'linguine', 'fettuccine',
       'rigatoni', 'lasagna', 'lasagne', 'ravioli', 'tortellini', 'orzo', 'noodle', 'ramen', 'udon', 'couscous',
@@ -87,36 +95,44 @@ export const FAMILIES: readonly Family[] = [
   },
   {
     id: 'soy', label: 'soy', plural: 'soy',
-    members: ['soy', 'soya', 'soybean', 'tofu', 'tempeh', 'edamame', 'miso', 'natto', 'tamari', 'shoyu', 'tvp'],
-    often: ['teriyaki', 'hoisin', 'ponzu'],
+    members: [
+      'soymilk', 'bean curd', 'liquid amino', 'textured vegetable protein','soy', 'soya', 'soybean', 'tofu', 'tempeh', 'edamame', 'miso', 'natto', 'tamari', 'shoyu', 'tvp'],
+    often: [
+      'oyster sauce', 'gochujang','teriyaki', 'hoisin', 'ponzu'],
     not: [],
     examples: ['soybeans', 'tofu', 'tempeh', 'miso'],
   },
   {
     id: 'fish', label: 'fish', plural: 'fish',
     members: [
+      'monkfish', 'whitefish', 'branzino', 'grouper', 'swai', 'ahi', 'hake', 'pike', 'orange roughy', 'rockfish', 'barramundi', 'turbot', 'whiting', 'skate', 'pompano', 'sturgeon', 'dorado', 'kingfish', 'yellowtail', 'hamachi', 'unagi', 'tobiko', 'masago', 'sashimi',
       'fish', 'salmon', 'tuna', 'cod', 'tilapia', 'halibut', 'trout', 'anchovy', 'sardine', 'mackerel', 'haddock',
       'snapper', 'bass', 'catfish', 'herring', 'pollock', 'mahi', 'mahimahi', 'swordfish', 'flounder', 'sole',
       'perch', 'carp', 'eel', 'lox', 'roe', 'caviar', 'bonito', 'surimi',
     ],
-    often: ['worcestershire', 'caesar', 'dashi', 'seafood', 'pad thai'],
+    often: [
+      'imitation crab', 'crab stick','worcestershire', 'caesar', 'dashi', 'seafood', 'pad thai'],
     not: [],
     examples: ['salmon', 'tuna', 'cod', 'anchovies'],
   },
   {
     id: 'shellfish', label: 'shellfish', plural: 'shellfish',
     members: [
+      'langostino', 'cuttlefish',
       'shellfish', 'shrimp', 'prawn', 'scampi', 'crab', 'crabmeat', 'lobster', 'crawfish', 'crayfish', 'langoustine',
       'scallop', 'clam', 'mussel', 'oyster', 'squid', 'calamari', 'octopus', 'abalone',
     ],
-    often: ['oyster sauce', 'seafood', 'paella', 'gumbo', 'cioppino', 'bouillabaisse'],
-    not: ['oyster mushroom'],
+    often: [
+      'red curry paste','oyster sauce', 'seafood', 'paella', 'gumbo', 'cioppino', 'bouillabaisse'],
+    not: [
+      'oyster cracker','oyster mushroom'],
     examples: ['shrimp', 'crab', 'lobster', 'scallops'],
   },
   {
     id: 'sesame', label: 'sesame', plural: 'sesame',
     members: ['sesame', 'tahini', 'tehina', 'halva', 'halvah', 'gomasio', 'benne'],
-    often: ['hummus', 'baba ghanoush', 'za\'atar', 'everything bagel'],
+    often: [
+      'zaatar', 'furikake', 'dukkah', 'everything but the bagel','hummus', 'baba ghanoush', 'za\'atar', 'everything bagel'],
     not: [],
     examples: ['sesame seeds', 'sesame oil', 'tahini'],
   },
@@ -137,6 +153,7 @@ export const FAMILIES: readonly Family[] = [
   {
     id: 'pepper', label: 'pepper', plural: 'peppers',
     members: [
+      'chile', 'green chili', 'red chili',
       'bell pepper', 'chili pepper', 'chile pepper', 'hot pepper', 'sweet pepper', 'banana pepper', 'red pepper',
       'green pepper', 'yellow pepper', 'orange pepper', 'cayenne pepper', 'jalapeno', 'jalapeño', 'serrano', 'habanero',
       'poblano', 'anaheim', 'pepperoncini', 'capsicum',
@@ -207,18 +224,66 @@ function stand(food: string, wide: boolean): Compiled | null {
   return COMPILED.find((c) => c.names.has(k) || (wide && c.memberKeys.has(k))) ?? null;
 }
 
+const ALLERGEN_IDS: readonly string[] = [
+  'peanut', 'tree_nut', 'milk', 'egg', 'wheat', 'soy', 'fish', 'shellfish', 'sesame',
+];
+
+// Typed allergies that are not a family name. Keyed by the singular words.
+const ALIASES: Readonly<Record<string, readonly string[]>> = {
+  dairy: ['milk'],
+  'shell fish': ['shellfish'],
+  seafood: ['fish', 'shellfish'],
+  treenut: ['tree_nut'],
+  gluten: ['wheat'],
+};
+
+// Foods that count as an extra for one typed allergy only, matched as exact words.
+const EXTRAS: Readonly<Record<string, readonly string[]>> = {
+  gluten: ['barley', 'rye', 'malt', 'spelt', 'triticale', 'beer'],
+};
+
+const compiledById = (id: string): Compiled => COMPILED.find((c) => c.family.id === id) as Compiled;
+
+/**
+ * For an allergy typed in the wide reading that names no family ("cashew nuts", "dairy", "sesame seeds"):
+ * every allergen family whose name or member sits inside it as whole words, after that family's `not` phrases
+ * are blanked ("almond milk" is a tree nut, not milk).
+ */
+function typedFamilies(food: string): Compiled[] {
+  const typed = words(food);
+  const alias = ALIASES[typed.join(' ')];
+  if (alias) return alias.map(compiledById);
+  const found: Compiled[] = [];
+  for (const id of ALLERGEN_IDS) {
+    const c = compiledById(id);
+    const taken = typed.map(() => false);
+    for (const phrase of c.not) {
+      for (const start of findPhrase(typed, phrase, taken)) {
+        for (let k = 0; k < phrase.length; k++) taken[start + k] = true;
+      }
+    }
+    const names = [c.family.plural, c.family.label].map(words);
+    if ([...names, ...c.members].some((phrase) => findPhrase(typed, phrase, taken).length > 0)) found.push(c);
+  }
+  return found;
+}
+
 /** The family a food belongs to by any of its names: plural, label or member, singular or plural. */
 export function familyFor(food: string): Family | null {
-  return stand(food, true)?.family ?? null;
+  return (stand(food, true) ?? typedFamilies(food)[0] ?? null)?.family ?? null;
 }
 
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
+const covers = (f: Family): string => `${capital(f.plural)} covers ${f.examples.join(', ')} and the rest.`;
+
 /** "Mushrooms covers cremini, portobello, shiitake and the rest.", or null if the food names no family. */
 export function coversLine(food: string, opts?: { wide?: boolean }): string | null {
-  const c = stand(food, opts?.wide === true);
-  if (!c) return null;
-  return `${capital(c.family.plural)} covers ${c.family.examples.join(', ')} and the rest.`;
+  const wide = opts?.wide === true;
+  const c = stand(food, wide);
+  if (c) return covers(c.family);
+  const typed = wide ? typedFamilies(food) : [];
+  return typed.length > 0 ? typed.map((t) => covers(t.family)).join(' ') : null;
 }
 
 export interface FoodHit {
@@ -249,28 +314,22 @@ function longestRun(raw: string[], marked: boolean[]): string {
   return raw.slice(best[0], best[1]).join(' ');
 }
 
-/**
- * Does this ingredient line hold the food? Whole words only, singular or plural.
- * A food that names a family (see `stand`) is read as the whole family; any other food is matched as typed.
- */
-export function matchFood(food: string, ingredient: string, opts?: { wide?: boolean }): FoodHit | null {
-  const raw = rawWords(ingredient);
-  const tokens = raw.map(singular);
+function matchExact(raw: string[], tokens: string[], phrase: string[]): FoodHit | null {
   const marked = tokens.map(() => false);
-  const c = stand(food, opts?.wide === true);
-
-  if (!c) {
-    const phrase = words(food);
-    for (const start of findPhrase(tokens, phrase, marked)) {
-      for (let k = 0; k < phrase.length; k++) marked[start + k] = true;
-    }
-    return marked.some(Boolean) ? { found: longestRun(raw, marked), often: false } : null;
+  for (const start of findPhrase(tokens, phrase, marked)) {
+    for (let k = 0; k < phrase.length; k++) marked[start + k] = true;
   }
+  return marked.some(Boolean) ? { found: longestRun(raw, marked), often: false } : null;
+}
 
+function matchFamily(c: Compiled, raw: string[], tokens: string[]): FoodHit | null {
+  const marked = tokens.map(() => false);
   const taken = tokens.map(() => false);
   for (const phrase of c.not) {
     for (const start of findPhrase(tokens, phrase, taken)) {
-      for (let k = 0; k < phrase.length; k++) taken[start + k] = true;
+      // "whole or oat milk": the word before is "or", so the last word of the phrase still counts.
+      const keep = start > 0 && tokens[start - 1] === 'or' && phrase.length > 1 ? 1 : 0;
+      for (let k = 0; k < phrase.length - keep; k++) taken[start + k] = true;
     }
   }
   const oftenMarked = tokens.map(() => false);
@@ -287,6 +346,31 @@ export function matchFood(food: string, ingredient: string, opts?: { wide?: bool
   if (marked.some(Boolean)) return { found: longestRun(raw, marked), often: false };
   if (oftenMarked.some(Boolean)) return { found: longestRun(raw, oftenMarked), often: true };
   return null;
+}
+
+/**
+ * Does this ingredient line hold the food? Whole words only, singular or plural.
+ * A food that names a family (see `stand`) is read as the whole family. Any other food is matched as typed, and
+ * in the wide reading also as every allergen family it mentions ("cashew nuts" is a tree nut).
+ */
+export function matchFood(food: string, ingredient: string, opts?: { wide?: boolean }): FoodHit | null {
+  const wide = opts?.wide === true;
+  const raw = rawWords(ingredient);
+  const tokens = raw.map(singular);
+  const c = stand(food, wide);
+  if (c) return matchFamily(c, raw, tokens);
+
+  const typed = words(food);
+  const hits: (FoodHit | null)[] = [];
+  if (wide) {
+    for (const t of typedFamilies(food)) hits.push(matchFamily(t, raw, tokens));
+    for (const extra of EXTRAS[typed.join(' ')] ?? []) hits.push(matchExact(raw, tokens, words(extra)));
+  }
+  hits.push(matchExact(raw, tokens, typed));
+  // A real food beats "often has"; then the longest words as written; then the first.
+  const real = hits.filter((h): h is FoodHit => h !== null);
+  const rank = (h: FoodHit): number => (h.often ? 0 : 1000) + h.found.split(' ').length;
+  return real.reduce<FoodHit | null>((best, h) => (best === null || rank(h) > rank(best) ? h : best), null);
 }
 
 // Swap ideas exist only for foods that are not allergens: an allergy is never offered a swap.

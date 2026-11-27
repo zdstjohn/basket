@@ -135,4 +135,116 @@ describe('food families', () => {
     expect(matchFood('peppers', '1 pepper, diced')).toBeNull();
     expect(matchFood('peppers', '1 jalapeño')?.found).toBe('jalapeño');
   });
+
+  // Fix round 1: every miss and false alarm from the review probe (wide reading, as an allergy list is read).
+  it.each([
+    ['tree nuts', '3 tbsp pinenuts'],
+    ['tree nuts', '1/2 cup chopped nuts'],
+    ['tree nuts', 'nuts, for garnish'],
+    ['tree nuts', '1 cup unsweetened almondmilk'],
+    ['fish', '1 lb monkfish'],
+    ['fish', 'smoked whitefish'],
+    ['fish', '2 branzino fillets'],
+    ['fish', '1 lb grouper'],
+    ['fish', '1 lb swai fillets'],
+    ['fish', 'ahi steaks'],
+    ['fish', '1 lb hake'],
+    ['shellfish', '8 oz langostino tails'],
+    ['shellfish', '1 lb cuttlefish'],
+    ['milk', '1 cup half & half'],
+    ['milk', '1/4 cup Mexican crema'],
+    ['milk', 'crumbled cotija'],
+    ['milk', '4 oz fontina'],
+    ['milk', '1 cup curd'],
+    ['milk', '2 cups whole or oat milk'],
+    ['milk', '1/2 cup grated Gruyère'],
+    ['milk', 'dulce de leche'],
+    ['soy', '1 cup soymilk'],
+    ['soy', '8 oz bean curd'],
+    ['soy', '2 tbsp liquid aminos'],
+    ['soy', 'textured vegetable protein'],
+    ['wheat', '1 cup breadcrumbs'],
+    ['wheat', '1 lb fusilli'],
+    ['wheat', '12 oz rotini'],
+    ['wheat', '1 lb ziti'],
+    ['wheat', '8 oz angel hair'],
+    ['wheat', '1 baguette'],
+    ['wheat', '4 flatbreads'],
+    ['wheat', '1 sheet puff pastry'],
+    ['wheat', 'wonton wrappers'],
+    ['wheat', '1 cup all-purpose or almond flour'],
+    ['peppers', '2 green chiles'],
+    ['peppers', '1 jalapeño'],
+  ])('%s is found in "%s"', (food, line) => expect(matchFood(food, line, { wide: true })).toMatchObject({ often: false }));
+  it.each([
+    ['tree nuts', 'amaretti cookies'],
+    ['peanuts', '1/2 cup chopped nuts'],
+    ['sesame', '1 tbsp zaatar'],
+    ['sesame', 'everything but the bagel seasoning'],
+    ['sesame', '1 tbsp furikake'],
+    ['sesame', '2 tbsp dukkah'],
+    ['fish', '8 oz imitation crab'],
+    ['shellfish', '2 tbsp red curry paste'],
+    ['milk', '1 cup tzatziki'],
+    ['eggs', 'bearnaise sauce'],
+    ['soy', '2 tbsp oyster sauce'],
+    ['soy', '1 tbsp gochujang'],
+  ])('%s is often in "%s"', (food, line) => expect(matchFood(food, line, { wide: true })?.often).toBe(true));
+  it.each([
+    ['shellfish', 'oyster crackers'],
+    ['milk', '1 bunch Swiss chard'],
+    ['milk', '1 cup cashew cream'],
+    ['milk', '1 lb romano beans'],
+    ['milk', '2 oz cacao butter'],
+  ])('%s is not found in "%s"', (food, line) => expect(matchFood(food, line, { wide: true })).toBeNull());
+
+  // Typed allergies that name no family, read wide: what each one must catch.
+  it.each([
+    ['cashew nuts', '1 cup cashews'], ['cashew nuts', 'sliced almonds'], ['nuts', 'chopped walnuts'], ['nut', '1 cup pecans'],
+    ['treenuts', '1/2 cup hazelnuts'], ['tree-nut', 'pine nuts'], ['macadamia nuts', '1/2 cup macadamias'],
+    ['dairy', '1 cup milk'], ['dairy', '2 tbsp butter'], ['dairy', '4 oz cheddar'], ["cow's milk", '1 cup whole milk'],
+    ['egg whites', '2 eggs'], ['sesame seeds', '2 tbsp tahini'], ['peanut butter', '1 cup peanuts'],
+    ['shell fish', '1 lb shrimp'], ['seafood', '1 lb shrimp'], ['seafood', '2 salmon fillets'],
+    ['gluten', '1 cup all-purpose flour'], ['gluten', '1 lb spaghetti'], ['gluten', '1 cup pearl barley'], ['gluten', '1 cup rye flour'],
+    ['gluten', '1 bottle beer'], ['gluten', '2 tbsp malt vinegar'], ['gluten', '1 cup spelt'], ['gluten', 'triticale berries'],
+    ['wheat flour', 'all-purpose flour'], ['soy beans', '14 oz firm tofu'], ['soy beans', 'shelled edamame'],
+  ])('typed "%s" is found in "%s"', (food, line) => {
+    expect(matchFood(food, line, { wide: true })).not.toBeNull();
+  });
+  it.each([
+    ['cashew nuts', '1 can coconut milk'], ['cashew nuts', '1 butternut squash'], ['dairy', 'almond milk'], ['dairy', 'oat milk'],
+    ['dairy', 'peanut butter'], ['almond milk', '1 cup whole milk'], ['egg whites', '1 eggplant'], ['seafood', 'oyster mushrooms'],
+    ['gluten', 'buckwheat groats'], ['gluten', 'almond flour'], ['nuts', '1 nutmeg'],
+  ])('typed "%s" is not found in "%s"', (food, line) => {
+    expect(matchFood(food, line, { wide: true })).toBeNull();
+  });
+  it('typed allergies are read wide only: a won\'t-eat list stays exact', () => {
+    expect(matchFood('cashew nuts', '1 cup cashews')).toBeNull();
+    expect(matchFood('dairy', '1 cup milk')).toBeNull();
+    expect(matchFood('nuts', 'chopped walnuts')).toBeNull();
+    expect(matchFood('cashew nuts', '1 cup cashew nuts')?.found).toBe('cashew nuts');
+  });
+  it('a typed allergy that names no family still shows what it covers', () => {
+    expect(coversLine('cashew nuts', { wide: true })).toBe('Tree nuts covers almonds, walnuts, pecans, cashews and the rest.');
+    expect(coversLine('nuts', { wide: true })).toBe('Tree nuts covers almonds, walnuts, pecans, cashews and the rest.');
+    expect(coversLine('dairy', { wide: true })).toBe('Milk covers cheese, butter, yogurt, cream and the rest.');
+    expect(coversLine('cashew nuts')).toBeNull();
+    expect(coversLine('seafood', { wide: true })).toContain('Shellfish covers');
+    expect(coversLine('beets', { wide: true })).toBeNull();
+  });
+  it('"or" keeps the word that is still the real food', () => {
+    expect(matchFood('milk', '2 cups whole or oat milk')?.found).toBe('milk');
+    expect(matchFood('wheat', '1 cup all-purpose or almond flour')?.found).toBe('flour');
+    expect(matchFood('milk', '1 cup oat milk')).toBeNull();
+  });
+  it('reads a decomposed accent the same as a composed one', () => {
+    expect(rawWords('jalapen\u0303o')).toEqual(['jalapeño']);
+    expect(matchFood('peppers', '1 jalapen\u0303o')?.found).toBe('jalapeño');
+    expect(matchFood('milk', 'grated Gruye\u0300re')?.found).toBe('gruyère');
+  });
+  it('chiles and chilies are chile and chili, for won\'t-eat peppers too', () => {
+    expect(words('green chiles and red chilies')).toEqual(['green', 'chile', 'and', 'red', 'chili']);
+    expect(matchFood('peppers', '2 green chiles')?.often).toBe(false);
+    expect(matchFood('peppers', '2 red chilies')?.often).toBe(false);
+  });
 });
