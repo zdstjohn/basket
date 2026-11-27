@@ -253,3 +253,18 @@ describe("design guard", () => {
     for (const name of LISTS) expect(lists[name], `${name}.txt`).toEqual([...lists[name]].sort());
   });
 });
+
+/** Only these files may set `data-on-photo`, which exempts text from the contrast audit. Adding one needs a real scrim behind the text. */
+const ON_PHOTO_OK: string[] = [];
+
+describe("data-on-photo allowlist", () => {
+  it("only allowlisted files set data-on-photo", () => {
+    const setters = files.filter((f) => /data-on-photo/.test(readFileSync(join(ROOT, f), "utf8")));
+    expect(setters.filter((f) => !ON_PHOTO_OK.includes(f))).toEqual([]);
+  });
+
+  it("an allowlisted file still sets it (the list only holds live entries)", () => {
+    const stale = ON_PHOTO_OK.filter((f) => !existsSync(join(ROOT, f)) || !/data-on-photo/.test(readFileSync(join(ROOT, f), "utf8")));
+    expect(stale).toEqual([]);
+  });
+});

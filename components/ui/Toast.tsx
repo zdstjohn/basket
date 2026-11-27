@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Check, TriangleAlert } from "lucide-react";
 import { curly } from "@/lib/text/typography";
+import { BAR_CLASS, barLift, toastBottom } from "@/lib/ui";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
 
@@ -31,8 +32,22 @@ export function Toast({
     return () => clearTimeout(t);
   }, [ms, message]);
 
+  // A screen's pinned main-action bar (barAboveNav / barBottom) is never covered: lift above it.
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = wrap.current;
+    const bar = document.querySelector<HTMLElement>(`.${BAR_CLASS}`);
+    if (!el) return;
+    const apply = () => el.style.setProperty("--bk-bar-h", barLift(bar?.offsetHeight));
+    apply();
+    if (!bar || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(apply);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--bk-nav-h)+8px)] z-30 flex justify-center bk-gutter">
+    <div ref={wrap} className={`pointer-events-none fixed inset-x-0 ${toastBottom} z-30 flex justify-center bk-gutter`}>
       <div
         role="status"
         data-testid={testId}

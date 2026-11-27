@@ -21,10 +21,25 @@ function fakeSb() {
 
 describe('signed photo links across a realtime reload', () => {
   beforeEach(() => {
+    vi.stubGlobal('window', {});
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-26T10:00:00Z'));
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('never shares a link between requests on a server (no window)', async () => {
+    vi.unstubAllGlobals();
+    const { sb, calls } = fakeSb();
+    const meal = { id: 'm9', photo_path: 'h/server1.jpg', photo_url: null };
+    const first = await mealPhotoSrcs(sb, [meal]);
+    const second = await mealPhotoSrcs(sb, [meal]);
+    expect(second.m9).not.toBe(first.m9);
+    expect(calls).toHaveLength(2);
+    expect(await mealPhotoSrc(sb, meal)).not.toBe(first.m9);
+  });
 
   it('returns the same src for an uploaded photo on a second load, without signing again', async () => {
     const { sb, calls } = fakeSb();

@@ -79,6 +79,17 @@ describe('extractRecipeJsonLd images', () => {
     expect(r?.image).toBe('https://a.test/b.jpg');
   });
 
+  it('reads widths given as strings', () => {
+    const r = extractRecipeJsonLd(
+      page([
+        { '@type': 'ImageObject', url: 'https://a.test/a.jpg', width: '400' },
+        { '@type': 'ImageObject', url: 'https://a.test/b.jpg', width: '1600 px' },
+        { '@type': 'ImageObject', url: 'https://a.test/c.jpg', width: { '@type': 'QuantitativeValue', value: '900' } },
+      ]),
+    );
+    expect(r?.image).toBe('https://a.test/b.jpg');
+  });
+
   it('still returns the first of a list of plain strings', () => {
     const r = extractRecipeJsonLd(page(['https://a.test/a.jpg', 'https://a.test/b.jpg']));
     expect(r?.image).toBe('https://a.test/a.jpg');

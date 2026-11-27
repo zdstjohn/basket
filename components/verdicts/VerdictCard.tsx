@@ -9,13 +9,17 @@ import { saveVerdict, skipVerdict } from "@/lib/db/queries/verdicts";
 import type { Database } from "@/lib/db/types";
 import type { Person } from "@/lib/domain/types";
 import { everyoneLiked, savedLine, summarize, type Verdict, type Vote } from "@/lib/domain/verdicts";
-import { focusRing } from "@/lib/ui";
+import { Check, ChevronRight, ThumbsUp } from "lucide-react";
+import { Banner } from "@/components/ui/Banner";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { ErrorBanner } from "@/components/ui/states";
+import { quietLink } from "@/lib/ui";
 
 /** How long "Saved." stays before the card lets go. */
 const SAVED_MS = 6000;
 
-const ghostButton = `inline-flex min-h-11 min-w-11 items-center justify-center rounded-full px-1 text-[14px] font-semibold ${focusRing}`;
-const answerButton = `inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-3xl border border-[#D5DBD5] bg-white px-2 py-1 text-center text-[14px] font-semibold leading-tight text-ink disabled:opacity-55 ${focusRing}`;
+const ANSWER = "min-w-0 flex-1";
 
 type Phase = "asking" | "saved" | "gone";
 
@@ -136,16 +140,15 @@ export function VerdictCard({
           data-testid="verdict-saved"
           aria-label="Saved"
           role="status"
-          className="mx-5 mt-3.5 flex items-center gap-2.5 rounded-2xl border border-line bg-white py-1 pl-3.5 pr-1.5"
+          className="mx-4 mt-3 flex items-center gap-2 rounded-md bg-surface p-3"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1F7A4D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
-            <path d="M5 12.5l4.5 4.5L19 7.5" />
-          </svg>
-          <p className="min-w-0 flex-1 text-sm">
+          <Icon icon={Check} size={18} />
+          <p className="min-w-0 flex-1 text-body">
             <span className="font-semibold">Saved.</span> {line}
           </p>
-          <button type="button" onClick={() => setSheet(true)} className={`${ghostButton} px-2 text-green`}>
+          <button type="button" onClick={() => setSheet(true)} className={`${quietLink} min-w-11 justify-center`}>
             Change
+            <Icon icon={ChevronRight} size={18} />
           </button>
         </section>
         {sheetView}
@@ -159,35 +162,30 @@ export function VerdictCard({
         ref={box}
         data-testid="verdict-card"
         aria-label="How was dinner"
-        className="mx-5 mt-3.5 rounded-2xl border border-line bg-white px-3.5 pb-3.5 pt-3"
+        className="mx-4 mt-3 flex flex-col gap-3 rounded-md bg-surface p-3"
       >
         <div className="flex items-start gap-3">
-          <MealThumb src={photo} className="size-12 rounded-[10px]" />
+          <MealThumb src={photo} className="size-12 rounded-sm" />
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] text-muted">How was {dayName}’s dinner?</p>
-            <p className="mt-px text-[15px] font-semibold">{meal.name}</p>
+            <p className="text-body text-ink">How was {dayName}’s dinner?</p>
+            <p className="text-body font-semibold text-ink">{meal.name}</p>
           </div>
-          <button type="button" onClick={() => void skip()} className={`${ghostButton} text-[#4A544F]`}>
+          <button type="button" onClick={() => void skip()} className={`${quietLink} min-w-11 justify-center`}>
             Skip
+            <Icon icon={ChevronRight} size={18} />
           </button>
         </div>
-        {failed && (
-          <p role="alert" className="mt-2 text-[13px] font-medium text-[#A6261B]">
-            That didn’t save. Try again.
-          </p>
-        )}
-        <div className="mt-2.5 flex gap-2">
-          <button type="button" disabled={offline} onClick={() => void answer(everyoneLiked(people)).catch(() => {})} className={answerButton}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={offline ? "#5B6560" : "#1F7A4D"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
-              <path d="M7 10v10H4.5a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1H7zm0 0l3.6-7.2a2.3 2.3 0 0 1 2.9 2.6L13 9h5.4a2 2 0 0 1 2 2.4l-1.3 7a2 2 0 0 1-2 1.6H7" />
-            </svg>
+        {failed && <ErrorBanner message="That didn’t save. Try again." />}
+        <div className="flex gap-2">
+          <Button variant="ghost" disabled={offline} onClick={() => void answer(everyoneLiked(people)).catch(() => {})} className={ANSWER}>
+            <Icon icon={ThumbsUp} size={18} />
             Everyone liked it
-          </button>
-          <button type="button" disabled={offline} onClick={() => setSheet(true)} className={answerButton}>
+          </Button>
+          <Button variant="ghost" disabled={offline} onClick={() => setSheet(true)} className={ANSWER}>
             Not everyone
-          </button>
+          </Button>
         </div>
-        {offline && <p className="mt-2 text-[13px] text-muted">You’re offline. This will keep until you’re back.</p>}
+        {offline && <Banner>You’re offline. This will keep until you’re back.</Banner>}
       </section>
       {sheetView}
     </>

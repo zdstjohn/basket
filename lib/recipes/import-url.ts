@@ -6,7 +6,7 @@ export type ImportErrorCode =
   | 'bad_url' | 'blocked_host' | 'too_large' | 'timeout' | 'not_html' | 'not_image' | 'fetch_failed';
 
 export class ImportError extends Error {
-  constructor(public readonly code: ImportErrorCode, message?: string) {
+  constructor(public readonly code: ImportErrorCode, message?: string, public readonly status?: number) {
     super(message ?? code);
     this.name = 'ImportError';
   }
@@ -155,6 +155,8 @@ export async function fetchGuarded(
     accept: string;
     okType: (contentType: string) => boolean;
     wrongType: ImportErrorCode;
+    /** True for text that is only parsed, where a reply with no content-type is still fine. */
+    allowMissingType?: boolean;
     timeoutMs: number;
     maxBytes: number;
   },
@@ -191,10 +193,10 @@ export async function fetchGuarded(
       }
       if (!res.ok) {
         await res.body?.cancel().catch(() => {});
-        throw new ImportError('fetch_failed', `http ${res.status}`);
+        throw new ImportError('fetch_failed', `http ${res.status}`, res.status);
       }
       const type = res.headers.get('content-type');
-      if (type && !opts.okType(type)) {
+      if (type ? !opts.okType(type) : !opts.allowMissingType) {
         await res.body?.cancel().catch(() => {});
         throw new ImportError(opts.wrongType);
       }
@@ -219,6 +221,7 @@ export async function fetchRecipePage(
     accept: 'text/html,application/xhtml+xml',
     okType: (t) => /text\/html|application\/xhtml\+xml/i.test(t),
     wrongType: 'not_html',
+    allowMissingType: true,
     timeoutMs: opts.timeoutMs ?? 8000,
     maxBytes: opts.maxBytes ?? 2 * 1024 * 1024,
   });
@@ -232,7 +235,7 @@ export async function fetchPublicBytes(
 ): Promise<Uint8Array> {
   return fetchGuarded(url, {
     accept: 'image/*',
-    okType: (t) => /^image\//i.test(t.trim()),
+    okType: (t) => /^image\//i.test(t.trim()) && !/^image\/svg/i.test(t.trim()),
     wrongType: 'not_image',
     timeoutMs: opts.timeoutMs ?? 5000,
     maxBytes: opts.maxBytes ?? 8 * 1024 * 1024,

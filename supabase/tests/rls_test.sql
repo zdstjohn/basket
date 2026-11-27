@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(247);
+select plan(249);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -267,7 +267,6 @@ select is((select method || total_minutes::text || rating::text from public.meal
 select is((select jsonb_array_length(steps) from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 2, 'steps read back');
 select lives_ok($q$update public.meals set photo_preview = 'data:image/webp;base64,AAAA', photo_width = 800 where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '0017 a member can write a meal''s photo preview and width');
 select is((select photo_width from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 800, '0017 the photo width reads back');
-select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and photo_preview is not null), 0, '0017 A''s preview write did not reach an HB meal');
 
 reset role;
 
@@ -275,6 +274,9 @@ select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
 select is((select status from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), 'skipped', 'A''s update left the HB verdict alone');
 select is((select votes from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), '{}'::jsonb, 'A''s update left the HB votes alone');
 select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and method is not null), 0, 'A''s update did not reach an HB meal');
+select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and photo_preview is not null), 0, '0017 A''s preview write did not reach an HB meal (checked as B, who owns those rows)');
+select throws_ok($q$update public.meals set photo_preview = 'http://x.test/a.png' where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '23514', null, '0017 a preview must be a data:image/ URL');
+select throws_ok($q$update public.meals set photo_width = -1 where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '23514', null, '0017 a negative photo width violates the check');
 select throws_ok($q$update public.meal_verdicts set household_id = (select v::uuid from t_kv where k = 'HA') where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '42501', null, 'B cannot move an HB verdict into HA');
 select is((select count(*)::int from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HA')), 0, 'B sees no HA verdicts');
 select is((select allergies from public.people where household_id = (select v::uuid from t_kv where k = 'HB') limit 1), '{}'::text[], 'A''s update left HB allergies alone');

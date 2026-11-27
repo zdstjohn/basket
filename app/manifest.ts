@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { THEME_COLOR } from "@/lib/look";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -8,8 +9,8 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     start_url: "/week",
     scope: "/",
-    theme_color: "#F7F8F5",
-    background_color: "#F7F8F5",
+    theme_color: THEME_COLOR.light,
+    background_color: THEME_COLOR.light,
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

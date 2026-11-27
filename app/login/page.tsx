@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { LoginForm } from "./LoginForm";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { safeNext } from "@/lib/auth/safe-next";
+
+export const metadata: Metadata = { title: "Sign in" };
 
 export default async function LoginPage({
   searchParams,

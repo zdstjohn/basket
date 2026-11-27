@@ -1,3 +1,5 @@
+import { TriangleAlert } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import { allergyCopy, type Flag } from "@/lib/domain/flags";
 import type { Person } from "@/lib/domain/types";
 
@@ -20,7 +22,7 @@ function Body({ text, found }: { text: string; found: string[] }) {
 }
 
 /** The red allergy warning: who has the allergy, what the recipe lists, and a reminder to check every label. */
-export function AllergyBox({ flags, people, className = "mx-5 mt-3" }: { flags: Flag[]; people: Person[]; className?: string }) {
+export function AllergyBox({ flags, people, className = "mx-4 mt-3" }: { flags: Flag[]; people: Person[]; className?: string }) {
   const allergies = flags.filter((f) => f.kind === "allergy");
   const copy = allergyCopy(allergies, people);
   if (!copy) return null;
@@ -29,17 +31,14 @@ export function AllergyBox({ flags, people, className = "mx-5 mt-3" }: { flags: 
       role="alert"
       aria-label="Allergy"
       data-testid="allergy-box"
-      className={`${className} flex gap-2.5 rounded-[14px] border-[1.5px] border-[#A6261B] bg-[#FDE8E6] px-3.5 py-3`}
+      className={`${className} flex items-start gap-2 rounded-md border border-error bg-error-tint p-3`}
     >
-      <span className="mt-px flex text-[#A6261B]">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">
-          <path d="M12 3.5l9.5 16.5h-19z" />
-          <path d="M12 10v4.5M12 17.6h.01" />
-        </svg>
+      <span className="flex text-error">
+        <Icon icon={TriangleAlert} size={18} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="break-words text-[15px] font-semibold text-[#A6261B]">{copy.head}</p>
-        <p className="mt-[3px] break-words text-sm text-ink">
+        <p className="break-words text-small font-bold text-error">{copy.head}</p>
+        <p className="mt-1 break-words text-small text-ink">
           <Body text={copy.body} found={allergies.flatMap((f) => f.found)} />
         </p>
       </div>

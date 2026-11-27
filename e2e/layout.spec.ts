@@ -67,8 +67,9 @@ for (const variant of VARIANTS) {
       // Text contrast (the ratios use the real contrastRatio, not a copy of the maths).
       const { pairs, skipped } = await textPairs(page);
       const weak = pairs.map((p) => ({ ...p, ratio: contrastRatio(p.fg, p.bg) })).filter((p) => p.ratio < MIN_CONTRAST);
-      // An image or gradient behind the text cannot be measured here; anything else unreadable is a failure to look into.
-      const unmeasured = skipped.filter((k) => !k.reason.startsWith("image"));
+      // Text that cannot be measured (an image or gradient behind it included) must sit inside a data-on-photo container
+      // (which the audit skips, and which only allowlisted components may set) or it fails.
+      const unmeasured = skipped;
       if (screen.contrastPending) {
         const worklist = [
           ...weak.map((p) => `${p.ratio.toFixed(2)} "${p.text}" ${p.fg} on ${p.bg}`),
