@@ -68,11 +68,12 @@ describe('searchSpoonacular', () => {
     expect(options[0]).toMatchObject({
       source: 'spoonacular', site: 'Example Kitchen', url: 'https://www.example-kitchen.test/sheet-pan-tacos',
       image: 'https://img.example.test/sp1.jpg', totalMinutes: 35, servings: 4,
-      rating: null, ratingCount: null,
+      rating: null, ratingCount: null, likes: 2340,
       ingredients: ['1.5 pounds chicken thighs', '2 bell peppers', '2 tablespoons chili powder'],
     });
     expect(options[0].structured?.map((l) => l.role)).toEqual(['meat', 'produce', 'pantry']);
     expect(options[0].structured?.[0]).toMatchObject({ canonical: 'chicken thighs', amount: 1.5, unit: 'pounds' });
+    expect(options[1].likes).toBeNull();
     expect(options[1]).toMatchObject({ site: 'Spoonacular', url: 'https://spoonacular.com/spoon-only-3' });
     expect(options[1].structured?.[0].role).toBe('dairy');
   });
@@ -114,7 +115,8 @@ describe('searchRecipes', () => {
     fetchMock.mockResolvedValueOnce(new Response(fixture, { status: 200 }));
     const r = await searchRecipes('x', 'sites');
     expect(r).toMatchObject({ source: 'sites', fellBack: false, toppedUp: true });
-    expect(r.options.map((o) => o.source)).toEqual(['sites', 'spoonacular', 'spoonacular']);
+    // The liked Spoonacular result now ranks first; the unrated ones keep their merge order.
+    expect(r.options.map((o) => o.source)).toEqual(['spoonacular', 'sites', 'spoonacular']);
   });
 
   it('keeps the sites options when the top-up fails', async () => {

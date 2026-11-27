@@ -1,5 +1,5 @@
 {"offset":0,"number":3,"totalResults":3,"results":[
- {"id":1,"title":"Sheet Pan Chicken Tacos","image":"https://img.example.test/sp1.jpg","readyInMinutes":35,"servings":4,
+ {"id":1,"aggregateLikes":2340,"title":"Sheet Pan Chicken Tacos","image":"https://img.example.test/sp1.jpg","readyInMinutes":35,"servings":4,
   "sourceUrl":"https://www.example-kitchen.test/sheet-pan-tacos","sourceName":"Example Kitchen",
   "spoonacularSourceUrl":"https://spoonacular.com/sheet-pan-chicken-tacos-1",
   "extendedIngredients":[

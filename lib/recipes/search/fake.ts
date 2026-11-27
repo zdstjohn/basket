@@ -4,7 +4,7 @@ import type { RecipeOption, SearchHit, WebSearchProvider } from './provider';
 const img = (name: string) => `https://images.example.test/${name}.jpg`;
 
 const base = {
-  rating: null, ratingCount: null, totalMinutes: 30, servings: 4, structured: null,
+  rating: null, ratingCount: null, likes: null, totalMinutes: 30, servings: 4, structured: null,
 } satisfies Partial<RecipeOption>;
 
 const SITES: Record<string, RecipeOption[]> = {
@@ -39,7 +39,7 @@ const SPOON: Record<string, RecipeOption[]> = {
   tacos: [
     {
       ...base, source: 'spoonacular', url: 'https://www.example-kitchen.test/sheet-pan-tacos', site: 'Example Kitchen',
-      title: 'Sheet pan chicken tacos', image: img('sheet-pan-tacos'),
+      title: 'Sheet pan chicken tacos', image: img('sheet-pan-tacos'), likes: 340,
       ingredients: ['1 lb boneless chicken thighs', '12 corn tortillas', '1 yellow onion'],
       structured: tacos.ingredients,
     },

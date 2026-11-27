@@ -40,7 +40,7 @@ import { SourceLimitError } from '@/lib/recipes/search/provider';
 
 const option: RecipeOption = {
   source: 'sites', url: 'https://www.allrecipes.com/tacos', site: 'Allrecipes', title: 'Chicken tacos',
-  image: 'https://images.example.test/tacos.jpg', rating: 4.5, ratingCount: 10, totalMinutes: 30,
+  image: 'https://images.example.test/tacos.jpg', rating: 4.5, ratingCount: 10, likes: null, totalMinutes: 30,
   servings: 4, ingredients: ['1 lb chicken thighs', '12 corn tortillas', '1 yellow onion'], structured: null,
 };
 

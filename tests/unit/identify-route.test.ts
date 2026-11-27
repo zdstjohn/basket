@@ -36,7 +36,7 @@ const req = (body: unknown) =>
 
 const option = {
   source: 'sites', url: 'https://www.allrecipes.com/tacos', site: 'Allrecipes', title: 'Chicken tacos',
-  image: 'https://images.example.test/tacos.jpg', rating: null, ratingCount: null, totalMinutes: 30,
+  image: 'https://images.example.test/tacos.jpg', rating: null, ratingCount: null, likes: null, totalMinutes: 30,
   servings: 4, ingredients: [], structured: null,
 };
 

@@ -19,6 +19,8 @@ export interface RecipeOption {
   image: string;
   rating: number | null;
   ratingCount: number | null;
+  /** Spoonacular's aggregateLikes; null for the big sites. */
+  likes: number | null;
   totalMinutes: number | null;
   servings: number | null;
   ingredients: string[];

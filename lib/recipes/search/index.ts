@@ -2,6 +2,7 @@ import 'server-only';
 import { fetchRecipePage } from '../import-url';
 import { extractRecipeJsonLd } from '../jsonld';
 import { siteForHost } from '../sites';
+import { sortByLoved } from './loved';
 import { clampOption } from './clamp';
 import { fakeSiteOptions } from './fake';
 import { getWebSearch, type RecipeOption, type RecipeSource } from './provider';
@@ -26,6 +27,7 @@ async function toOption(hit: { url: string; title: string }, siteName: string): 
     image: recipe.image,
     rating: recipe.rating,
     ratingCount: recipe.ratingCount,
+    likes: null,
     totalMinutes: recipe.totalMinutes,
     servings: recipe.servings,
     ingredients: recipe.ingredients,
@@ -67,7 +69,7 @@ export interface SearchResult {
   toppedUp: boolean;
 }
 
-export async function searchRecipes(query: string, source: RecipeSource = 'sites'): Promise<SearchResult> {
+async function searchUnsorted(query: string, source: RecipeSource = 'sites'): Promise<SearchResult> {
   if (source === 'spoonacular') {
     return { options: await searchSpoonacular(query), source, fellBack: false, toppedUp: false };
   }
@@ -85,4 +87,10 @@ export async function searchRecipes(query: string, source: RecipeSource = 'sites
   } catch {
     return { options, source, fellBack: false, toppedUp: false };
   }
+}
+
+/** Searches, then puts the most loved recipes first (both sources, both screens). */
+export async function searchRecipes(query: string, source: RecipeSource = 'sites'): Promise<SearchResult> {
+  const result = await searchUnsorted(query, source);
+  return { ...result, options: sortByLoved(result.options) };
 }

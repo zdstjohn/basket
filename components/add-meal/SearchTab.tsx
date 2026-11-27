@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
+import { isMostLoved, ratingLine } from "@/lib/recipes/search/loved";
 import { focusRing } from "@/lib/ui";
 import { formatMinutes } from "@/lib/week/format";
 import { messageFor, searchRecipes, type SearchResult } from "./api";
@@ -13,11 +14,16 @@ const SOURCES: { id: RecipeSource; label: string }[] = [
   { id: "spoonacular", label: "Spoonacular" },
 ];
 
-function meta(o: RecipeOption): string {
-  const parts: string[] = [];
-  if (o.rating !== null) parts.push(`${o.rating} ★`);
-  if (o.totalMinutes !== null) parts.push(formatMinutes(o.totalMinutes));
-  return parts.join(" · ");
+function MetaLine({ o, first }: { o: RecipeOption; first: boolean }) {
+  const rating = ratingLine(o);
+  const minutes = o.totalMinutes !== null ? formatMinutes(o.totalMinutes) : null;
+  if (!rating && !minutes) return null;
+  return (
+    <span data-testid="result-meta" className="mt-0.5 block truncate text-[13px] text-[#4A544F]">
+      {first && rating && isMostLoved(o) && <span className="font-semibold text-[#1F7A4D]">Most loved </span>}
+      {[rating, minutes].filter(Boolean).join(" · ")}
+    </span>
+  );
 }
 
 /** Search the big recipe sites or Spoonacular, then pick a card. */
@@ -199,7 +205,7 @@ export function SearchTab({
                 <p className="text-[15px] text-muted">No recipes found on our sites. Try other words, or paste a recipe.</p>
               ) : (
                 <ul className="flex flex-col gap-2">
-                  {options.map((o) => (
+                  {options.map((o, index) => (
                     <li key={o.url}>
                       <button
                         type="button"
@@ -217,7 +223,7 @@ export function SearchTab({
                           <span data-testid="result-site" className="mt-0.5 block text-[13px] text-muted">
                             {o.site}
                           </span>
-                          {meta(o) && <span className="mt-0.5 block text-[13px] text-[#4A544F]">{meta(o)}</span>}
+                          <MetaLine o={o} first={index === 0} />
                         </span>
                       </button>
                     </li>

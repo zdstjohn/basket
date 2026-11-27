@@ -10,7 +10,7 @@ interface SpoonIngredient {
 }
 interface SpoonResult {
   title?: unknown; image?: unknown; sourceUrl?: unknown; spoonacularSourceUrl?: unknown;
-  sourceName?: unknown; readyInMinutes?: unknown; servings?: unknown;
+  sourceName?: unknown; aggregateLikes?: unknown; readyInMinutes?: unknown; servings?: unknown;
   extendedIngredients?: SpoonIngredient[];
 }
 
@@ -57,6 +57,7 @@ function toOption(r: SpoonResult): RecipeOption | null {
     image,
     rating: null,
     ratingCount: null,
+    likes: posNum(r.aggregateLikes),
     totalMinutes: posNum(r.readyInMinutes),
     servings: posNum(r.servings),
     ingredients: ings.map((i) => str(i.original)).filter((s): s is string => s !== null),

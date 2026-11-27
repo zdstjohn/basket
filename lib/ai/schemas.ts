@@ -65,6 +65,7 @@ export const RecipeOptionSchema = z.object({
   image: HttpUrlSchema,
   rating: z.number().nullable(),
   ratingCount: z.number().nullable(),
+  likes: z.number().nullable().default(null), // older open tabs do not send it
   totalMinutes: z.number().nullable(),
   servings: z.number().nullable(),
   ingredients: z.array(z.string().max(300)).max(80),

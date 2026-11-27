@@ -71,8 +71,10 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
     await expect(cards.nth(i).getByTestId("result-title")).not.toBeEmpty();
     await expect(cards.nth(i).getByTestId("result-site")).not.toBeEmpty();
   }
-  await expect(cards.first()).toContainText("4.7");
-  await expect(cards.nth(1)).toContainText("30 min");
+  await expect(cards.first()).toContainText("★ 4.7 · 1,203 ratings");
+  await expect(cards.first()).toContainText("Most loved");
+  await expect(cards.nth(1)).not.toContainText("Most loved");
+  await expect(cards.nth(1)).toContainText("♥ 340 likes · 30 min");
   await expect(page.getByText("Only a few on the big sites, so here are some from Spoonacular too.")).toBeVisible();
   await page.screenshot({ path: `${shots}/search.png`, fullPage: true });
 

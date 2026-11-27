@@ -125,12 +125,40 @@ describe('searchSites', () => {
 
 describe('RecipeOptionSchema urls', () => {
   const ok = { source: 'sites', url: 'https://a.test/r', site: 'A', title: 'T', image: 'https://a.test/i.jpg',
-    rating: null, ratingCount: null, totalMinutes: null, servings: null, ingredients: [], structured: null };
+    rating: null, ratingCount: null, likes: null, totalMinutes: null, servings: null, ingredients: [], structured: null };
   it.each(['javascript:alert(1)', 'data:text/html,hi', 'ftp://a.test/x'])('rejects %s in url and image', (bad) => {
     expect(RecipeOptionSchema.safeParse({ ...ok, url: bad }).success).toBe(false);
     expect(RecipeOptionSchema.safeParse({ ...ok, image: bad }).success).toBe(false);
   });
   it('accepts http and https', () => {
     expect(RecipeOptionSchema.safeParse({ ...ok, url: 'http://a.test/r' }).success).toBe(true);
+  });
+});
+
+describe('searchRecipes ordering', () => {
+  const sitePage = (name: string, rating?: { v: number; n: number }) =>
+    `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'Recipe', name, image: `https://img.example.test/${name}.jpg`, recipeIngredient: ['1 thing'],
+      ...(rating ? { aggregateRating: { ratingValue: rating.v, ratingCount: rating.n } } : {}),
+    })}</script>`;
+
+  it('puts the most loved first, stably, after merging sites with Spoonacular', async () => {
+    process.env.SPOONACULAR_API_KEY = 'k';
+    search.mockResolvedValue([
+      { url: 'https://www.allrecipes.com/a', title: 'a' },
+      { url: 'https://www.allrecipes.com/b', title: 'b' },
+    ]);
+    fetchPage.mockImplementation(async (url: string) =>
+      url.endsWith('/a') ? sitePage('Unrated') : sitePage('Beloved', { v: 4.7, n: 2000 }));
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ results: [
+      { title: 'Spoon unrated', image: 'https://i.example.test/1.jpg', sourceUrl: 'https://x.example.test/1', extendedIngredients: [] },
+      { title: 'Spoon liked', image: 'https://i.example.test/2.jpg', sourceUrl: 'https://x.example.test/2', aggregateLikes: 9000, extendedIngredients: [] },
+    ] }), { status: 200 }));
+    const { searchRecipes } = await import('@/lib/recipes/search');
+    const r = await searchRecipes('x', 'sites');
+    expect(r.toppedUp).toBe(true);
+    expect(r.options.map((o) => o.title)).toEqual(['Spoon liked', 'Beloved', 'Unrated', 'Spoon unrated']);
+    expect(r.options[0].likes).toBe(9000);
+    vi.unstubAllGlobals();
   });
 });
