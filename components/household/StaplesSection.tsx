@@ -6,14 +6,13 @@ import { deleteStaple, listStaples, saveStaple, setStapleActive, type Staple } f
 import type { Household } from "@/lib/db/rows";
 import type { Role } from "@/lib/domain/types";
 import { ROLE_LABELS, ROLES } from "@/lib/list/groups";
-import { dangerGhost } from "@/components/household/danger";
 import { Button } from "@/components/ui/Button";
 import { SelectField, TextField } from "@/components/ui/Field";
 import { Qty } from "@/components/ui/Qty";
 import { ErrorBanner, Loading, SkeletonLines } from "@/components/ui/states";
 import { Switch } from "@/components/ui/Switch";
 import { quantityOrCount } from "@/lib/domain/units";
-import { ghostButton } from "@/lib/ui";
+import { dangerGhost, ghostButton } from "@/lib/ui";
 
 interface Draft {
   id?: string;

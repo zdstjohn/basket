@@ -5,12 +5,15 @@ import { useId } from "react";
 /** A choice among a few, as rows split by hairlines. Real radio inputs, so the phone's own keyboard and reader behavior apply. */
 export function RadioRows<T extends string>({
   label,
+  labelledBy,
   name,
   options,
   value,
   onChange,
 }: {
   label: string;
+  /** The id of a visible heading that names the group; the group then takes its name from it, not from `label`. */
+  labelledBy?: string;
   name: string;
   options: { value: T; label: string; detail?: string }[];
   value: T;
@@ -18,7 +21,7 @@ export function RadioRows<T extends string>({
 }) {
   const uid = useId();
   return (
-    <div role="radiogroup" aria-label={label} className="divide-y divide-line">
+    <div role="radiogroup" aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} className="divide-y divide-line">
       {options.map((o, i) => {
         const on = value === o.value;
         const labelId = `${uid}-${i}-label`;

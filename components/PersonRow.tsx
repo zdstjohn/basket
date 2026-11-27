@@ -68,13 +68,16 @@ export function PersonRow({
         {shown.trim().charAt(0).toUpperCase()}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-body">{shown}</span>
+        <span className="block text-body">
+          {shown}
+          {!shown.includes(`(${person.age})`) && <span className="sr-only">, age {person.age}</span>}
+        </span>
         <span className="block text-small text-ink-soft">{portionText(person)}</span>
         {detail && <span className="block text-small text-ink-soft">{detail}</span>}
         {allergy && (
           <span className="flex items-start gap-1 text-small font-semibold text-error">
             <Icon icon={TriangleAlert} size={18} className="mt-0.5" />
-            <span className="min-w-0">{allergy}</span>
+            <span className="min-w-0 break-words">{allergy}</span>
           </span>
         )}
       </span>

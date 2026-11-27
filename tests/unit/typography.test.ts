@@ -81,6 +81,7 @@ describe("servingsText and portionText", () => {
   it("writes portions", () => {
     expect(portionText(1)).toBe("1 portion");
     expect(portionText(0.7)).toBe("0.7 of a portion");
-    expect(portionText(0.96)).toBe("1 portion");
+    expect(portionText(0.996)).toBe("1 portion");
+    expect(portionText(0.75)).toBe("0.75 of a portion");
   });
 });

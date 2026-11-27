@@ -248,7 +248,7 @@ export function HouseholdScreen({
             <TextField
               className="[&_input]:tabular-nums"
               label="Weekly budget"
-              aria-label="Target"
+              aria-label="Weekly budget target"
               inputMode="decimal"
               value={budget}
               error={fieldError?.field === "budget" ? fieldError.message : undefined}
@@ -380,7 +380,7 @@ export function HouseholdScreen({
           <h2 id="household-look" className={title}>
             Look
           </h2>
-          <LookPicker />
+          <LookPicker labelledBy="household-look" />
         </section>
 
         <SignOutButton />

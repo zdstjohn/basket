@@ -6,10 +6,9 @@ import { Button } from "@/components/ui/Button";
 import { SelectField, TextField } from "@/components/ui/Field";
 import { ErrorBanner } from "@/components/ui/states";
 import { FoodChips, addFood, allergyHelp, mergeList } from "@/components/household/FoodChips";
-import { dangerGhost } from "@/components/household/danger";
 import { COMMON_ALLERGENS } from "@/lib/domain/families";
 import type { Diet, Person } from "@/lib/domain/types";
-import { ghostButton } from "@/lib/ui";
+import { dangerGhost, ghostButton } from "@/lib/ui";
 
 const APPETITES = [
   { value: 0.75, label: "Small appetite" },

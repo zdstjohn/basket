@@ -8,6 +8,10 @@ export const mainAction =
 export const ghostButton =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line-strong bg-transparent px-3 py-2 text-center text-small font-semibold text-ink no-underline bk-press";
 
+/** A ghost button whose words are in the error color: a destructive step. */
+export const dangerGhost =
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line-strong bg-transparent px-3 py-2 text-center text-small font-semibold text-error no-underline bk-press";
+
 /** A way out: ink, semibold, a chevron after it. */
 export const quietLink =
   "inline-flex min-h-11 items-center gap-0.5 text-small font-semibold text-ink no-underline";

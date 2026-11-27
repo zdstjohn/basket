@@ -20,9 +20,9 @@ export function servingsText(n: number): string {
   return `${text} ${text === "1" ? "serving" : "servings"}`;
 }
 
-/** "1 portion", "0.7 of a portion": the wording follows the number as shown. */
+/** "1 portion", "0.7 of a portion", "0.75 of a portion": two decimals, so a quarter portion is not rounded to a tenth. */
 export function portionText(f: number): string {
-  const text = shown(f);
+  const text = String(Math.round(f * 100) / 100);
   return text === "1" ? "1 portion" : `${text} of a portion`;
 }
 

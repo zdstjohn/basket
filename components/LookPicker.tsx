@@ -21,8 +21,8 @@ function subscribe(onChange: () => void): () => void {
   };
 }
 
-/** Light, Dark or Match my phone. Saved on this device only. */
-export function LookPicker() {
+/** Light, Dark or Match my phone. Saved on this device only. With `labelledBy`, a visible heading names the group. */
+export function LookPicker({ labelledBy }: { labelledBy?: string }) {
   const name = useId();
   const look = useSyncExternalStore(subscribe, () => readLook(), () => "auto" as Look);
 
@@ -32,5 +32,5 @@ export function LookPicker() {
     window.dispatchEvent(new Event(CHANGED));
   }
 
-  return <RadioRows label="Look" name={name} options={OPTIONS} value={look} onChange={choose} />;
+  return <RadioRows label="Look" labelledBy={labelledBy} name={name} options={OPTIONS} value={look} onChange={choose} />;
 }
