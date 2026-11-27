@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "productId": "0002222000001",
+      "upc": "0002222000001",
+      "description": "Morton Kosher Salt",
+      "brand": "Morton",
+      "images": [],
+      "items": [
+        {
+          "itemId": "0002222000001",
+          "size": "3 lb",
+          "soldBy": "UNIT",
+          "price": {
+            "regular": 3.49,
+            "promo": 0
+          }
+        }
+      ]
+    },
+    {
+      "productId": "0002222000002",
+      "upc": "0002222000002",
+      "description": "Diamond Crystal Kosher Salt",
+      "brand": "Diamond Crystal",
+      "images": [],
+      "items": [
+        {
+          "itemId": "0002222000002",
+          "size": "48 oz",
+          "soldBy": "UNIT",
+          "price": {
+            "regular": 5.99,
+            "promo": 4.99
+          }
+        }
+      ]
+    }
+  ]
+}

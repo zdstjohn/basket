@@ -1,0 +1,46 @@
+{
+  "data": [
+    {
+      "productId": "0002222000031",
+      "upc": "0002222000031",
+      "description": "Kroger Whole Milk Yogurt",
+      "brand": "Kroger",
+      "images": [],
+      "items": [
+        {
+          "itemId": "0002222000031",
+          "size": "32 oz",
+          "soldBy": "UNIT",
+          "price": {
+            "regular": 3.99,
+            "promo": 0
+          },
+          "inventory": {
+            "stockLevel": "TEMPORARILY_OUT_OF_STOCK"
+          }
+        }
+      ]
+    },
+    {
+      "productId": "0002222000032",
+      "upc": "0002222000032",
+      "description": "Simple Truth Whole Milk Yogurt",
+      "brand": "Simple Truth",
+      "images": [],
+      "items": [
+        {
+          "itemId": "0002222000032",
+          "size": "32 oz",
+          "soldBy": "UNIT",
+          "price": {
+            "regular": 4.49,
+            "promo": 0
+          },
+          "inventory": {
+            "stockLevel": "HIGH"
+          }
+        }
+      ]
+    }
+  ]
+}

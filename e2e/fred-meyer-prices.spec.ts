@@ -52,9 +52,11 @@ test("Fred Meyer prices: choose a store, then the list shows real shelf prices",
   await expect(photo).toHaveAttribute("loading", "lazy");
   await expect(photo).toHaveAttribute("referrerpolicy", "no-referrer");
 
-  // Items Kroger has no match for keep the model's estimate, and so does another store.
-  await expect(row(page, "Black beans").getByText("estimate", { exact: true })).toBeVisible();
+  // Black beans have a Fred Meyer product (no photo); corn tortillas have none, so they keep the model's
+  // estimate, and so does another store.
+  await expect(row(page, "Black beans").getByText("Fred Meyer price", { exact: true })).toBeVisible();
   await expect(row(page, "Black beans").locator("img")).toHaveCount(0);
+  await expect(row(page, "Corn tortillas").getByText("estimate", { exact: true })).toBeVisible();
 
   const sheetButton = row(page, "Corn tortillas").getByRole("button", { name: /Corn tortillas/ });
   await sheetButton.click();

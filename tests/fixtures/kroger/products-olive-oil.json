@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "productId": "0002222000011",
+      "upc": "0002222000011",
+      "description": "California Olive Ranch Extra Virgin Olive Oil",
+      "brand": "California Olive Ranch",
+      "images": [],
+      "items": [
+        {
+          "itemId": "0002222000011",
+          "size": "16.9 fl oz",
+          "soldBy": "UNIT",
+          "price": {
+            "regular": 8.99,
+            "promo": 0
+          }
+        }
+      ]
+    },
+    {
+      "productId": "0002222000012",
+      "upc": "0002222000012",
+      "description": "Kroger Pure Olive Oil",
+      "brand": "Kroger",
+      "images": [],
+      "items": [
+        {
+          "itemId": "0002222000012",
+          "size": "1 qt",
+          "soldBy": "UNIT",
+          "price": {
+            "regular": 9.49,
+            "promo": 0
+          }
+        }
+      ]
+    }
+  ]
+}

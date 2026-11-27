@@ -3,9 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/db/types';
 import type { Store } from '@/lib/domain/list';
 import type { Quantity } from '@/lib/domain/types';
-import { priceFor, type KrogerPrice } from '@/lib/kroger/products';
+import { perBase } from '@/lib/domain/packages';
+import { getMatches } from '@/lib/kroger/matches';
 import { isKrogerConfigured, KrogerNotConfigured } from '@/lib/kroger/token';
 import { KROGER_PRICE_MAX_AGE_MS } from '@/lib/list/prices';
+import type { MatchRow } from '@/lib/list/matches';
 import { generateStructured } from './provider';
 import { EstimateResultSchema } from './schemas';
 
@@ -33,22 +35,6 @@ export interface EstimateResult {
   kroger: Record<string, KrogerDetail>;
   /** True when some items were left unpriced because the AI cap is reached. */
   aiSkipped: boolean;
-}
-
-const KROGER_PARALLEL = 6;
-
-/** Runs `fn` over `items`, at most `limit` at a time, keeping the order of the results. */
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return out;
 }
 
 const STORE_NAMES: Record<Store, string> = {
@@ -118,31 +104,37 @@ export async function estimatePrices(
   const aiRows: PriceInsert[] = [];
   if (lookup.length > 0 && ctx.krogerLocationId) {
     const locationId = ctx.krogerLocationId;
-    const found = await mapLimit(lookup, KROGER_PARALLEL, async ({ w }): Promise<KrogerPrice | null> => {
-      try {
-        return await priceFor(w.canonical, w.qty.kind, locationId);
-      } catch (e) {
-        // Not configured is expected and silent; anything else (bad secret, 429, outage) must show in the logs.
-        if (!(e instanceof KrogerNotConfigured)) console.error('kroger price failed', e instanceof Error ? e.message : 'unknown');
-        return null; // Kroger is down or says no: the item keeps its old price, or gets an estimate
-      }
-    });
+    let matches: MatchRow[] = [];
+    let limited = false;
+    try {
+      ({ matches, limited } = await getMatches([...new Set(lookup.map(({ w }) => w.canonical))], {
+        sb: ctx.sb, householdId: ctx.householdId, locationId,
+      }));
+    } catch (e) {
+      // Not configured is expected and silent; anything else (bad secret, 429, outage) must show in the logs.
+      if (!(e instanceof KrogerNotConfigured)) console.error('kroger price failed', e instanceof Error ? e.message : 'unknown');
+      // Kroger is down or says no: the item keeps its old price, or gets an estimate
+    }
+    const byName = new Map(matches.map((m) => [m.canonical, m]));
     const stamp = new Date().toISOString();
-    lookup.forEach(({ w, was }, n) => {
-      const k = found[n];
+    for (const { w, was } of lookup) {
+      const match = byName.get(w.canonical);
+      const k = match ? perBase(w.canonical, w.qty.kind, match.candidates) : null;
       if (!k) {
         if (was) keep(w, was);
-        else missing.push(w);
-        return;
+        else if (!(limited && !match)) missing.push(w); // over the Kroger cap: unpriced, not a paid guess
+        continue;
       }
+      const c = k.candidate;
+      const detail = { productName: c.name, imageUrl: c.imageUrl, onSale: c.promoCents !== null };
       out.prices[w.canonical] = k.centsPerBase;
-      out.kroger[w.canonical] = { productName: k.productName, imageUrl: k.imageUrl, onSale: k.onSale };
+      out.kroger[w.canonical] = detail;
       shelfRows.push({
         household_id: ctx.householdId, canonical: w.canonical, store, kind: w.qty.kind,
-        cents_per_base: k.centsPerBase, source: 'kroger', product_name: k.productName,
-        product_image_url: k.imageUrl, on_sale: k.onSale, updated_at: stamp,
+        cents_per_base: k.centsPerBase, source: 'kroger', product_name: detail.productName,
+        product_image_url: detail.imageUrl, on_sale: detail.onSale, updated_at: stamp,
       });
-    });
+    }
   }
 
   if (missing.length > 0 && ctx.aiAllowed === false) {

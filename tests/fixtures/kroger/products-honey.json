@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "productId": "0002222000021",
+      "upc": "0002222000021",
+      "description": "Kroger Pure Clover Honey",
+      "brand": "Kroger",
+      "images": [],
+      "items": [
+        {
+          "itemId": "0002222000021",
+          "size": "12 oz",
+          "soldBy": "UNIT",
+          "price": {
+            "regular": 4.99,
+            "promo": 0
+          }
+        }
+      ]
+    },
+    {
+      "productId": "0002222000022",
+      "upc": "0002222000022",
+      "description": "Local Hive Raw Honey",
+      "brand": "Local Hive",
+      "images": [],
+      "items": [
+        {
+          "itemId": "0002222000022",
+          "size": "24 oz",
+          "soldBy": "UNIT",
+          "price": {
+            "regular": 9.99,
+            "promo": 0
+          }
+        }
+      ]
+    }
+  ]
+}
