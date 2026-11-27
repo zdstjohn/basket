@@ -12,7 +12,7 @@ import { useOfflineShell } from "@/components/useOfflineShell";
 import { Banner, OfflineStrip } from "@/components/ui/Banner";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
-import { ErrorBanner, Loading, SkeletonLines } from "@/components/ui/states";
+import { ErrorBanner, Loading } from "@/components/ui/states";
 import { Toast } from "@/components/ui/Toast";
 import type { Household } from "@/lib/db/rows";
 import type { Store } from "@/lib/domain/list";
@@ -38,7 +38,11 @@ export function ListScreen({ household }: { household: Household }) {
   // The swap the item sheet asked for: it opens once that sheet has finished closing.
   const swapAfterClose = useRef<string | null>(null);
   const [swapBusy, setSwapBusy] = useState(false);
-  const [problem, setProblem] = useState(false);
+  // What the last failed change was, so Retry can send it again; "refused" is a change the server turned down while offline.
+  const [problem, setProblem] = useState<"save" | "refused" | null>(null);
+  const retryRef = useRef<(() => Promise<void>) | null>(null);
+  // A change was made while offline, so there is something to be sent when the signal returns.
+  const [queued, setQueued] = useState(false);
   const view = listView({ weekFailed: week.failed && week.id === null, error: list.error, loading: list.loading, itemCount: list.items.length });
   const offlineReady = useOfflineShell(!list.loading && !list.error);
 
@@ -60,12 +64,20 @@ export function ListScreen({ household }: { household: Household }) {
   const [strip, setStrip] = useState<"offline" | "saved" | "back" | null>(null);
   if (list.offline !== net.offline) {
     setNet({ offline: list.offline, refusalsThen: list.offline ? list.refusals : net.refusalsThen });
-    setStrip(
-      list.offline
-        ? "offline"
-        : reconnectedStrip({ queueLeft: loadQueue(household.id).length, refused: list.refusals > net.refusalsThen }),
-    );
+    if (list.offline) setStrip("offline");
+    else {
+      const refused = list.refusals > net.refusalsThen;
+      setStrip(reconnectedStrip({ queueLeft: loadQueue(household.id).length, refused, sent: queued }));
+      if (refused) setProblem("refused");
+      setQueued(false);
+    }
   }
+  // A sheet whose item has left the list is gone: its key must not wake it up if the item comes back.
+  if (openKey && !open) setOpenKey(null);
+  if (swapKey && !swapping) setSwapKey(null);
+  useEffect(() => {
+    if (!openKey && !open) swapAfterClose.current = null;
+  }, [openKey, open]);
   useEffect(() => {
     if (strip !== "saved" && strip !== "back") return;
     const t = setTimeout(() => setStrip(null), STRIP_MS);
@@ -75,7 +87,7 @@ export function ListScreen({ household }: { household: Household }) {
   function checkOffAll() {
     const keys = toCheck;
     if (keys.length === 0) return;
-    void run(() => list.updateMany(keys, { checked: true }));
+    void run(() => list.updateMany(keys, { checked: true }), true);
     setUndo({ keys, id: ++undoId.current });
   }
 
@@ -83,15 +95,17 @@ export function ListScreen({ household }: { household: Household }) {
     if (!undo) return;
     const keys = keysToUntick(undo.keys, checked);
     setUndo(null);
-    if (keys.length > 0) void run(() => list.updateMany(keys, { checked: false }));
+    if (keys.length > 0) void run(() => list.updateMany(keys, { checked: false }), true);
   }
 
-  async function run(fn: () => Promise<void>) {
-    setProblem(false);
+  async function run(fn: () => Promise<void>, change = false) {
+    setProblem(null);
+    if (change && (list.offline || (typeof navigator !== "undefined" && navigator.onLine === false))) setQueued(true);
+    retryRef.current = fn;
     try {
       await fn();
     } catch {
-      setProblem(true);
+      setProblem("save");
     }
   }
 
@@ -102,7 +116,8 @@ export function ListScreen({ household }: { household: Household }) {
       await fn();
     } catch (e) {
       if (rethrow) throw e;
-      setProblem(true);
+      retryRef.current = () => whileBusy(fn);
+      setProblem("save");
     } finally {
       setSwapBusy(false);
     }
@@ -118,7 +133,7 @@ export function ListScreen({ household }: { household: Household }) {
       product={products[i.key]}
       productMode={productMode}
       lookingUp={!list.offline && !list.stalePrices}
-      onToggle={(c) => void run(() => list.update(i.key, { checked: c }))}
+      onToggle={(c) => void run(() => list.update(i.key, { checked: c }), true)}
       onOpen={() => setOpenKey(i.key)}
       onFind={() => setSwapKey(i.key)}
     />
@@ -148,11 +163,13 @@ export function ListScreen({ household }: { household: Household }) {
         <div className={strip ? "pt-2" : undefined}>
           <OfflineStrip state={strip} />
         </div>
-        {list.stalePrices && (
-          <div className="pt-2">
-            <Banner icon={Clock}>Fred Meyer prices may be out of date.</Banner>
-          </div>
-        )}
+        <div role="status" className={list.stalePrices ? "pt-2" : undefined}>
+          {list.stalePrices && (
+            <Banner role={null} icon={Clock}>
+              Fred Meyer prices may be out of date.
+            </Banner>
+          )}
+        </div>
         {showChooseStore && (
           <div className="pt-2">
             <Banner icon={MapPin}>
@@ -166,7 +183,18 @@ export function ListScreen({ household }: { household: Household }) {
         )}
         {problem && (
           <div className="pt-2">
-            <ErrorBanner message="Couldn’t save. Try again." />
+            {problem === "refused" ? (
+              <ErrorBanner message="Some changes didn’t save." />
+            ) : (
+              <ErrorBanner
+                message="Couldn’t save. Try again."
+                actionLabel="Retry"
+                onAction={() => {
+                  const again = retryRef.current;
+                  if (again) void run(again);
+                }}
+              />
+            )}
           </div>
         )}
       </div>
@@ -186,7 +214,7 @@ export function ListScreen({ household }: { household: Household }) {
         ) : view === "skeleton" ? (
           <div className="pt-4">
             <Loading label="Loading your list…" />
-            <SkeletonLines lines={6} size="body" />
+            <div aria-hidden="true" className="bk-skeleton min-h-48 rounded-md" />
           </div>
         ) : view === "empty" ? (
           <div className="flex flex-col items-start gap-3 py-8">
@@ -206,12 +234,10 @@ export function ListScreen({ household }: { household: Household }) {
             )}
             {nothingHere && <p className="pt-4 text-body text-ink">Nothing to buy at {STORE_NAMES[store]} this week.</p>}
             {toBuy.map((g) => (
-              <section key={g.id} aria-labelledby={`${PANEL}-${g.id}`}>
-                <h2 id={`${PANEL}-${g.id}`} className={heading}>
-                  {g.title}
-                </h2>
+              <div key={g.id}>
+                <h2 className={heading}>{g.title}</h2>
                 <ul>{g.items.map(row)}</ul>
-              </section>
+              </div>
             ))}
             {gotIt.length > 0 && (
               <section aria-labelledby={`${PANEL}-got-it`}>
@@ -275,7 +301,7 @@ export function ListScreen({ household }: { household: Household }) {
             swapAfterClose.current = null;
             if (next) setSwapKey(next);
           }}
-          onHave={(have) => void run(() => list.update(open.key, { have_it: have }))}
+          onHave={(have) => void run(() => list.update(open.key, { have_it: have }), true)}
           onMove={(s) => void run(() => list.moveItem(open, s))}
           onPrice={(cents) => list.setPrice(open, cents)}
           hasProduct={!!products[open.key]?.pick}
@@ -283,7 +309,7 @@ export function ListScreen({ household }: { household: Household }) {
           onSwap={() => {
             swapAfterClose.current = open.key;
           }}
-          onBudget={(outside) => void run(() => list.update(open.key, { outside_budget: outside }))}
+          onBudget={(outside) => void run(() => list.update(open.key, { outside_budget: outside }), true)}
         />
       )}
 

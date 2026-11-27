@@ -570,8 +570,11 @@ test.describe("with the service worker blocked, so every request can be routed",
     await page.clock.runFor(12_000);
     await expect(page.getByText("Back online.", { exact: true })).toBeVisible();
     await expect(page.getByText("Back online. Saved.")).toHaveCount(0);
+    // The dropped change is said out loud, and stays until the next action.
+    await expect(page.getByRole("alert").filter({ hasText: "Some changes didn’t save." })).toBeVisible();
     await page.clock.runFor(2500);
     await expect(page.getByText("Back online.", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: "Some changes didn’t save." })).toBeVisible();
   });
 
   test("the stale-prices line and the offline line can show together", async ({ page, context }) => {
@@ -638,4 +641,19 @@ test("an Amazon row with no price links to the store search", async ({ page }) =
   // The name still opens the item sheet.
   await tortillas.getByRole("button", { name: /^Corn tortillas/ }).click();
   await expect(page.getByRole("dialog", { name: "Corn tortillas" })).toBeVisible();
+});
+
+test("a sheet never reopens by itself after a move and a move back", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await (await openSheet(page, "Corn tortillas")).getByRole("button", { name: "Move to Amazon" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("tab", { name: /^Amazon/ }).click();
+  await (await openSheet(page, "Corn tortillas")).getByRole("button", { name: "Move to Fred Meyer" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("tab", { name: /^Fred Meyer/ }).click();
+  await expect(row(page, "Corn tortillas")).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
