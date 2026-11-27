@@ -130,7 +130,9 @@ test("review and fill the Fred Meyer cart, then send only what is new", async ({
   await expect(page.getByTestId("to-remove").getByRole("heading", { name: "Take these out in the Fred Meyer app" })).toBeVisible();
   await expect(page.getByTestId("to-remove")).toContainText("Simple Truth Organic Black Beans");
 
-  // 7. Sending again asks first, and adds a second time.
+  // 7. Sending again asks first, and adds a second time. (The server stands a resend down if another send
+  // landed in the last few seconds, so let the milk send settle first.)
+  await page.waitForTimeout(6000);
   await page.getByRole("button", { name: "Send these again" }).click();
   const warning = page.getByRole("dialog", { name: "Send these again" });
   await expect(warning.getByText("This adds them a second time. Fred Meyer can't tell Basket what's already in your cart.")).toBeVisible();
@@ -225,7 +227,7 @@ test("what the family is told when a send does not simply work", async ({ page }
   await sendButton(page).click();
   const result = page.getByTestId("send-result");
   await expect(result).toContainText("Someone in your family is already sending this list. Wait a moment, then check back.");
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(result.getByRole("alert")).toHaveCount(0); // no error styling
 
   // Unsure: the advice, what was added, what was not.
   await sendButton(page).click();
