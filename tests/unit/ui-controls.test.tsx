@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Icon } from "@/components/ui/Icon";
 import { LookPicker } from "@/components/LookPicker";
 import { LOOK_KEY } from "@/lib/look";
+import { BAR_CLASS, barAboveNav, barBottom, barLift, toastBottom } from "@/lib/ui";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -214,6 +215,44 @@ describe("Toast", () => {
     expect(onDone).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(onDone).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Toast above a pinned bar", () => {
+  const wrapper = () => q('[role="status"]').parentElement as HTMLElement;
+  it("offsets by the nav height, the bar height and 8 px, in guard-legal bracket form", () => {
+    expect(toastBottom).toBe("bottom-[calc(var(--bk-nav-h)+var(--bk-bar-h,0px)+8px)]");
+    expect(toastBottom).not.toContain(" ");
+  });
+  it("barLift: no bar lifts nothing, a bar lifts by its height rounded up", () => {
+    expect(barLift(null)).toBe("0px");
+    expect(barLift(undefined)).toBe("0px");
+    expect(barLift(0)).toBe("0px");
+    expect(barLift(67.2)).toBe("68px");
+  });
+  it("both pinned-bar classes carry the marker", () => {
+    expect(barAboveNav.split(" ")).toContain(BAR_CLASS);
+    expect(barBottom.split(" ")).toContain(BAR_CLASS);
+  });
+  it("sets --bk-bar-h from the bar and keeps status role, Undo and timing", () => {
+    vi.useFakeTimers();
+    const bar = document.createElement("div");
+    bar.className = barAboveNav;
+    Object.defineProperty(bar, "offsetHeight", { value: 140 });
+    document.body.appendChild(bar);
+    const onDone = vi.fn();
+    const onAction = vi.fn();
+    render(<Toast message="Checked off." tone="ok" ms={8000} action={{ label: "Undo", onAction }} onDone={onDone} />);
+    expect(wrapper().style.getPropertyValue("--bk-bar-h")).toBe("140px");
+    expect(wrapper().className).toContain(toastBottom);
+    key(q("button"), "Enter");
+    act(() => vi.advanceTimersByTime(8000));
+    expect(onDone).toHaveBeenCalledOnce();
+    bar.remove();
+  });
+  it("with no bar the lift is 0px", () => {
+    render(<Toast message="Saved." tone="ok" onDone={() => {}} />);
+    expect(wrapper().style.getPropertyValue("--bk-bar-h")).toBe("0px");
   });
 });
 
