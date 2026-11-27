@@ -121,7 +121,7 @@ test("budget: the week says on budget, a little over or over budget, with the am
   await setBudget(page, { target: dollars - 1 });
   await says(dollars - 1, "A little over", /over/);
   // Over by more than the wiggle room.
-  await setBudget(page, { target: dollars - 1, wiggle: 0 });
+  await setBudget(page, { wiggle: 0 });
   await says(dollars - 1, "Over budget", /over/);
 });
 

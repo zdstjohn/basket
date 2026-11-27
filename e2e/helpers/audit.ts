@@ -62,7 +62,8 @@ export async function audit(page: Page): Promise<Problem[]> {
         s.position !== "fixed" &&
         s.position !== "sticky" &&
         s.visibility !== "hidden" &&
-        !bars.some((b) => b.contains(e))
+        // A bar and whatever wraps it are not "content under the bar".
+        !bars.some((b) => b.contains(e) || e.contains(b))
       );
     });
     let lowest = 0;
