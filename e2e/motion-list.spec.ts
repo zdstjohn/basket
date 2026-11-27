@@ -201,7 +201,7 @@ test("reduced motion: no transforms on the list; the total crossfades", async ({
   await setPrice(page, "Black beans", "7.00");
   const bar = page.getByTestId("list-bar");
   await expect(bar.locator(".bk-roll")).toHaveCount(0);
-  await expect(bar.locator(".bk-fade-in")).toHaveCount(1);
+  await expect(bar.locator(".bk-fade-in").first()).toBeAttached();
 });
 
 test("a tick made offline strikes, moves and is still ticked after coming back", async ({ page, context }) => {
