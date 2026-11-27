@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(142);
+select plan(146);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -261,6 +261,18 @@ select throws_ok($q$insert into public.kroger_calls (household_id, day, calls) v
 select throws_ok($q$update public.kroger_calls set calls = 0$q$, '42501', null, 'A cannot reset kroger_calls');
 select is((select calls from public.kroger_calls where household_id = (select v::uuid from t_kv where k = 'HA') and day = (now() at time zone 'utc')::date), 10, 'A can read its own call count');
 select is(public.kroger_limited(), false, 'the all-households total is under the ceiling');
+reset role;
+update public.kroger_calls set calls = 395 where household_id = (select v::uuid from t_kv where k = 'HA');
+update public.kroger_global_calls set calls = 395;
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HA'), 10), 395, 'at 395 a request for 10 adds nothing and returns the current total');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HA'), 5), 400, 'a request that reaches exactly 400 is allowed');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HA'), 1), 400, 'at 400 nothing more is added');
+reset role;
+select is((select calls from public.kroger_global_calls), 400, 'one household never pushes the global total past its own 400');
+update public.kroger_calls set calls = 10 where household_id = (select v::uuid from t_kv where k = 'HA');
+update public.kroger_global_calls set calls = 10;
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
 
 -- Fulfillment and pack size.
 update public.households set fulfillment = 'DELIVERY' where id = (select v::uuid from t_kv where k = 'HA');

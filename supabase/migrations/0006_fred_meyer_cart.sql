@@ -172,7 +172,9 @@ grant update (fulfillment) on public.households to authenticated;
 -- ---------------------------------------------------------------------------
 
 -- Adds n lookups to today's (UTC) count for the household and to the all-households total.
--- Returns the household's new total. Callers read kroger_limited() for the global ceiling.
+-- Returns the household's total. When current + n would pass the household's daily cap (400,
+-- DAILY_LOOKUPS in the app), nothing is added to either counter and the current total is
+-- returned, so one household can add at most 400 a day to the global total.
 create function public.kroger_spend(h uuid, n int) returns int
 language plpgsql security definer set search_path = ''
 as $$
@@ -186,11 +188,18 @@ begin
   if n is null or n < 0 or n > 60 then
     raise exception 'bad_count';
   end if;
+  insert into public.kroger_calls (household_id, day, calls) values (h, today, 0)
+  on conflict (household_id, day) do nothing;
+  select c.calls into total from public.kroger_calls c
+  where c.household_id = h and c.day = today for update;
+  if total + n > 400 then
+    return total;
+  end if;
+  update public.kroger_calls c set calls = c.calls + n
+  where c.household_id = h and c.day = today
+  returning c.calls into total;
   insert into public.kroger_global_calls as g (day, calls) values (today, n)
   on conflict (day) do update set calls = g.calls + n;
-  insert into public.kroger_calls as c (household_id, day, calls) values (h, today, n)
-  on conflict (household_id, day) do update set calls = c.calls + n
-  returning c.calls into total;
   return total;
 end;
 $$;
