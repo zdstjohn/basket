@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserClient } from "@/lib/db/client";
 import { listPeople } from "@/lib/db/queries/household";
-import { listChoices, listMatches } from "@/lib/db/queries/kroger";
+import { clearChoice, listChoices, listMatches, setChoice } from "@/lib/db/queries/kroger";
 import {
   listAlwaysHave, listItemState, listItemStores, listPrices, listStaples,
   setEstimate, setItemState, setItemStore, type ItemState,
@@ -19,10 +19,10 @@ import type { IngredientLine, Meal, Person, Quantity } from "@/lib/domain/types"
 import { isVague } from "@/lib/domain/units";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
-import { foldItemState, mergeFlags } from "@/lib/list/state";
+import { clampPackCount, foldItemState, mergeFlags, writeFlags } from "@/lib/list/state";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import { type Choice, type MatchRow } from "@/lib/list/matches";
-import { answered, began, failed as failedAsk, foodsToAsk, latchBad, pricesStale, type Asked } from "@/lib/list/match-requests";
+import { answered, askableNow, began, failed as failedAsk, foodsToAsk, latchBad, pricesStale, type Asked } from "@/lib/list/match-requests";
 import { requestMatches } from "@/lib/list/matches-client";
 import {
   enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
@@ -93,6 +93,17 @@ function mergeFetched(prices: PriceRow[], rows: PriceRow[]): PriceRow[] {
     if (!old || replaces(r, old)) byKey.set(k, r);
   }
   return [...byKey.values()];
+}
+
+/** The choices with this food's changed by `patch` (a new row if it had none). */
+function withChoice(choices: Choice[], canonical: string, patch: { upc?: string | null; searchTerm?: string | null }): Choice[] {
+  const old = choices.find((c) => c.canonical === canonical) ?? { canonical, upc: null, searchTerm: null };
+  const next: Choice = {
+    canonical,
+    upc: "upc" in patch ? (patch.upc ?? null) : old.upc,
+    searchTerm: "searchTerm" in patch ? (patch.searchTerm ?? null) : old.searchTerm,
+  };
+  return [...choices.filter((c) => c.canonical !== canonical), next];
 }
 
 const RETRY_OFFLINE_MS = 5000;
@@ -305,6 +316,31 @@ export function useWeekList(household: Household, weekId: string | null) {
     if (raw && built && weekId) saveListCache(weekId, trimForCache(raw, new Set(built.items.map((i) => i.key))));
   }, [raw, built, weekId]);
 
+  /** Sends a lookup for these foods (the caller has checked they may go) and folds the answer into the list. */
+  const askMatches = useCallback(
+    (wanted: string[], locationId: string, choice: ReadonlyMap<string, Choice>): Promise<ReadonlyMap<string, MatchRow>> => {
+      for (const w of wanted) began(requestedMatches.current, matchKey(locationId, w));
+      return requestMatches(wanted).then(({ matches, unreached }) => {
+        const back = new Map(matches.map((m) => [m.canonical, m]));
+        for (const w of wanted) {
+          const k = matchKey(locationId, w);
+          // A batch that was answered before a later one went unreached still counts for its own foods.
+          if (unreached && !back.has(w)) failedAsk(requestedMatches.current, k);
+          else answered(requestedMatches.current, k, back.get(w));
+        }
+        setBadFoods((prev) => latchBad(prev, wanted, back, choice));
+        if (matches.length > 0) {
+          for (const m of matches) fetchedMatches.current.set(matchKey(m.locationId, m.canonical), m);
+          setRaw((r) =>
+            r && r.locationId === locationId ? { ...r, matches: withFetchedMatches(r.matches ?? [], fetchedMatches.current) } : r,
+          );
+        }
+        return back;
+      });
+    },
+    [],
+  );
+
   // Look up the Fred Meyer products of what's to buy and has no fresh search: once per food per visit,
   // so a day's limit or a failed search isn't asked again until the next visit.
   useEffect(() => {
@@ -321,23 +357,8 @@ export function useWeekList(household: Household, weekId: string | null) {
       now,
     );
     if (wanted.length === 0) return;
-    for (const w of wanted) began(requestedMatches.current, matchKey(locationId, w));
-    void requestMatches(wanted).then(({ matches, unreached }) => {
-      const back = new Map(matches.map((m) => [m.canonical, m]));
-      for (const w of wanted) {
-        const k = matchKey(locationId, w);
-        // A batch that was answered before a later one went unreached still counts for its own foods.
-        if (unreached && !back.has(w)) failedAsk(requestedMatches.current, k);
-        else answered(requestedMatches.current, k, back.get(w));
-      }
-      setBadFoods((prev) => latchBad(prev, wanted, back, choice));
-      if (matches.length === 0) return;
-      for (const m of matches) fetchedMatches.current.set(matchKey(m.locationId, m.canonical), m);
-      setRaw((r) =>
-        r && r.locationId === locationId ? { ...r, matches: withFetchedMatches(r.matches ?? [], fetchedMatches.current) } : r,
-      );
-    });
-  }, [raw, items, offline, now]);
+    void askMatches(wanted, locationId, choice);
+  }, [raw, items, offline, now, askMatches]);
 
   // Prices may be old when a lookup failed or ran out and a food still has no search from the last day.
   const stalePrices = useMemo(() => {
@@ -404,7 +425,8 @@ export function useWeekList(household: Household, weekId: string | null) {
       }
       latest.current++; // a load already under way would bring back the old value
       // Every change goes through the queue (one entry per item), so an older queued write can never land after a newer one.
-      enqueuePatches(household.id, itemKeys.map((itemKey) => ({ weekId, itemKey, patch: merged[itemKey] })));
+      // The package count goes along only when this change names it: another phone may have set it since.
+      enqueuePatches(household.id, itemKeys.map((itemKey) => ({ weekId, itemKey, patch: writeFlags(merged[itemKey], patch) })));
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         setOffline(true);
         return;
@@ -425,8 +447,59 @@ export function useWeekList(household: Household, weekId: string | null) {
 
   /** How many packages to buy of a food this week; null goes back to what the list works out. */
   const setPackCount = useCallback(
-    (item: ListItem, count: number | null) => update(item.key, { pack_count: count }),
+    (item: ListItem, count: number | null) => update(item.key, { pack_count: clampPackCount(count) }),
     [update],
+  );
+
+  /** The household's pick among the products found. The list re-picks at once. Throws when it can't be saved. */
+  const chooseProduct = useCallback(
+    async (item: ListItem, upc: string) => {
+      await setChoice(sb, household.id, item.canonical, { upc });
+      latest.current++; // a load already under way would bring back the old choice
+      setRaw((r) => (r ? { ...r, choices: withChoice(r.choices ?? [], item.canonical, { upc }) } : r));
+    },
+    [sb, household.id],
+  );
+
+  /**
+   * Looks for a food with the household's own words. That one food skips the day's hold, but not the backoff
+   * after a failed request, and the server still charges the household's daily cap. Throws when the words
+   * can't be saved, or when the search didn't come back (the words stay saved and are tried again later).
+   */
+  const searchWith = useCallback(
+    async (item: ListItem, term: string) => {
+      const words = term.trim();
+      await setChoice(sb, household.id, item.canonical, { searchTerm: words, upc: null });
+      latest.current++;
+      const current = rawRef.current;
+      const locationId = current?.locationId ?? null;
+      const choices = withChoice(current?.choices ?? [], item.canonical, { searchTerm: words, upc: null });
+      setRaw((r) => (r ? { ...r, choices } : r));
+      if (!locationId || (typeof navigator !== "undefined" && navigator.onLine === false)) throw new Error("not searched");
+      if (!askableNow(requestedMatches.current, matchKey(locationId, item.canonical))) throw new Error("not searched");
+      const back = await askMatches([item.canonical], locationId, new Map(choices.map((c) => [c.canonical, c])));
+      // Over the day's limit the server hands back the old search: it is not an answer to these words.
+      if (back.get(item.canonical)?.term !== words) throw new Error("not searched");
+    },
+    [sb, household.id, askMatches],
+  );
+
+  /** Back to Basket's own pick. Searches again if the saved search used the household's words. */
+  const resetChoice = useCallback(
+    async (item: ListItem) => {
+      await clearChoice(sb, household.id, item.canonical);
+      latest.current++;
+      const current = rawRef.current;
+      const locationId = current?.locationId ?? null;
+      const choices = (current?.choices ?? []).filter((c) => c.canonical !== item.canonical);
+      setRaw((r) => (r ? { ...r, choices: (r.choices ?? []).filter((c) => c.canonical !== item.canonical) } : r));
+      const cached = current?.matches?.find((m) => m.locationId === locationId && m.canonical === item.canonical);
+      if (!locationId || !cached || cached.term === item.canonical) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      if (!askableNow(requestedMatches.current, matchKey(locationId, item.canonical))) return;
+      await askMatches([item.canonical], locationId, new Map(choices.map((c) => [c.canonical, c])));
+    },
+    [sb, household.id, askMatches],
   );
 
   /** A price you typed: the total for the quantity on the list. Throws when it can't be saved. */
@@ -472,6 +545,10 @@ export function useWeekList(household: Household, weekId: string | null) {
     update,
     updateMany,
     setPackCount,
+    chooseProduct,
+    searchWith,
+    resetChoice,
+    choices: raw?.choices ?? [],
     setPrice,
     moveItem,
     reload: load,

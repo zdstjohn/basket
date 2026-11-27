@@ -6,6 +6,7 @@ import { BUDGET_LOOK } from "@/components/BudgetMeter";
 import { ListRow } from "@/components/ListRow";
 import { ListSheet } from "@/components/ListSheet";
 import { StoreTabs } from "@/components/StoreTabs";
+import { SwapSheet } from "@/components/SwapSheet";
 import { useOfflineShell } from "@/components/useOfflineShell";
 import type { Household } from "@/lib/db/rows";
 import type { Store } from "@/lib/domain/list";
@@ -22,10 +23,14 @@ export function ListScreen({ household }: { household: Household }) {
   const { items, totals, state, checked, priceSource, priceDetail, products, productMode } = list;
   const [store, setStore] = useState<Store>("fred_meyer");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [swapKey, setSwapKey] = useState<string | null>(null);
+  const [swapBusy, setSwapBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const offlineReady = useOfflineShell(!list.loading && !list.error);
 
+  const choiceOf = (canonical: string) => list.choices.find((c) => c.canonical === canonical);
   const open = openKey ? (items.find((i) => i.key === openKey) ?? null) : null;
+  const swapping = swapKey ? (items.find((i) => i.key === swapKey) ?? null) : null;
   const here = useMemo(() => items.filter((i) => i.store === store), [items, store]);
   const toBuy = useMemo(() => groupItems(here.filter((i) => !i.haveIt)), [here]);
   const skipped = useMemo(() => here.filter((i) => i.haveIt), [here]);
@@ -64,6 +69,19 @@ export function ListScreen({ household }: { household: Household }) {
     }
   }
 
+  /** Runs a swap-sheet action with the sheet's buttons held; a failure is said in the sheet or under the list. */
+  async function whileBusy(fn: () => Promise<void>, rethrow = false) {
+    setSwapBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      if (rethrow) throw e;
+      setProblem("That didn't save. Check your connection and try again.");
+    } finally {
+      setSwapBusy(false);
+    }
+  }
+
   const row = (i: (typeof items)[number]) => (
     <ListRow
       key={i.key}
@@ -76,6 +94,7 @@ export function ListScreen({ household }: { household: Household }) {
       lookingUp={!list.offline && !list.stalePrices}
       onToggle={(c) => void run(() => list.update(i.key, { checked: c }))}
       onOpen={() => setOpenKey(i.key)}
+      onSwap={() => setSwapKey(i.key)}
     />
   );
 
@@ -217,6 +236,27 @@ export function ListScreen({ household }: { household: Household }) {
           onBudget={(outside) => {
             setOpenKey(null);
             void run(() => list.update(open.key, { outside_budget: outside }));
+          }}
+        />
+      )}
+
+      {swapping && (
+        <SwapSheet
+          item={swapping}
+          rec={products[swapping.key] ?? { pick: null, options: [], cheapestUpc: null, usualMissing: false }}
+          searchTerm={choiceOf(swapping.canonical)?.searchTerm ?? null}
+          usualUpc={choiceOf(swapping.canonical)?.upc ?? null}
+          hasChoice={!!choiceOf(swapping.canonical)}
+          busy={swapBusy}
+          onClose={() => setSwapKey(null)}
+          onChoose={(upc) => {
+            setSwapKey(null);
+            void run(() => list.chooseProduct(swapping, upc));
+          }}
+          onSearch={(term) => whileBusy(() => list.searchWith(swapping, term), true)}
+          onReset={() => {
+            setSwapKey(null);
+            void run(() => list.resetChoice(swapping));
           }}
         />
       )}

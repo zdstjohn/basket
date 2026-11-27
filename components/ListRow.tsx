@@ -1,8 +1,10 @@
 import type { ListItem } from "@/lib/domain/list";
 import { formatNeed } from "@/lib/domain/units";
 import type { Recommendation } from "@/lib/domain/packages";
-import { formatPrice, krogerImageUrl, type PriceRow, type PriceSource } from "@/lib/list/prices";
+import { formatPrice, krogerImageUrl, STORE_NAMES, storeSearchUrl, type PriceRow, type PriceSource } from "@/lib/list/prices";
 import { focusRing } from "@/lib/ui";
+
+const sideAction = `flex min-h-11 w-[76px] flex-none items-center justify-center rounded-xl px-1 text-center text-xs font-semibold leading-tight text-green underline ${focusRing}`;
 
 export const displayName = (canonical: string): string => canonical.charAt(0).toUpperCase() + canonical.slice(1);
 
@@ -17,6 +19,7 @@ export function ListRow({
   lookingUp = false,
   onToggle,
   onOpen,
+  onSwap,
 }: {
   item: ListItem;
   checked: boolean;
@@ -31,6 +34,8 @@ export function ListRow({
   lookingUp?: boolean;
   onToggle: (checked: boolean) => void;
   onOpen: () => void;
+  /** Opens the swap sheet (Fred Meyer rows in product mode, once the search is back). */
+  onSwap?: () => void;
 }) {
   const name = displayName(item.canonical);
   const skipped = item.haveIt;
@@ -52,6 +57,9 @@ export function ListRow({
         ? "1 package"
         : `${offer.count} × ${formatPrice(offer.unitCents)}`;
   const noMatch = real && !skipped && product && !product.pick;
+  // Amazon and Costco never guess a price: until you type one, a link to their search stands in for it.
+  const searchStore = item.store === "amazon" || item.store === "costco" ? item.store : null;
+  const searchLink = searchStore && !skipped && source !== "user" ? searchStore : null;
   return (
     <li
       data-testid="list-row"
@@ -90,7 +98,7 @@ export function ListRow({
           />
         )}
         <span className="min-w-0 flex-1">
-          <span className={`block text-sm font-semibold ${checked ? "line-through" : ""}`}>{name}</span>
+          <span className={`line-clamp-2 block text-sm font-semibold ${checked ? "line-through" : ""}`}>{name}</span>
           <span className="mt-px block text-xs text-muted">
             {formatNeed(item.parts)}
             {item.alwaysHave ? " · always have" : ""}
@@ -109,7 +117,7 @@ export function ListRow({
             <span className="mt-px block text-xs text-muted">Your usual isn&apos;t on the shelf today</span>
           )}
         </span>
-        {!skipped && (
+        {!skipped && !searchLink && (
           <span className="flex-none text-right">
             <span data-testid="row-total" className={`block text-sm font-semibold ${checked ? "line-through" : ""}`}>
               {item.estimateCents === null ? "—" : `${offer?.approx ? "about " : ""}${formatPrice(item.estimateCents)}`}
@@ -150,6 +158,26 @@ export function ListRow({
           </span>
         )}
       </button>
+      {searchLink && (
+        <a
+          href={storeSearchUrl(searchLink, item.canonical)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={sideAction}
+        >
+          Search {STORE_NAMES[searchLink]}
+        </a>
+      )}
+      {onSwap && offer && (
+        <button type="button" onClick={onSwap} aria-label={`Swap ${name} product`} className={sideAction}>
+          Swap
+        </button>
+      )}
+      {onSwap && noMatch && (
+        <button type="button" onClick={onSwap} aria-label={`Find a product for ${name}`} className={sideAction}>
+          Find a product
+        </button>
+      )}
     </li>
   );
 }

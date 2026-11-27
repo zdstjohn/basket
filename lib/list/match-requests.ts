@@ -42,6 +42,16 @@ export function foodsToAsk(
   ];
 }
 
+/**
+ * May a search the household asked for (new words, back to Basket's pick) go out now? It skips the day's
+ * hold, which is only there to stop the list asking again on its own, but not the backoff after a request
+ * that never got an answer: that food waits its 5, 15 or 60 minutes.
+ */
+export function askableNow(asked: Asked, k: string, now = Date.now()): boolean {
+  const ask = asked.get(k);
+  return !ask || ask.failures === 0 || now >= ask.retryAt;
+}
+
 /** A request is going out: hold the food for a day (failures so far are kept until an answer comes). */
 export function began(asked: Asked, k: string, now = Date.now()): void {
   asked.set(k, { retryAt: now + MATCH_MAX_AGE_MS, failures: asked.get(k)?.failures ?? 0 });

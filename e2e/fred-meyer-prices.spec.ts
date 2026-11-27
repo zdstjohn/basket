@@ -89,11 +89,12 @@ test("Fred Meyer prices: choose a store, then the list shows real shelf prices",
   await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();
 
   // Moving a food to Amazon drops its guess: only a price you type counts there.
-  const sheetButton = row(page, "Corn tortillas").getByRole("button", { name: /Corn tortillas/ });
+  const sheetButton = row(page, "Corn tortillas").getByRole("button", { name: /^Corn tortillas/ });
   await sheetButton.click();
   await page.getByRole("dialog", { name: "Corn tortillas" }).getByRole("button", { name: "Move to Amazon" }).click();
   await page.getByRole("tab", { name: /^Amazon/ }).click();
-  await expect(row(page, "Corn tortillas").getByText("no price yet", { exact: true })).toBeVisible();
+  await expect(row(page, "Corn tortillas").getByRole("link", { name: "Search Amazon" })).toBeVisible();
+  await expect(row(page, "Corn tortillas").getByText("no price yet", { exact: true })).toHaveCount(0);
 
   await page.getByRole("tab", { name: /^Fred Meyer/ }).click();
   await page.screenshot({ path: `${shots}/fred-meyer-products.png`, fullPage: true });

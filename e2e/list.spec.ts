@@ -171,9 +171,14 @@ test("stores and prices: a move sticks; your own price replaces the estimate", a
   await expect(page.getByRole("tab", { name: /^Amazon.*· 1$/ })).toBeVisible();
   await page.getByRole("tab", { name: /^Amazon/ }).click();
   await expect(row(page, "Corn tortillas")).toBeVisible();
-  // Amazon never guesses: until you type a price, the row says so.
-  await expect(row(page, "Corn tortillas").getByText("no price yet", { exact: true })).toBeVisible();
+  // Amazon never guesses: until you type a price, a link to Amazon's search stands in for it.
+  const amazon = row(page, "Corn tortillas").getByRole("link", { name: "Search Amazon" });
+  await expect(amazon).toHaveAttribute("href", "https://www.amazon.com/s?k=corn%20tortillas");
+  await expect(amazon).toHaveAttribute("target", "_blank");
+  await expect(amazon).toHaveAttribute("rel", "noopener noreferrer");
+  expect((await amazon.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   await expect(row(page, "Corn tortillas").getByText("estimate", { exact: true })).toHaveCount(0);
+  await expect(row(page, "Corn tortillas").getByText("no price yet", { exact: true })).toHaveCount(0);
 
   // The choice is the household's, not the week's: it is still there on reload and next week.
   await page.reload();
@@ -187,6 +192,8 @@ test("stores and prices: a move sticks; your own price replaces the estimate", a
   await expect(row(page, "Corn tortillas").getByText("your price", { exact: true })).toBeVisible();
   await expect(row(page, "Corn tortillas")).toContainText("$3.00");
   await expect(row(page, "Corn tortillas").getByText("estimate", { exact: true })).toHaveCount(0);
+  // A price you typed is kept: the search link stands in only for the estimate.
+  await expect(row(page, "Corn tortillas").getByRole("link", { name: "Search Amazon" })).toHaveCount(0);
 });
 
 test("list: one food, one row, with the amounts joined; ticks and untick stick", async ({ page }) => {

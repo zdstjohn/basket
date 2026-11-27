@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { foldItemState, mergeFlags } from '@/lib/list/state';
+import { clampPackCount, foldItemState, mergeFlags, writeFlags } from '@/lib/list/state';
 import { buildList, type ListInputs } from '@/lib/useWeekList';
 import type { ItemState } from '@/lib/db/queries/list';
 
@@ -95,5 +95,37 @@ describe('mergeFlags', () => {
   it('a food-keyed row wins whole over old rows, and unknown foods start clear', () => {
     const out = mergeFlags({ 'rice#mass': flags({ have_it: true }), rice: flags() }, ['rice', 'beans'], { checked: true });
     expect(out).toEqual({ rice: flags({ checked: true }), beans: flags({ checked: true }) });
+  });
+});
+
+describe('writeFlags', () => {
+  it('leaves pack_count out of a write that does not name it, so an offline tick cannot reset a count set elsewhere', () => {
+    const merged = mergeFlags({ rice: { ...flags(), pack_count: 2 } }, ['rice'], { checked: true });
+    const w = writeFlags(merged.rice, { checked: true });
+    expect(w).toEqual({ have_it: false, checked: true, outside_budget: false });
+    expect('pack_count' in w).toBe(false);
+  });
+
+  it('sends pack_count when the patch names it, including null to clear it', () => {
+    const merged = mergeFlags({}, ['rice'], { pack_count: 4 });
+    expect(writeFlags(merged.rice, { pack_count: 4 }).pack_count).toBe(4);
+    const cleared = mergeFlags({ rice: { ...flags(), pack_count: 4 } }, ['rice'], { pack_count: null });
+    expect(writeFlags(cleared.rice, { pack_count: null }).pack_count).toBeNull();
+  });
+});
+
+describe('clampPackCount', () => {
+  it('keeps a package count within 1 to 99 and whole', () => {
+    expect(clampPackCount(0)).toBe(1);
+    expect(clampPackCount(-5)).toBe(1);
+    expect(clampPackCount(100)).toBe(99);
+    expect(clampPackCount(250)).toBe(99);
+    expect(clampPackCount(3)).toBe(3);
+    expect(clampPackCount(2.6)).toBe(3);
+  });
+
+  it('passes null through (back to what the list works out) and treats a non-number as null', () => {
+    expect(clampPackCount(null)).toBeNull();
+    expect(clampPackCount(Number.NaN)).toBeNull();
   });
 });

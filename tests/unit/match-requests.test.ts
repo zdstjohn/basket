@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MatchRow } from '@/lib/list/matches';
 import { MATCH_MAX_AGE_MS } from '@/lib/list/matches';
-import { answered, began, BACKOFF_MS, failed, foodsToAsk, latchBad, pricesStale, type Asked } from '@/lib/list/match-requests';
+import { answered, askableNow, began, BACKOFF_MS, failed, foodsToAsk, latchBad, pricesStale, type Asked } from '@/lib/list/match-requests';
 import { requestMatches } from '@/lib/list/matches-client';
 
 const NOW = Date.parse('2026-11-26T12:00:00Z');
@@ -125,5 +125,18 @@ describe('pricesStale', () => {
   it('a food with no search is stale only after a failed lookup', () => {
     expect(pricesStale(['milk'], new Map(), none, new Set(), NOW)).toBe(false);
     expect(pricesStale(['milk'], new Map(), none, new Set(['milk']), NOW)).toBe(true);
+  });
+});
+
+describe('askableNow: a search the household asked for', () => {
+  it('skips the day hold on that one food but waits out a backoff', () => {
+    const asked: Asked = new Map();
+    expect(askableNow(asked, 'a')).toBe(true);
+    answered(asked, 'a', undefined, 1000); // held for a day
+    expect(askableNow(asked, 'a', 2000)).toBe(true);
+    failed(asked, 'b', 1000);
+    expect(askableNow(asked, 'b', 1000 + BACKOFF_MS[0] - 1)).toBe(false);
+    expect(askableNow(asked, 'b', 1000 + BACKOFF_MS[0])).toBe(true);
+    expect(askableNow(asked, 'a', 2000)).toBe(true); // another food's backoff does not matter
   });
 });
