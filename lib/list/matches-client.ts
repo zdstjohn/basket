@@ -1,4 +1,5 @@
 import type { MatchRow } from './matches';
+import { retryableStatus } from './match-requests';
 
 const BATCH = 60;
 
@@ -19,7 +20,7 @@ export async function requestMatches(canonicals: string[]): Promise<{ matches: M
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ canonicals: names.slice(i, i + BATCH) }),
       });
-      if (!res.ok) return { matches, limited, failed: true, unreached: true };
+      if (!res.ok) return { matches, limited, failed: true, unreached: retryableStatus(res.status) };
       const body = (await res.json()) as { matches?: MatchRow[]; limited?: boolean; failed?: number };
       matches.push(...(body.matches ?? []));
       if (body.limited) limited = true;

@@ -22,7 +22,7 @@ import { loadDraft, saveDraft } from "@/lib/drafts";
 import { foldItemState, mergeFlags } from "@/lib/list/state";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import { type Choice, type MatchRow } from "@/lib/list/matches";
-import { foodsToAsk, forget, pricesStale, type Asked } from "@/lib/list/match-requests";
+import { answered, began, failed as failedAsk, foodsToAsk, latchBad, pricesStale, type Asked } from "@/lib/list/match-requests";
 import { requestMatches } from "@/lib/list/matches-client";
 import {
   enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
@@ -167,7 +167,7 @@ export function useWeekList(household: Household, weekId: string | null) {
   // Ticks each minute, so a list left open past a day notices its prices have aged and asks again.
   const [now, setNow] = useState(() => Date.now());
   // A product lookup came back limited or failed this visit.
-  const [lookupBad, setLookupBad] = useState(false);
+  const [badFoods, setBadFoods] = useState<ReadonlySet<string>>(new Set());
   // Prices fetched this visit. A load that began before the server saved them must not wipe them out.
   const fetched = useRef(new Map<string, PriceRow>());
   const invalidate = useCallback(() => {
@@ -321,13 +321,16 @@ export function useWeekList(household: Household, weekId: string | null) {
       now,
     );
     if (wanted.length === 0) return;
-    for (const w of wanted) requestedMatches.current.set(matchKey(locationId, w), Date.now());
-    void requestMatches(wanted).then(({ matches, limited, failed, unreached }) => {
-      // The request never got an answer: ask again at the next look, not tomorrow.
-      if (unreached) forget(requestedMatches.current, wanted.map((w) => matchKey(locationId, w)));
-      const got = new Set(matches.map((m) => m.canonical));
-      // A food the server didn't answer for is as good as a failed lookup.
-      setLookupBad(limited || failed || wanted.some((w) => !got.has(w)));
+    for (const w of wanted) began(requestedMatches.current, matchKey(locationId, w));
+    void requestMatches(wanted).then(({ matches, unreached }) => {
+      const back = new Map(matches.map((m) => [m.canonical, m]));
+      for (const w of wanted) {
+        const k = matchKey(locationId, w);
+        // A batch that was answered before a later one went unreached still counts for its own foods.
+        if (unreached && !back.has(w)) failedAsk(requestedMatches.current, k);
+        else answered(requestedMatches.current, k, back.get(w));
+      }
+      setBadFoods((prev) => latchBad(prev, wanted, back, choice));
       if (matches.length === 0) return;
       for (const m of matches) fetchedMatches.current.set(matchKey(m.locationId, m.canonical), m);
       setRaw((r) =>
@@ -343,8 +346,8 @@ export function useWeekList(household: Household, weekId: string | null) {
     const have = new Map((raw.matches ?? []).filter((m) => m.locationId === locationId).map((m) => [m.canonical, m]));
     const choice = new Map((raw.choices ?? []).map((c) => [c.canonical, c]));
     const foods = items.filter((i) => i.store === "fred_meyer" && !i.haveIt).map((i) => i.canonical);
-    return pricesStale(foods, have, choice, lookupBad, now);
-  }, [lookupBad, raw, items, now]);
+    return pricesStale(foods, have, choice, badFoods, now);
+  }, [badFoods, raw, items, now]);
 
   // Price whatever nobody has priced yet: one request per store.
   useEffect(() => {

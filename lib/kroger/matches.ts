@@ -129,7 +129,11 @@ export async function getMatches(
         })),
         { onConflict: 'household_id,location_id,canonical' },
       );
-      if (error) throw new Error(error.message);
+      // The searches were paid for: a failed save still hands the matches to the caller (nothing is cached).
+      if (error) {
+        console.error('kroger match save failed', error.message);
+        failed += fresh.length;
+      }
       for (const r of fresh) rows.set(r.canonical, r);
 
       // The price history is a bonus: a failure here must not lose the matches.

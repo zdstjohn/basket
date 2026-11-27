@@ -122,6 +122,17 @@ describe('getMatches', () => {
     log.mockRestore();
   });
 
+  it('returns the matches with failed set when the search worked but saving it failed', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { sb } = krogerSb({ upsertError: 'db down' });
+    const r = await run(sb, ['chicken thighs']);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(r.matches).toHaveLength(1);
+    expect(r.matches[0].candidates).toHaveLength(2);
+    expect(r.failed).toBe(1);
+    log.mockRestore();
+  });
+
   it('saves an empty result as no candidates and does not ask again', async () => {
     const { sb, calls } = krogerSb({});
     search.mockResolvedValue([]);

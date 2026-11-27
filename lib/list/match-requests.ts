@@ -6,12 +6,23 @@ export const matchDue = (row: MatchRow | undefined, choice: Choice | undefined, 
   !(now - Date.parse(row.fetchedAt) < MATCH_MAX_AGE_MS) ||
   (!!choice?.searchTerm && row.term !== choice.searchTerm);
 
-/** When each food was last asked about (ms), by `store|food`. */
-export type Asked = Map<string, number>;
+const MINUTE = 60_000;
+/** After a request that never got an answer: wait this long before the first, second and later retries. */
+export const BACKOFF_MS = [5 * MINUTE, 15 * MINUTE, 60 * MINUTE];
+
+/** When a food may be asked about again, and how many requests in a row never got an answer. */
+export interface Ask {
+  retryAt: number;
+  failures: number;
+}
+export type Asked = Map<string, Ask>;
+
+/** Only a thrown fetch or a gateway/timeout answer is worth asking again soon; the rest waits for the day. */
+export const retryableStatus = (status: number): boolean => status === 502 || status === 503 || status === 504;
 
 /**
- * The foods to look up now: due, and not asked about within the last day. A food whose request never
- * reached the server is forgotten (see `forget`), so it is asked again at once.
+ * The foods to look up now: due, and past their retry time. A new request holds the food for a day;
+ * `failed` shortens that to the backoff step, `answered` sets it by the row that came back.
  */
 export function foodsToAsk(
   foods: string[],
@@ -24,28 +35,62 @@ export function foodsToAsk(
   return [
     ...new Set(
       foods.filter((f) => {
-        const at = asked.get(key(f));
-        return (at === undefined || !(now - at < MATCH_MAX_AGE_MS)) && matchDue(have.get(f), choice.get(f), now);
+        const ask = asked.get(key(f));
+        return (!ask || now >= ask.retryAt) && matchDue(have.get(f), choice.get(f), now);
       }),
     ),
   ];
 }
 
-/** Forgets that these foods were asked about, so the next look asks again. */
-export function forget(asked: Asked, keys: string[]): void {
-  for (const k of keys) asked.delete(k);
+/** A request is going out: hold the food for a day (failures so far are kept until an answer comes). */
+export function began(asked: Asked, k: string, now = Date.now()): void {
+  asked.set(k, { retryAt: now + MATCH_MAX_AGE_MS, failures: asked.get(k)?.failures ?? 0 });
+}
+
+/** The request never got an answer: retry after 5 minutes, then 15, then every hour. */
+export function failed(asked: Asked, k: string, now = Date.now()): void {
+  const failures = (asked.get(k)?.failures ?? 0) + 1;
+  asked.set(k, { retryAt: now + BACKOFF_MS[Math.min(failures, BACKOFF_MS.length) - 1], failures });
 }
 
 /**
- * Prices may be old: some food to buy is due a lookup, and either a lookup came
- * back limited or failed, or an old saved search has passed its day (it shows until the new one lands).
+ * The server answered. A fresh row is asked about again when it turns a day old (by its own time, not the
+ * time of this request); no row, or an old one, waits a day from now. Backoff starts over.
+ */
+export function answered(asked: Asked, k: string, row: MatchRow | undefined, now = Date.now()): void {
+  const own = row ? Date.parse(row.fetchedAt) + MATCH_MAX_AGE_MS : NaN;
+  asked.set(k, { retryAt: own > now ? own : now + MATCH_MAX_AGE_MS, failures: 0 });
+}
+
+/**
+ * The foods whose lookup went wrong and has not been put right: each food stays marked until it has a fresh
+ * search, so a later success for other foods does not clear the banner for these.
+ */
+export function latchBad(
+  prev: ReadonlySet<string>,
+  wanted: string[],
+  back: ReadonlyMap<string, MatchRow>,
+  choice: ReadonlyMap<string, Choice>,
+  now = Date.now(),
+): Set<string> {
+  const next = new Set(prev);
+  for (const f of wanted) {
+    if (!matchDue(back.get(f), choice.get(f), now)) next.delete(f);
+    else next.add(f);
+  }
+  return next;
+}
+
+/**
+ * Prices may be old: some food to buy is due a lookup, and either its lookup went wrong (`bad`) or an old
+ * saved search has passed its day (it shows until the new one lands).
  */
 export function pricesStale(
   foods: string[],
   have: ReadonlyMap<string, MatchRow>,
   choice: ReadonlyMap<string, Choice>,
-  lookupBad: boolean,
+  bad: ReadonlySet<string>,
   now = Date.now(),
 ): boolean {
-  return foods.some((f) => matchDue(have.get(f), choice.get(f), now) && (lookupBad || have.has(f)));
+  return foods.some((f) => matchDue(have.get(f), choice.get(f), now) && (bad.has(f) || have.has(f)));
 }
