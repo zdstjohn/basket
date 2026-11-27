@@ -59,11 +59,27 @@ function ended(anims: (Animation | null)[], ms: number): Promise<void> {
   return Promise.race([all, new Promise<void>((r) => setTimeout(r, ms + 150))]);
 }
 
+/** True for a touch that belongs to something else: a field, a slider, an editable area, or an inner scroller that is not at its top. */
+function startsInOwnGesture(target: Element, stop: Element | null): boolean {
+  for (let el: Element | null = target; el && el !== stop; el = el.parentElement) {
+    if (el.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return true;
+    const h = el as HTMLElement;
+    try {
+      const oy = getComputedStyle(h).overflowY;
+      if ((oy === "auto" || oy === "scroll") && h.scrollHeight > h.clientHeight && h.scrollTop > 0) return true;
+    } catch {
+      // No computed style: treat it as an ordinary element.
+    }
+  }
+  return false;
+}
+
 type Sample = { t: number; y: number };
 type Gesture = {
   /** pending: a touch has begun but not yet chosen between scrolling and dragging. */
   mode: "pending" | "drag" | "scroll";
   startY: number;
+  startX: number;
   baseY: number;
   y: number;
   samples: Sample[];
@@ -122,6 +138,7 @@ export function Sheet({
     const panel = panelRef.current;
     if (closingRef.current || closedRef.current) return;
     closingRef.current = true;
+    if (panel) panel.setAttribute("inert", ""); // its buttons cannot be tapped while it leaves
     gestureRef.current = null;
     if (!panel) {
       finish();
@@ -203,7 +220,7 @@ export function Sheet({
     const baseY = Math.max(0, translateY(panel));
     cancelAnimations();
     panel.style.transform = baseY > 0 ? `translateY(${baseY}px)` : "";
-    const g: Gesture = { mode, startY, baseY, y: baseY, samples: [{ t: performance.now(), y: baseY }] };
+    const g: Gesture = { mode, startY, startX: 0, baseY, y: baseY, samples: [{ t: performance.now(), y: baseY }] };
     gestureRef.current = g;
     return g;
   }, [cancelAnimations]);
@@ -222,7 +239,7 @@ export function Sheet({
     const panel = panelRef.current;
     if (!panel) return;
     panel.style.transform = "";
-    if (from <= 0) return;
+    if (from <= 0 || prefersReducedMotion()) return; // under reduced motion it snaps back, nothing travels
     animsRef.current = [
       play(panel, [{ transform: `translateY(${from}px)` }, { transform: "translateY(0px)" }], {
         duration: tokenMs("--bk-dur-snap", DUR.snap),
@@ -238,7 +255,9 @@ export function Sheet({
     gestureRef.current = null;
     if (!g || !panel || g.mode !== "drag") return;
     g.samples.push({ t: performance.now(), y: g.y });
-    if (shouldDismiss(g.y, panel.offsetHeight, velocity(g.samples))) close();
+    const v = velocity(g.samples);
+    // Only downward speed and distance count: a flick back up never dismisses.
+    if (v >= 0 && shouldDismiss(g.y, panel.offsetHeight, v)) close();
     else springBack(g.y);
   }, [close, springBack]);
 
@@ -260,7 +279,9 @@ export function Sheet({
         return;
       }
       if (zoneRef.current?.contains(e.target as Node)) return; // the drag zone has its own pointer handlers
-      gestureRef.current = { mode: "pending", startY: e.touches[0].clientY, baseY: 0, y: 0, samples: [] };
+      const target = e.target as Element | null;
+      const mode = target && startsInOwnGesture(target, scrollRef.current) ? "scroll" : "pending";
+      gestureRef.current = { mode, startY: e.touches[0].clientY, startX: e.touches[0].clientX, baseY: 0, y: 0, samples: [] };
     };
     const onMove = (e: TouchEvent) => {
       const g = gestureRef.current;
@@ -268,9 +289,11 @@ export function Sheet({
       const clientY = e.touches[0].clientY;
       if (g.mode === "pending") {
         const dy = clientY - g.startY;
-        if (Math.abs(dy) < SLOP) return;
+        const dx = e.touches[0].clientX - g.startX;
+        if (Math.abs(dy) < SLOP && Math.abs(dx) < SLOP) return;
         const atTop = (scrollRef.current?.scrollTop ?? 0) <= 0;
-        if (atTop && dy > 0) {
+        // Only a mostly vertical, downward pull at the top of the content picks the sheet up.
+        if (atTop && dy > 0 && Math.abs(dy) > Math.abs(dx)) {
           const grabbed = grab(g.startY, "drag");
           if (!grabbed) return;
         } else {
@@ -343,6 +366,7 @@ export function Sheet({
             }}
             onPointerUp={release}
             onPointerCancel={abandon}
+            onLostPointerCapture={abandon}
           >
             <div aria-hidden="true" className="h-1 w-9 rounded-xs bg-line-strong" />
           </div>

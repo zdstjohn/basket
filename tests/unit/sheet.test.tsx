@@ -232,3 +232,158 @@ describe("Sheet drag (pointer on the drag zone)", () => {
     expect(panelY()).toBe("");
   });
 });
+
+describe("Sheet touch drag on the content", () => {
+  function touch(el: Element, type: string, x: number, y: number) {
+    const e = new Event(type, { bubbles: true, cancelable: true }) as Event & { touches: unknown[] };
+    e.touches = type === "touchend" || type === "touchcancel" ? [] : [{ clientX: x, clientY: y }];
+    act(() => {
+      el.dispatchEvent(e);
+    });
+    return e;
+  }
+  function open(child: ReactElement = <p data-testid="plain">a</p>) {
+    const onClose = vi.fn();
+    render(
+      <Sheet label="x" onClose={onClose}>
+        {child}
+      </Sheet>,
+    );
+    return { onClose };
+  }
+
+  it("a vertical pull at the top drags the sheet and stops the page scrolling", () => {
+    open();
+    const target = q("[data-testid=plain]");
+    touch(target, "touchstart", 100, 100);
+    const move = touch(target, "touchmove", 102, 140);
+    expect(panelY()).toBe("translateY(40px)");
+    expect(move.defaultPrevented).toBe(true);
+  });
+
+  it("a sideways swipe does not drag it", () => {
+    open();
+    const target = q("[data-testid=plain]");
+    touch(target, "touchstart", 100, 100);
+    const move = touch(target, "touchmove", 180, 110);
+    expect(panelY()).toBe("");
+    expect(move.defaultPrevented).toBe(false);
+  });
+
+  it("a touch that starts in an input does not drag it", () => {
+    open(<input data-testid="field" />);
+    const target = q("[data-testid=field]");
+    touch(target, "touchstart", 100, 100);
+    touch(target, "touchmove", 100, 160);
+    expect(panelY()).toBe("");
+  });
+
+  it("a nested scroller that is scrolled down keeps the pull", () => {
+    open(
+      <div data-testid="inner" style={{ overflowY: "auto" }}>
+        <p data-testid="in-inner">a</p>
+      </div>,
+    );
+    const inner = q("[data-testid=inner]");
+    Object.defineProperty(inner, "scrollHeight", { configurable: true, value: 500 });
+    Object.defineProperty(inner, "clientHeight", { configurable: true, value: 100 });
+    inner.scrollTop = 50;
+    const target = q("[data-testid=in-inner]");
+    touch(target, "touchstart", 100, 100);
+    touch(target, "touchmove", 100, 160);
+    expect(panelY()).toBe("");
+  });
+
+  it("a nested scroller at its top still lets the sheet drag", () => {
+    open(
+      <div data-testid="inner" style={{ overflowY: "auto" }}>
+        <p data-testid="in-inner">a</p>
+      </div>,
+    );
+    const inner = q("[data-testid=inner]");
+    Object.defineProperty(inner, "scrollHeight", { configurable: true, value: 500 });
+    Object.defineProperty(inner, "clientHeight", { configurable: true, value: 100 });
+    const target = q("[data-testid=in-inner]");
+    touch(target, "touchstart", 100, 100);
+    touch(target, "touchmove", 100, 160);
+    expect(panelY()).toBe("translateY(60px)");
+  });
+});
+
+describe("Sheet release details", () => {
+  it("an upward flick after a long pull does not dismiss", async () => {
+    const onClose = vi.fn();
+    render(
+      <Sheet label="x" onClose={onClose}>
+        <p>a</p>
+      </Sheet>,
+    );
+    const zone = q("[data-testid=sheet-drag]");
+    ptr(zone, "pointerdown", 100);
+    now += 200;
+    ptr(zone, "pointermove", 260); // 160 px: past 30% of 400
+    now += 20;
+    ptr(zone, "pointermove", 230);
+    now += 20;
+    ptr(zone, "pointerup", 230);
+    await settle();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("losing pointer capture abandons the drag", async () => {
+    const onClose = vi.fn();
+    render(
+      <Sheet label="x" onClose={onClose}>
+        <p>a</p>
+      </Sheet>,
+    );
+    const zone = q("[data-testid=sheet-drag]");
+    ptr(zone, "pointerdown", 100);
+    now += 20;
+    ptr(zone, "pointermove", 300);
+    act(() => {
+      zone.dispatchEvent(new Event("lostpointercapture", { bubbles: true }));
+    });
+    expect(panelY()).toBe("");
+    now += 20;
+    ptr(zone, "pointerup", 300);
+    await settle();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("the panel is inert while it leaves", () => {
+    render(
+      <Sheet label="x" onClose={() => {}}>
+        <p>a</p>
+      </Sheet>,
+    );
+    act(() => q("[data-testid=sheet-scrim]").click());
+    expect(q("[data-testid=sheet-panel]").hasAttribute("inert")).toBe(true);
+  });
+
+  it("under reduced motion the spring-back snaps with no animation", async () => {
+    const calls: unknown[] = [];
+    (HTMLElement.prototype as unknown as { animate: unknown }).animate = function () {
+      calls.push(1);
+      return { finished: Promise.resolve(), cancel() {} };
+    };
+    (window as unknown as { matchMedia: unknown }).matchMedia = (query: string) => ({ matches: true, media: query });
+    render(
+      <Sheet label="x" onClose={() => {}}>
+        <p>a</p>
+      </Sheet>,
+    );
+    calls.length = 0; // the enter fade
+    const zone = q("[data-testid=sheet-drag]");
+    ptr(zone, "pointerdown", 100);
+    now += 100;
+    ptr(zone, "pointermove", 130);
+    now += 400;
+    ptr(zone, "pointerup", 130);
+    await settle();
+    expect(calls.length).toBe(0);
+    expect(panelY()).toBe("");
+    delete (HTMLElement.prototype as { animate?: unknown }).animate;
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+});
