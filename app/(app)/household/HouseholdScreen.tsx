@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlwaysHaveSection } from "@/components/household/AlwaysHaveSection";
 import { SignOutButton } from "@/components/household/SignOutButton";
 import { StaplesSection } from "@/components/household/StaplesSection";
@@ -27,6 +27,7 @@ const FM_NOTICES = {
   connected: "Fred Meyer is connected.",
   denied: "Fred Meyer wasn't connected.",
   failed: "That didn't work. Try connecting again.",
+  disconnectFailed: "That didn't disconnect. Try again.",
 } as const;
 
 const STORES = [
@@ -71,7 +72,14 @@ export function HouseholdScreen({
   const [fredMeyer, setFredMeyer] = useState(household.kroger_location_name);
   const [picking, setPicking] = useState(false);
   const [connected, setConnected] = useState(fredMeyerConnected);
-  const [fmNotice, setFmNotice] = useState(fredMeyerNotice);
+  const [fmNotice, setFmNotice] = useState<keyof typeof FM_NOTICES | null>(fredMeyerNotice);
+  useEffect(() => {
+    // The notice is shown once: take ?fm= out of the address so a reload or a shared link does not repeat it.
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("fm")) return;
+    url.searchParams.delete("fm");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function disconnectFredMeyer() {
@@ -82,7 +90,7 @@ export function HouseholdScreen({
       setConnected(false);
       setFmNotice(null);
     } catch {
-      setFmNotice("failed");
+      setFmNotice("disconnectFailed");
     } finally {
       setDisconnecting(false);
     }
@@ -273,7 +281,7 @@ export function HouseholdScreen({
               </li>
             );
           })}
-          {cartEnabled && (
+          {(cartEnabled || connected) && (
             <li className={divider}>
               <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
                 <span className="min-w-0 flex-1">
@@ -288,11 +296,11 @@ export function HouseholdScreen({
                   <button type="button" onClick={disconnectFredMeyer} disabled={disconnecting} className={pillButton}>
                     Disconnect
                   </button>
-                ) : (
+                ) : cartEnabled ? (
                   <a href="/api/kroger/connect?next=/household" className={pillButton}>
                     Connect
                   </a>
-                )}
+                ) : null}
               </div>
               {fmNotice && (
                 <p role="status" className="px-3.5 pb-3 text-[13px] text-ink">

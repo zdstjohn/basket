@@ -26,7 +26,7 @@ export default async function HouseholdPage({
   const isOwner = roster.some((m) => m.user_id === user.id && m.role === "owner");
 
   const cartEnabled = isCartConfigured();
-  const connected = cartEnabled && (await linkStatus(sb, user.id)).connected;
+  const connected = (await linkStatus(sb, user.id)).connected;
   const notice = typeof fm === "string" && ["connected", "denied", "failed"].includes(fm) ? (fm as "connected" | "denied" | "failed") : null;
 
   return (

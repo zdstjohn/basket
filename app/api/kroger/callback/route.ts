@@ -12,7 +12,12 @@ interface Pending {
   verifier: string;
   next: string;
   uid: string;
+  iat: number;
 }
+
+const MAX_AGE_MS = 600_000;
+// TODO(Task 9): send an unreadable or foreign sign-in back to /list/review once that screen exists.
+const FAILED_HOME = '/list';
 
 function readPending(req: Request): Pending | null {
   const header = req.headers.get('cookie') ?? '';
@@ -21,7 +26,10 @@ function readPending(req: Request): Pending | null {
   if (!plain) return null;
   try {
     const p = JSON.parse(plain) as Partial<Pending>;
-    return [p.state, p.verifier, p.next, p.uid].every((v) => typeof v === 'string' && v) ? { ...(p as Pending), next: safeNext(p.next) } : null;
+    if (![p.state, p.verifier, p.next, p.uid].every((v) => typeof v === 'string' && v)) return null;
+    const age = Date.now() - (typeof p.iat === 'number' ? p.iat : -Infinity);
+    if (!(age >= -60_000 && age <= MAX_AGE_MS)) return null;
+    return { ...(p as Pending), next: safeNext(p.next) };
   } catch {
     return null;
   }
@@ -48,7 +56,7 @@ export async function GET(req: Request) {
     });
     return res;
   };
-  const failedHome = () => done(backTo(url.origin, '/list/review', 'failed'));
+  const failedHome = () => done(backTo(url.origin, FAILED_HOME, 'failed'));
 
   const pending = readPending(req);
   const state = url.searchParams.get('state');

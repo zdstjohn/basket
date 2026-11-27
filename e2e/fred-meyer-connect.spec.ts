@@ -10,8 +10,8 @@ test("Fred Meyer account: connect, stays connected, disconnect, and it is per pe
   await expect(stores.getByText("You'll sign in on Fred Meyer's own page. Basket never sees your password.")).toBeVisible();
 
   await stores.getByRole("link", { name: "Connect" }).click();
-  await expect(page).toHaveURL(/\/household\?fm=connected$/);
   await expect(page.getByRole("status")).toHaveText("Fred Meyer is connected.");
+  await expect(page).toHaveURL(/\/household$/); // ?fm= is taken out of the address after the notice shows
   await expect(stores.getByText("Connected", { exact: true })).toBeVisible();
   await expect(stores.getByRole("link", { name: "Connect" })).toHaveCount(0);
   await page.screenshot({ path: `e2e/screenshots/${testInfo.project.name}/fred-meyer-connected.png`, fullPage: true });
@@ -46,7 +46,7 @@ test("a sign-in that did not start here is refused", async ({ page }) => {
   await createHousehold(page);
   const res = await page.request.get("/api/kroger/callback?code=fake-code&state=nope", { maxRedirects: 0 });
   expect(res.status()).toBe(302);
-  expect(res.headers().location).toContain("/list/review?fm=failed");
+  expect(res.headers().location).toContain("/list?fm=failed");
   await page.goto("/household");
   await expect(page.getByRole("region", { name: "Stores and settings" }).getByRole("link", { name: "Connect" })).toBeVisible();
 });

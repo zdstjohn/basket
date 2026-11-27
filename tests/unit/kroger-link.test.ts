@@ -95,6 +95,35 @@ describe('getUserAccess', () => {
     expect(await getUserAccess(sb(), 'u1')).toBeNull();
     expect(row).toBeNull();
   });
+  it('keeps the row and returns null when Kroger rejects for another reason (wrong secret)', async () => {
+    put(NOW + 1000);
+    refreshTokens.mockResolvedValue('rejected');
+    expect(await getUserAccess(sb(), 'u1')).toBeNull();
+    expect(row).not.toBeNull();
+  });
+  it("on 'refused', uses a newer row another request saved instead of deleting it", async () => {
+    put(NOW + 1000);
+    refreshTokens.mockImplementation(async () => {
+      row = { ...(row as Row), sealed: seal(JSON.stringify({ access: 'other-access', refresh: 'other-refresh', accessExp: NOW + 1_800_000 }), 'u1'), updated_at: 'T2' };
+      return 'refused';
+    });
+    expect(await getUserAccess(sb(), 'u1')).toEqual({ access: 'other-access', profileId: 'p1' });
+    expect(row?.updated_at).toBe('T2');
+  });
+  it("on 'refused', deletes only the row it read", async () => {
+    put(NOW + 1000);
+    let deletedWith: Record<string, string> | null = null;
+    refreshTokens.mockResolvedValue('refused');
+    const base = client();
+    const spy = { from: (t: string) => { const b = base.from(t) as Record<string, (...a: unknown[]) => unknown>; const del = b.delete; b.delete = () => { const r = del() as Record<string, (...a: unknown[]) => unknown>; const eq = r.eq; r.eq = (k: unknown, v: unknown) => { (deletedWith ??= {})[k as string] = v as string; return eq(k, v); }; return r; }; return b; } };
+    expect(await getUserAccess(spy as never, 'u1')).toBeNull();
+    expect(deletedWith).toEqual({ user_id: 'u1', updated_at: 'T1' });
+    expect(row).toBeNull();
+  });
+  it('throws kroger link read failed on a database error', async () => {
+    const failing = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: 'x' } }) }) }) }) };
+    await expect(getUserAccess(failing as never, 'u1')).rejects.toThrow('kroger link read failed');
+  });
   it('lets a network failure through and keeps the row', async () => {
     put(NOW + 1000);
     refreshTokens.mockRejectedValue(new Error('kroger token 503'));
@@ -109,11 +138,13 @@ describe('getUserAccess', () => {
     expect(refreshTokens).toHaveBeenCalledTimes(1);
     expect(updates).toBe(1);
   });
-  it('deletes the row and returns null when it cannot be unsealed (key changed)', async () => {
+  it('keeps the row and returns null when it cannot be unsealed (key changed); a reconnect overwrites it', async () => {
     put(NOW + 10 * 60_000);
     vi.stubEnv('KROGER_TOKEN_KEY', Buffer.alloc(32, 9).toString('base64'));
     expect(await getUserAccess(sb(), 'u1')).toBeNull();
-    expect(row).toBeNull();
+    expect(row).not.toBeNull();
+    await saveLink(sb(), 'u1', tokens(NOW + 1_800_000), 'p2');
+    expect((await getUserAccess(sb(), 'u1'))?.access).toBe('fake-access');
   });
   it('keeps the row and returns null when the key is missing (I5)', async () => {
     put(NOW + 10 * 60_000);
@@ -121,11 +152,11 @@ describe('getUserAccess', () => {
     expect(await getUserAccess(sb(), 'u1')).toBeNull();
     expect(row).not.toBeNull();
   });
-  it('returns null for no row, and for a row sealed for someone else (deleted)', async () => {
+  it('returns null for no row, and for a row sealed for someone else (kept)', async () => {
     expect(await getUserAccess(sb(), 'u1')).toBeNull();
     put(NOW + 10 * 60_000, 'u2');
     expect(await getUserAccess(sb(), 'u1')).toBeNull();
-    expect(row).toBeNull();
+    expect(row).not.toBeNull();
   });
 });
 

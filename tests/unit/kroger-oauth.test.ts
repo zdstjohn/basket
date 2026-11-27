@@ -108,11 +108,19 @@ describe('refreshTokens', () => {
     expect(await refreshTokens('R1')).toEqual({ access: 'A2', refresh: 'R2', accessExp: Date.now() + 1800_000 });
     expect(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body)).toBe('grant_type=refresh_token&refresh_token=R1');
   });
-  it("is 'refused' on 400 and 401", async () => {
+  it("is 'refused' only for invalid_grant", async () => {
     for (const s of [400, 401]) {
       fetchMock.mockResolvedValue(json(s, { error: 'invalid_grant' }));
       expect(await refreshTokens('R1')).toBe('refused');
     }
+  });
+  it("is 'rejected' (not refused) for any other 4xx, such as a wrong client secret", async () => {
+    fetchMock.mockResolvedValue(json(401, { error: 'invalid_client' }));
+    expect(await refreshTokens('R1')).toBe('rejected');
+    fetchMock.mockResolvedValue(json(400, { error: 'invalid_request' }));
+    expect(await refreshTokens('R1')).toBe('rejected');
+    fetchMock.mockResolvedValue(new Response('not json', { status: 401 }));
+    expect(await refreshTokens('R1')).toBe('rejected');
   });
   it('throws on 503 and on a network error', async () => {
     fetchMock.mockResolvedValue(json(503, {}));

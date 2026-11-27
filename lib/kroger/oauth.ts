@@ -95,11 +95,17 @@ export async function exchangeCode(code: string, verifier: string): Promise<User
   return readTokens(res);
 }
 
-/** New tokens from a refresh token. 'refused' when Kroger says the link is no longer good (400 or 401). */
-export async function refreshTokens(refresh: string): Promise<UserTokens | 'refused'> {
+/**
+ * New tokens from a refresh token. 'refused' only when Kroger says the refresh token itself is dead (error invalid_grant).
+ * 'rejected' for any other 4xx (a wrong client secret, say): our setup is at fault, not the link. Throws on network or 5xx.
+ */
+export async function refreshTokens(refresh: string): Promise<UserTokens | 'refused' | 'rejected'> {
   if (fakeOn('KROGER_FAKE')) return fakeTokens();
   const res = await tokenCall({ grant_type: 'refresh_token', refresh_token: refresh });
-  if (res.status === 400 || res.status === 401) return 'refused';
+  if (res.status >= 400 && res.status < 500) {
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    return body?.error === 'invalid_grant' ? 'refused' : 'rejected';
+  }
   if (!res.ok) throw new Error(`kroger token ${res.status}`);
   return readTokens(res, refresh);
 }

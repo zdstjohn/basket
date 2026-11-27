@@ -41,13 +41,18 @@ export async function linkStatus(sb: Sb, userId: string): Promise<{ connected: b
   return { connected: Boolean(data), profileId: data?.profile_id ?? null };
 }
 
-const readRow = async (sb: Sb, userId: string) =>
-  (await sb.from('kroger_links').select('sealed, profile_id, updated_at').eq('user_id', userId).maybeSingle()).data;
+/** The row, or null when there is none. A database error throws Error('kroger link read failed'): it is not "not connected". */
+async function readRow(sb: Sb, userId: string) {
+  const { data, error } = await sb.from('kroger_links').select('sealed, profile_id, updated_at').eq('user_id', userId).maybeSingle();
+  if (error) throw new Error('kroger link read failed');
+  return data;
+}
 
 /**
  * A working access token for this person, refreshed when it has under a minute left (or when `force`).
- * Null when not connected, or when the link is dead (the row is then deleted). Throws on a network or 5xx failure.
- * With no key configured it answers null and leaves the row alone: a wrong or missing key must not erase good links.
+ * Null when not connected, when the row cannot be opened (wrong key: kept, a reconnect overwrites it), or when Kroger
+ * refuses for a reason that is ours (kept). The row is deleted only when Kroger says the refresh token is dead.
+ * Throws on a network or 5xx failure, and Error('kroger link read failed') on a database error.
  */
 export async function getUserAccess(
   sb: Sb,
@@ -58,15 +63,20 @@ export async function getUserAccess(
   const row = await readRow(sb, userId);
   if (!row) return null;
   const tokens = open(row.sealed, userId);
-  if (!tokens) {
-    await sb.from('kroger_links').delete().eq('user_id', userId);
-    return null;
-  }
+  if (!tokens) return null;
   if (!opts.force && tokens.accessExp - Date.now() > EARLY_MS) return { access: tokens.access, profileId: row.profile_id };
 
   const next = await refreshTokens(tokens.refresh);
+  if (next === 'rejected') return null;
   if (next === 'refused') {
-    await sb.from('kroger_links').delete().eq('user_id', userId);
+    // Another request may have refreshed (and saved a newer link) while we waited: only delete the row we read.
+    const now = await readRow(sb, userId);
+    if (!now) return null;
+    if (now.updated_at !== row.updated_at) {
+      const theirs = open(now.sealed, userId);
+      return theirs ? { access: theirs.access, profileId: now.profile_id } : null;
+    }
+    await sb.from('kroger_links').delete().eq('user_id', userId).eq('updated_at', row.updated_at);
     return null;
   }
   const { data: won } = await sb

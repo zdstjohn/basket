@@ -30,7 +30,7 @@ const sealedCookie = (o: object) => `${COOKIE}=${seal(JSON.stringify(o), 'oauth'
 const cb = (query: string, cookie?: string) =>
   callback(new Request(`${ORIGIN}/api/kroger/callback?${query}`, { headers: cookie ? { cookie } : {} }));
 const loc = (res: Response) => new URL(res.headers.get('location') as string);
-const good = { state: 'STATE', verifier: 'VERIFIER', next: '/household', uid: 'u1' };
+const good = { state: 'STATE', verifier: 'VERIFIER', next: '/household', uid: 'u1', iat: Date.now() };
 
 let errors: unknown[][];
 beforeEach(() => {
@@ -110,7 +110,7 @@ describe('GET /api/kroger/connect', () => {
 
 describe('GET /api/kroger/callback', () => {
   const failed = (res: Response) => {
-    expect(loc(res).pathname).toBe('/list/review');
+    expect(loc(res).pathname).toBe('/list');
     expect(loc(res).searchParams.get('fm')).toBe('failed');
     expect(saveLink).not.toHaveBeenCalled();
     expect(exchangeCode).not.toHaveBeenCalled();
@@ -135,6 +135,10 @@ describe('GET /api/kroger/callback', () => {
   it('fails when signed out', async () => {
     getUser.mockResolvedValue({ data: { user: null } });
     failed(await cb('code=the-code&state=STATE', sealedCookie(good)));
+  });
+  it('fails when the sign-in cookie is older than ten minutes, or has no iat', async () => {
+    failed(await cb('code=the-code&state=STATE', sealedCookie({ ...good, iat: Date.now() - 601_000 })));
+    failed(await cb('code=the-code&state=STATE', sealedCookie({ ...good, iat: undefined })));
   });
   it('says denied when Kroger sends an error', async () => {
     const res = await cb('error=access_denied&state=STATE', sealedCookie(good));
@@ -192,11 +196,9 @@ describe('POST /api/kroger/disconnect', () => {
     expect(deleteLink).toHaveBeenCalledTimes(1);
     expect(deleteLink.mock.calls[0][1]).toBe('u1');
   });
-  it('503 when cart filling is switched off', async () => {
+  it('still 204 when cart filling is switched off', async () => {
     vi.stubEnv('KROGER_REDIRECT_URI', '');
-    const res = await post();
-    expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ error: 'not_configured' });
-    expect(deleteLink).not.toHaveBeenCalled();
+    expect((await post()).status).toBe(204);
+    expect(deleteLink).toHaveBeenCalledTimes(1);
   });
 });

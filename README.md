@@ -22,6 +22,8 @@ Connecting a shopper's Fred Meyer account needs two more variables besides `KROG
 - `KROGER_TOKEN_KEY`: base64 of 32 random bytes (`openssl rand -base64 32`). Seals each shopper's tokens (AES-256-GCM). Changing it signs everyone out of Fred Meyer.
 - `KROGER_REDIRECT_URI`: the callback address registered with Kroger, `https://basket-ashy.vercel.app/api/kroger/callback` in production. It is never taken from the request.
 
+Disconnecting deletes the stored link, but Kroger documents no way to revoke a shopper's token, so it stays valid at Kroger until it expires.
+
 `KROGER_BANNER` is optional. With either variable missing, connecting and cart filling stay off. The `*_FAKE` switches are ignored on Vercel.
 
 ## Design tokens

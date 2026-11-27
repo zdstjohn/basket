@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   try {
     const state = randomBytes(32).toString('base64url');
     const { verifier, challenge } = newPkce();
-    const sealed = seal(JSON.stringify({ state, verifier, next, uid: data.user.id }), 'oauth');
+    const sealed = seal(JSON.stringify({ state, verifier, next, uid: data.user.id, iat: Date.now() }), 'oauth');
     const target = fakeOn('KROGER_FAKE')
       ? new URL(`${OAUTH_COOKIE_PATH}?code=fake-code&state=${state}`, url.origin)
       : authorizeUrl(state, challenge);
