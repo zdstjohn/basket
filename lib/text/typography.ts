@@ -12,14 +12,18 @@ export function curly(text: string): string {
     .replace(/'/g, "’");
 }
 
+const shown = (n: number): string => String(Math.round(n * 10) / 10);
+
+/** "1 serving", "3.8 servings": the wording follows the number as shown, so 1.04 reads "1 serving". */
 export function servingsText(n: number): string {
-  const text = String(Math.round(n * 10) / 10);
-  return `${text} ${n === 1 ? "serving" : "servings"}`;
+  const text = shown(n);
+  return `${text} ${text === "1" ? "serving" : "servings"}`;
 }
 
+/** "1 portion", "0.7 of a portion": the wording follows the number as shown. */
 export function portionText(f: number): string {
-  const text = String(Math.round(f * 10) / 10);
-  return f === 1 ? "1 portion" : `${text} of a portion`;
+  const text = shown(f);
+  return text === "1" ? "1 portion" : `${text} of a portion`;
 }
 
 const G_PER_OZ = 28.349523125;

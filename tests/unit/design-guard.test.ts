@@ -30,7 +30,12 @@ const STRING_RULES: [string, RegExp][] = [
   ["retired color name", /\b(text|bg|border|outline|accent)-(green|green-tint|muted)\b/],
   ["raw safe-area inset", /env\(safe-area-inset/],
   ["html entity quote", /&apos;|&quot;/],
+  ["arbitrary shadow", /\bshadow-\[/],
+  ["dead font-heading class", /\bfont-heading\b/],
 ];
+
+/** A bracketed spacing value built only from --bk- variables, numbers, px and calc(): `[var(--bk-safe-top)]`, `[calc(var(--bk-safe-bottom)+8px)]`. */
+const TOKEN_BRACKET = /^\[(?:var\(--bk-[a-z0-9-]+\)|calc\((?:var\(--bk-[a-z0-9-]+\)|\d+(?:\.\d+)?(?:px)?|[+\-*/()])+\))\]$/;
 
 /** Spacing utilities, checked token by token. */
 function badSpacing(token: string): string | null {
@@ -39,7 +44,8 @@ function badSpacing(token: string): string | null {
   if (!m) return null;
   const value = m[1];
   const looksLikeStep = /^\d+(?:\.\d+)?$/.test(value) || value.startsWith("[");
-  return looksLikeStep && !SPACING_OK.has(value) ? bare : null;
+  if (!looksLikeStep || SPACING_OK.has(value)) return null;
+  return TOKEN_BRACKET.test(value) ? null : bare;
 }
 
 function walk(dir: string, out: string[]): void {
@@ -97,8 +103,8 @@ function violationsOf(file: string): string[] {
       const bad = badSpacing(token);
       if (bad) found.add(`spacing step ${bad}`);
     }
-    if ((inButtonClass || isUiLib) && /(?<![\w-])(?:[\w-]+:)*h-(9|10|11|12|13)(?![\w.-])/.test(s)) {
-      found.add("fixed h-9..13 on a control (use min-h-)");
+    if ((inButtonClass || isUiLib) && /(?<![\w-])(?:[\w-]+:)*(?:h|size)-(9|10|11|12|13)(?![\w.-])/.test(s)) {
+      found.add("fixed h-/size-9..13 on a control (use min-h-)");
     }
   };
 
@@ -158,6 +164,20 @@ const files = scanned();
 const lists = Object.fromEntries(LISTS.map((n) => [n, readList(n)])) as Record<(typeof LISTS)[number], string[]>;
 const legacy = new Set(LISTS.flatMap((n) => lists[n]));
 const violations = new Map(files.map((f) => [f, violationsOf(f)]));
+
+describe("spacing rule", () => {
+  it("lets token paddings through", () => {
+    expect(badSpacing("pt-[var(--bk-safe-top)]")).toBeNull();
+    expect(badSpacing("pb-[calc(var(--bk-safe-bottom)+8px)]")).toBeNull();
+    expect(badSpacing("md:px-4")).toBeNull();
+  });
+  it("flags off-scale steps and raw brackets", () => {
+    expect(badSpacing("p-[13px]")).not.toBeNull();
+    expect(badSpacing("pt-[env(safe-area-inset-top)]")).not.toBeNull();
+    expect(badSpacing("pt-[calc(env(safe-area-inset-top)+8px)]")).not.toBeNull();
+    expect(badSpacing("gap-5")).not.toBeNull();
+  });
+});
 
 describe("design guard", () => {
   it("every file not on a legacy list follows the design values", () => {
