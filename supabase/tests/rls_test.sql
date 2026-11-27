@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(160);
+select plan(162);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -397,6 +397,9 @@ insert into public.item_product_choice (household_id, canonical, upc, search_ter
 insert into public.week_item_state (household_id, week_id, item_key, have_it, checked, outside_budget, pack_count, created_at) values
   ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), E'oat  milk', true, false, false, 3, now() - interval '2 days'),
   ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'oat milk', false, true, false, null, now());
+insert into public.item_product_choice (household_id, canonical, upc, search_term, updated_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'black  beans', '1231231231231', null, now() - interval '2 days'),
+  ((select v::uuid from t_kv where k = 'HA'), 'black beans', null, 'organic black beans', now());
 select public.tidy_food_names();
 select is((select count(*)::int from public.always_have where canonical = 'olive oil' and household_id = (select v::uuid from t_kv where k = 'HA')), 1, '0016 merges the two olive oil rows into one');
 select is((select count(*)::int from public.always_have where canonical = E'jalape\u00f1o'), 1, '0016 rewrites an NFD name as NFC');
@@ -410,6 +413,8 @@ create temp table t_tidy_before as
 select public.tidy_food_names();
 select is((select upc from public.item_product_choice where canonical = 'red lentils' and household_id = (select v::uuid from t_kv where k = 'HA')), '1111111111111', '0016 keeps a chosen product when the newest row has none');
 select is((select search_term from public.item_product_choice where canonical = 'red lentils' and household_id = (select v::uuid from t_kv where k = 'HA')), 'old lentils', '0016 keeps the wording when the newest row has none');
+select is((select search_term from public.item_product_choice where canonical = 'black beans' and household_id = (select v::uuid from t_kv where k = 'HA')), 'organic black beans', '0016 keeps a newer search wording');
+select is((select upc from public.item_product_choice where canonical = 'black beans' and household_id = (select v::uuid from t_kv where k = 'HA')), null, '0016 does not bring back a product a newer search cleared');
 select is((select count(*)::int from public.week_item_state where item_key = 'oat milk'), 1, '0016 folds two oat milk rows into one');
 select ok((select have_it and checked and not outside_budget and pack_count = 3 from public.week_item_state where item_key = 'oat milk'), '0016 keeps every tick and the pack count when folding');
 select ok((select a = (select count(*) from public.always_have) and c = (select count(*) from public.item_product_choice)

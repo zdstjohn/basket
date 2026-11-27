@@ -37,7 +37,8 @@ begin
   where t.id = r.id and r.rn > 1;
   update public.price_estimates set canonical = public.tidy_food(canonical) where canonical <> public.tidy_food(canonical);
 
-  -- The newest row stays; it takes the newest product and wording that any clashing row has.
+  -- The newest row stays as it is when it holds a product or wording (a new search clears the product on purpose).
+  -- Only a newest row with neither takes the newest product and wording the others have.
   update public.item_product_choice t
   set upc = f.upc, search_term = f.search_term
   from (
@@ -47,7 +48,7 @@ begin
     from public.item_product_choice
     group by household_id, public.tidy_food(canonical)
     having count(*) > 1) f
-  where t.id = f.keep;
+  where t.id = f.keep and t.upc is null and t.search_term is null;
   delete from public.item_product_choice t using (
     select id, row_number() over (partition by household_id, public.tidy_food(canonical)
                                   order by updated_at desc, created_at desc, id) as rn
