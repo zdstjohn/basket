@@ -14,6 +14,17 @@ export type FavoriteFilter = 'vegetarian' | 'under15' | 'most';
 export const UNDER_15_CENTS = 1500;
 
 const SIGNED_URL_SECONDS = 3600;
+/** A signed link is reused for 50 minutes, so a realtime reload keeps the same src and the browser keeps its cached image. */
+const REUSE_MS = 50 * 60 * 1000;
+const signedLinks = new Map<string, { url: string; at: number }>();
+
+function freshLink(path: string): string | null {
+  const hit = signedLinks.get(path);
+  return hit && Date.now() - hit.at <= REUSE_MS ? hit.url : null;
+}
+function rememberLink(path: string, url: string): void {
+  signedLinks.set(path, { url, at: Date.now() });
+}
 
 /** Reads the saved changes one by one: an entry that fails the schema is dropped, never the whole list. */
 function parseChanges(raw: unknown): PersonChange[] {
@@ -108,12 +119,14 @@ export async function setPersonChanges(sb: Sb, mealId: string, changes: PersonCh
 export async function setMealPhoto(sb: Sb, mealId: string, photo: MealPhoto): Promise<MealRow> {
   const patch =
     'path' in photo
-      ? { photo_path: photo.path }
+      ? { photo_path: photo.path, photo_preview: null, photo_width: null }
       : {
           photo_url: photo.url,
           photo_credit: photo.credit,
           photo_credit_url: photo.creditUrl,
           photo_path: null,
+          photo_preview: null,
+          photo_width: null,
         };
   return updateMeal(sb, mealId, patch);
 }
@@ -124,8 +137,13 @@ export async function mealPhotoSrc(
   meal: Pick<MealRow, 'photo_path' | 'photo_url'>,
 ): Promise<string | null> {
   if (meal.photo_path) {
+    const reused = freshLink(meal.photo_path);
+    if (reused) return reused;
     const { data } = await sb.storage.from('meal-photos').createSignedUrl(meal.photo_path, SIGNED_URL_SECONDS);
-    if (data?.signedUrl) return data.signedUrl;
+    if (data?.signedUrl) {
+      rememberLink(meal.photo_path, data.signedUrl);
+      return data.signedUrl;
+    }
   }
   return meal.photo_url;
 }
@@ -136,13 +154,21 @@ export async function mealPhotoSrcs(
   meals: Pick<MealRow, 'id' | 'photo_path' | 'photo_url'>[],
 ): Promise<Record<string, string | null>> {
   const out: Record<string, string | null> = {};
-  const uploaded = meals.filter((m) => m.photo_path);
   const signed = new Map<string, string>();
-  if (uploaded.length > 0) {
-    const { data } = await sb.storage
-      .from('meal-photos')
-      .createSignedUrls(uploaded.map((m) => m.photo_path as string), SIGNED_URL_SECONDS);
-    for (const r of data ?? []) if (r.path && r.signedUrl) signed.set(r.path, r.signedUrl);
+  const missing = new Set<string>();
+  for (const m of meals) {
+    if (!m.photo_path) continue;
+    const reused = freshLink(m.photo_path);
+    if (reused) signed.set(m.photo_path, reused);
+    else missing.add(m.photo_path);
+  }
+  if (missing.size > 0) {
+    const { data } = await sb.storage.from('meal-photos').createSignedUrls([...missing], SIGNED_URL_SECONDS);
+    for (const r of data ?? []) {
+      if (!r.path || !r.signedUrl) continue;
+      signed.set(r.path, r.signedUrl);
+      rememberLink(r.path, r.signedUrl);
+    }
   }
   for (const m of meals) {
     out[m.id] = (m.photo_path && signed.get(m.photo_path)) || m.photo_url;

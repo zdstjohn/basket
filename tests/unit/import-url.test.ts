@@ -15,7 +15,7 @@ vi.mock('undici', () => ({
   },
 }));
 
-import { fetchRecipePage, guardedLookup, ImportError } from '@/lib/recipes/import-url';
+import { fetchPublicBytes, fetchRecipePage, guardedLookup, ImportError } from '@/lib/recipes/import-url';
 
 const PUBLIC = [{ address: '93.184.216.34', family: 4 }];
 const codeOf = async (p: Promise<unknown>) => {
@@ -150,5 +150,43 @@ describe('connect-time address check (DNS rebinding)', () => {
     fetchMock.mockRejectedValueOnce(new TypeError('fetch failed', { cause: new ImportError('blocked_host') }));
     lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
     expect(await codeOf(fetchRecipePage('https://rebind.example.test/'))).toBe('blocked_host');
+  });
+});
+
+describe('fetchPublicBytes', () => {
+  const img = (body: Uint8Array | string, headers: Record<string, string> = {}) =>
+    new Response(typeof body === 'string' ? body : new Blob([body as BlobPart]), { status: 200, headers: { 'content-type': 'image/jpeg', ...headers } });
+
+  beforeEach(() => {
+    lookup.mockReset();
+    fetchMock.mockReset();
+    lookup.mockImplementation(async (host: string) =>
+      /^[\d.]+$/.test(host) || host.includes(':') ? [{ address: host, family: host.includes(':') ? 6 : 4 }] : PUBLIC,
+    );
+  });
+
+  it('returns the bytes of a public image', async () => {
+    fetchMock.mockResolvedValueOnce(img(new Uint8Array([1, 2, 3])));
+    expect(Array.from(await fetchPublicBytes('https://img.example.test/a.jpg'))).toEqual([1, 2, 3]);
+  });
+
+  it('rejects a private address with blocked_host and never fetches', async () => {
+    expect(await codeOf(fetchPublicBytes('http://10.0.0.5/a.jpg'))).toBe('blocked_host');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a redirect to a private address with blocked_host', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/x.jpg' } }));
+    expect(await codeOf(fetchPublicBytes('https://good.example.test/a.jpg'))).toBe('blocked_host');
+  });
+
+  it('rejects a text/html reply with not_image', async () => {
+    fetchMock.mockResolvedValueOnce(html('<p>hi</p>'));
+    expect(await codeOf(fetchPublicBytes('https://good.example.test/a.jpg'))).toBe('not_image');
+  });
+
+  it('rejects a body over maxBytes with too_large', async () => {
+    fetchMock.mockResolvedValueOnce(img(new Uint8Array(100)));
+    expect(await codeOf(fetchPublicBytes('https://good.example.test/a.jpg', { maxBytes: 10 }))).toBe('too_large');
   });
 });

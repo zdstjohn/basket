@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
+import { ensurePreviews } from "@/lib/photos/ensure-previews";
 import { createBrowserClient } from "@/lib/db/client";
 import { listPeople } from "@/lib/db/queries/household";
 import { listItemStores, listPrices } from "@/lib/db/queries/list";
@@ -60,6 +61,7 @@ export function FavoritesBrowser({
         if (mine !== run) return;
         setRows(all);
         setPhotos(urls);
+        setTimeout(() => ensurePreviews(all), 0); // never throws, never awaited
         setError(false);
         if (showChips) {
           // Only the "Under $15" chip needs these; the list still works without them.

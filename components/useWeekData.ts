@@ -9,6 +9,7 @@ import type { Household, MealRow, Week, WeekMeal } from "@/lib/db/rows";
 import type { Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { singleFlight } from "@/lib/list/single-flight";
+import { ensurePreviews } from "@/lib/photos/ensure-previews";
 import { subscribeHousehold } from "@/lib/realtime";
 import { previousWeekStart } from "@/lib/week/format";
 
@@ -58,6 +59,7 @@ export function useWeekData(household: Household) {
         lastWeek: prev ? { id: prev.id, count: prevMeals.length } : null,
       });
       setError(false);
+      setTimeout(() => ensurePreviews(meals), 0); // outside this try: it never throws and is never awaited
     } catch {
       if (run === latest.current) setError(true);
     }

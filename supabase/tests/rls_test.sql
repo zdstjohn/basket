@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(219);
+select plan(222);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -259,6 +259,9 @@ select lives_ok($q$update public.meals set method = 'oven', total_minutes = 45, 
 select is((select method || total_minutes::text || rating::text from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 'oven454.5', 'the meal facts read back');
 select is((select jsonb_array_length(steps) from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 2, 'steps read back');
 select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and method is not null), 0, 'A''s update did not reach an HB meal');
+select lives_ok($q$update public.meals set photo_preview = 'data:image/webp;base64,AAAA', photo_width = 800 where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '0017 a member can write a meal''s photo preview and width');
+select is((select photo_width from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 800, '0017 the photo width reads back');
+select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and photo_preview is not null), 0, '0017 A''s preview write did not reach an HB meal');
 
 reset role;
 

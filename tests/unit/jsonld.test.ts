@@ -64,3 +64,23 @@ describe('extractRecipeJsonLd', () => {
     expect(performance.now() - t0).toBeLessThan(200);
   });
 });
+
+describe('extractRecipeJsonLd images', () => {
+  const page = (image: unknown) =>
+    `<script type="application/ld+json">${JSON.stringify({ '@type': 'Recipe', name: 'X', image })}</script>`;
+
+  it('prefers the widest ImageObject that states a width', () => {
+    const r = extractRecipeJsonLd(
+      page([
+        { '@type': 'ImageObject', url: 'https://a.test/a.jpg', width: 400 },
+        { '@type': 'ImageObject', url: 'https://a.test/b.jpg', width: 1600 },
+      ]),
+    );
+    expect(r?.image).toBe('https://a.test/b.jpg');
+  });
+
+  it('still returns the first of a list of plain strings', () => {
+    const r = extractRecipeJsonLd(page(['https://a.test/a.jpg', 'https://a.test/b.jpg']));
+    expect(r?.image).toBe('https://a.test/a.jpg');
+  });
+});

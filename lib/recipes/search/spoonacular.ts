@@ -1,5 +1,6 @@
 import 'server-only';
 import type { IngredientLine, Role } from '@/lib/domain/types';
+import { bestPhotoUrl } from '@/lib/photos/best-url';
 import { httpUrl } from '../url';
 import { clampOption } from './clamp';
 import { fakeSpoonacular } from './fake';
@@ -43,8 +44,9 @@ function toLine(i: SpoonIngredient): IngredientLine | null {
 
 function toOption(r: SpoonResult): RecipeOption | null {
   const title = str(r.title);
-  const image = httpUrl(r.image);
-  if (!title || !image) return null;
+  const rawImage = httpUrl(r.image);
+  if (!title || !rawImage) return null;
+  const image = bestPhotoUrl(rawImage);
   const url = httpUrl(r.sourceUrl) ?? httpUrl(r.spoonacularSourceUrl);
   if (!url) return null;
   const ings = Array.isArray(r.extendedIngredients) ? r.extendedIngredients : [];

@@ -424,7 +424,9 @@ export type Database = {
           photo_credit: string | null
           photo_credit_url: string | null
           photo_path: string | null
+          photo_preview: string | null
           photo_url: string | null
+          photo_width: number | null
           rating: number | null
           rating_count: number | null
           source_url: string | null
@@ -450,7 +452,9 @@ export type Database = {
           photo_credit?: string | null
           photo_credit_url?: string | null
           photo_path?: string | null
+          photo_preview?: string | null
           photo_url?: string | null
+          photo_width?: number | null
           rating?: number | null
           rating_count?: number | null
           source_url?: string | null
@@ -476,7 +480,9 @@ export type Database = {
           photo_credit?: string | null
           photo_credit_url?: string | null
           photo_path?: string | null
+          photo_preview?: string | null
           photo_url?: string | null
+          photo_width?: number | null
           rating?: number | null
           rating_count?: number | null
           source_url?: string | null
