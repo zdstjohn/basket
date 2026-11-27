@@ -55,8 +55,11 @@ export async function recordUsage(
 ): Promise<void> {
   let cost: number;
   if (kind === 'search') {
-    const configured = Number(process.env.SEARCH_COST_CENTS);
-    cost = process.env.SEARCH_COST_CENTS && Number.isFinite(configured) ? configured : 0.5;
+    // Brave bills per request; Spoonacular's cost is nominal (its free plan has a shared daily quota,
+    // so each request still counts toward the spend guard).
+    const env = model === 'spoonacular' ? process.env.SPOONACULAR_COST_CENTS : process.env.SEARCH_COST_CENTS;
+    const configured = Number(env);
+    cost = env && Number.isFinite(configured) ? configured : 0.5;
   } else if (model === 'fake') {
     cost = 0;
   } else {

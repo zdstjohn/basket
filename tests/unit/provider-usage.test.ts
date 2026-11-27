@@ -37,3 +37,24 @@ describe('a model answer that reports no token counts', () => {
     expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ inputTokens: 0, outputTokens: 300, assumed: true }));
   });
 });
+
+describe('a model call that throws something else once the request was sent', () => {
+  const timeout = () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+
+  it('generateStructured still reports assumed usage, and rethrows', async () => {
+    generateObject.mockRejectedValue(timeout());
+    const onUsage = vi.fn();
+    await expect(
+      generateStructured({ task: 'text', schema: z.object({ a: z.number() }), system: 's', prompt: 'p', onUsage }),
+    ).rejects.toThrow('timeout');
+    expect(onUsage).toHaveBeenCalledTimes(1);
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ inputTokens: 0, outputTokens: 4000, assumed: true }));
+  });
+
+  it('identifyDish too', async () => {
+    generateObject.mockRejectedValue(timeout());
+    const onUsage = vi.fn();
+    await expect(identifyDish({ base64: 'AAAA', mediaType: 'image/jpeg' }, { onUsage })).rejects.toThrow('timeout');
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ outputTokens: 300, assumed: true }));
+  });
+});

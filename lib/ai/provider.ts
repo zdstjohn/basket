@@ -91,6 +91,9 @@ export async function generateStructured<T>(args: GenerateArgs<T>): Promise<Gene
       args.onUsage?.(report);
       throw new UnreadableError({ inputTokens: report.inputTokens, outputTokens: report.outputTokens });
     }
+    // The request went out, so it cost something even though it never answered (a timeout, a gateway
+    // error): bill it as the whole output limit at the unknown-model rate.
+    args.onUsage?.(usageReport(model, undefined, MAX_OUTPUT_TOKENS));
     throw e;
   }
 }

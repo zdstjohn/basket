@@ -7,9 +7,13 @@ export interface SearchHit {
   title: string;
 }
 
-/** Counts the paid Brave requests a search sent. Routes bill it in `finally`, so a failure after Brave answered still costs. */
+/**
+ * Counts the paid requests a search sent (Brave, Spoonacular). Routes bill it in `finally`, so a failure
+ * after the provider answered still costs, and so does every Spoonacular request: it has a shared daily quota.
+ */
 export interface SearchMeter {
   braveCalls: number;
+  spoonacularCalls: number;
 }
 
 export interface WebSearchProvider {

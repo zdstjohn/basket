@@ -88,6 +88,8 @@ export async function identifyDish(
       opts.onUsage?.(report);
       throw new UnreadableError({ inputTokens: report.inputTokens, outputTokens: report.outputTokens });
     }
+    // The request went out, so it cost something even though it never answered: see generateStructured.
+    opts.onUsage?.(usageReport(model, undefined, MAX_OUTPUT_TOKENS));
     throw e;
   }
 }

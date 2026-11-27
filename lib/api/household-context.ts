@@ -39,16 +39,12 @@ export function gateResponse(result: GateResult): NextResponse | null {
 }
 
 /**
- * The signed-in user's household, after the spend guard let a paid call through (and reserved
- * `holdCents` for it), or the response to send instead. Every route that spends money starts here.
+ * The spend guard for a paid call: null when it let the call through (and reserved `holdCents` for it),
+ * otherwise the response to send. Routes validate their input first, so a bad request never uses up a
+ * gate slot, and take this right before the first paid call.
  */
-export async function requireHouseholdWithinCap(holdCents: number): Promise<RouteContext | NextResponse> {
-  const ctx = await requireHousehold();
-  if (isResponse(ctx)) return ctx;
-  const { sb, household } = ctx;
-  const refused = gateResponse(await aiGate(sb, household.id, holdCents));
-  if (refused) return refused;
-  return { sb, household };
+export async function takeGate(ctx: RouteContext, holdCents: number): Promise<NextResponse | null> {
+  return gateResponse(await aiGate(ctx.sb, ctx.household.id, holdCents));
 }
 
 export const isResponse = (v: RouteContext | NextResponse): v is NextResponse => v instanceof NextResponse;
