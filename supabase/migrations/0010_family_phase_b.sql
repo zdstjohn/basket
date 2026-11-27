@@ -30,12 +30,23 @@ begin
     new.leftover_of := null;
     return new;
   end if;
+  -- A leftovers night whose own servings are no longer 0 (an older app's + stepper, or a cleared amount)
+  -- would buy a dinner on that app, so it becomes an ordinary dinner on every phone.
+  if tg_op = 'UPDATE'
+     and old.leftover_of is not null
+     and new.leftover_of is not null
+     and new.servings_override is distinct from 0 then
+    new.leftover_of := null;
+    return new;
+  end if;
   if new.leftover_of is not null then
-    select * into parent from public.week_meals where id = new.leftover_of;
+    -- Lock the cooking night so a phone that lowers or changes it at the same moment cannot slip past this check.
+    select * into parent from public.week_meals where id = new.leftover_of for update;
     if not found
        or parent.week_id <> new.week_id
        or parent.meal_id <> new.meal_id
-       or parent.leftover_of is not null then
+       or parent.leftover_of is not null
+       or parent.servings_override is null then
       raise exception 'leftovers must follow a cooking night of the same meal in the same week'
         using errcode = '23514';
     end if;
@@ -47,12 +58,12 @@ create trigger week_meals_leftover_check
   before insert or update on public.week_meals
   for each row execute function public.week_meals_leftover_check();
 
--- Leftovers of a dinner that is no longer that dinner, of a night that became leftovers itself,
+-- Leftovers of a dinner that is no longer that dinner or has moved to another week, of a night that became leftovers itself,
 -- or of a cooking night whose servings were lowered or cleared (so it is no longer a double), are dropped.
 create function public.week_meals_leftover_tidy() returns trigger
 language plpgsql security invoker set search_path = '' as $$
 begin
-  if (tg_op = 'UPDATE' and new.meal_id is distinct from old.meal_id)
+  if (tg_op = 'UPDATE' and (new.meal_id is distinct from old.meal_id or new.week_id is distinct from old.week_id))
      or new.leftover_of is not null
      or (tg_op = 'UPDATE'
          and new.servings_override is distinct from old.servings_override

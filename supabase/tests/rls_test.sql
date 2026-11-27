@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(178);
+select plan(184);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -253,6 +253,8 @@ select throws_ok($q$update public.households set busy_days = array['sun','mon','
 select is(pg_temp.rows_changed($q$update public.weeks set busy_days = array['thu'] where id = (select v::uuid from t_kv where k = 'W_A')$q$), 1, 'A sets busy_days on an HA week');
 select is(pg_temp.rows_changed($q$update public.weeks set busy_days = array['thu'] where id = (select v::uuid from t_kv where k = 'W_B')$q$), 0, 'A changes no HB week');
 
+select throws_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'))$q$, '23514', null, 'leftovers need a doubled cooking night');
+update public.week_meals set servings_override = 7.6 where id = (select v::uuid from t_kv where k = 'MON_A');
 select lives_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'))$q$, 'A adds a leftovers night');
 reset role;
 insert into t_kv select 'LEFT_A', id::text from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A');
@@ -282,19 +284,34 @@ select is((select leftover_of from public.week_meals where day = 'wed' and week_
 -- The cooking night's servings: doubling keeps the leftovers night, lowering or clearing cancels it.
 delete from public.week_meals where day = 'wed' and week_id = (select v::uuid from t_kv where k = 'W_A');
 insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'));
-update public.week_meals set servings_override = 7.6 where id = (select v::uuid from t_kv where k = 'MON_A');
-select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 1, 'doubling the cooking night keeps its leftovers night');
+update public.week_meals set servings_override = 8 where id = (select v::uuid from t_kv where k = 'MON_A');
+select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 1, 'raising the cooking night servings keeps its leftovers night');
 update public.week_meals set servings_override = 5.8 where id = (select v::uuid from t_kv where k = 'MON_A');
 select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 0, 'lowering the cooking night servings cancels its leftovers night');
 insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'));
 update public.week_meals set servings_override = null where id = (select v::uuid from t_kv where k = 'MON_A');
 select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 0, 'clearing the cooking night servings cancels its leftovers night');
+update public.week_meals set servings_override = 7.6 where id = (select v::uuid from t_kv where k = 'MON_A');
+insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'));
+update public.week_meals set updated_by = null where id = (select v::uuid from t_kv where k = 'MON_A');
+select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 1, 'an unrelated update of the cooking night keeps its leftovers night');
+update public.week_meals set day = 'thu' where leftover_of = (select v::uuid from t_kv where k = 'MON_A');
+select is((select day from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 'thu', 'moving the leftovers night keeps it linked');
+update public.week_meals set servings_override = 1.5 where leftover_of = (select v::uuid from t_kv where k = 'MON_A');
+select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 0, 'a leftovers night given servings becomes an ordinary dinner');
+select is((select count(*)::int from public.week_meals where day = 'thu' and week_id = (select v::uuid from t_kv where k = 'W_A') and servings_override = 1.5), 1, 'and the row stays');
+delete from public.week_meals where day = 'thu' and week_id = (select v::uuid from t_kv where k = 'W_A');
 
-insert into public.week_meals (household_id, week_id, day, slot, meal_id) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'tue', 'dinner', (select v::uuid from t_kv where k = 'M_A'));
+insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'tue', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 7.6);
 insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of)
   select household_id, week_id, 'thu', 'dinner', meal_id, 0, id from public.week_meals where day = 'tue' and week_id = (select v::uuid from t_kv where k = 'W_A');
 delete from public.week_meals where day = 'tue' and week_id = (select v::uuid from t_kv where k = 'W_A');
 select is((select count(*)::int from public.week_meals where day = 'thu' and week_id = (select v::uuid from t_kv where k = 'W_A')), 0, 'deleting a cooking night deletes its leftovers night');
+insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'tue', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 7.6);
+insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of)
+  select household_id, week_id, 'thu', 'dinner', meal_id, 0, id from public.week_meals where day = 'tue' and week_id = (select v::uuid from t_kv where k = 'W_A');
+update public.week_meals set week_id = (select v::uuid from t_kv where k = 'W_A2') where day = 'tue' and week_id = (select v::uuid from t_kv where k = 'W_A');
+select is((select count(*)::int from public.week_meals where day = 'thu' and week_id = (select v::uuid from t_kv where k = 'W_A')), 0, 'moving a cooking night to another week drops its leftovers night');
 reset role;
 
 select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
