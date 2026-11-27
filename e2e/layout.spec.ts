@@ -113,3 +113,11 @@ test("review screen: no sideways scroll at 360, 402 and 412, and the send button
     expect(send && nav && send.y + send.height <= nav.y + 0.5, `send button above the nav at ${width}`).toBe(true);
   }
 });
+
+test("the audit still fails a control that is off screen inside a vertical scroller", async ({ page }) => {
+  await page.setContent(
+    `<div style="height:200px;overflow-y:auto"><button style="margin-left:2000px;min-width:44px;min-height:44px">Out</button></div>`,
+  );
+  const problems = await audit(page);
+  expect(problems.map((p) => p.what)).toContain("target off screen sideways");
+});

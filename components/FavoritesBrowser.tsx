@@ -182,6 +182,7 @@ export function FavoritesBrowser({
         <div
           role="group"
           aria-label="Filter"
+          data-scroll-x
           className="bk-gutter mt-3 flex gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {chips.map((c) => (
@@ -190,7 +191,7 @@ export function FavoritesBrowser({
               type="button"
               aria-pressed={chip === c.id}
               onClick={() => setChip(c.id)}
-              className={chip === c.id ? `${chipBase} bg-ink font-semibold text-ground` : `${ghostButton} shrink-0 whitespace-nowrap`}
+              className={chip === c.id ? `${chipBase} border border-ink bg-ink font-semibold text-ground` : `${ghostButton} shrink-0 whitespace-nowrap`}
             >
               {c.label}
             </button>
@@ -233,6 +234,7 @@ export function FavoritesBrowser({
                   photo={photos[m.id] ?? null}
                   preview={m.photo_preview}
                   width={m.photo_width}
+                  hint={false}
                   note={made(m.times_planned)}
                   lines={
                     <>
