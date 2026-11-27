@@ -41,8 +41,8 @@ export default defineConfig({
   webServer: {
     command: process.env.CI ? "npm run start" : "npm run build && npm run start",
     url: "http://localhost:3000",
-    // scripts/proof-run.sh starts the server once and shares it between its two Playwright processes.
-    reuseExistingServer: true,
+    // Only scripts/proof-run.sh (which sets PROOF_PARTS) starts the server itself and shares it between its two processes; otherwise a server already on 3000 is an error, never reused.
+    reuseExistingServer: !!process.env.PROOF_PARTS,
     timeout: 240_000,
   },
 });

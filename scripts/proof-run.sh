@@ -7,6 +7,11 @@ cd "$(dirname "$0")/.."
 mkdir -p proof-out
 rm -rf proof-out/.parts
 server_log=proof-out/.server.log
+# Never shoot a server this script did not start: it could be another build, or an old one.
+if curl -s -o /dev/null --max-time 3 http://localhost:3000; then
+  echo "something already answers on http://localhost:3000; stop it first so the proof shoots the build it just made" >&2
+  exit 1
+fi
 npm run start >"$server_log" 2>&1 &
 server=$!
 trap 'kill "$server" 2>/dev/null || true' EXIT
