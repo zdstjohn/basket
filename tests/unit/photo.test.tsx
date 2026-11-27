@@ -1,0 +1,215 @@
+// @vitest-environment jsdom
+import { act, type ReactElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Photo } from "@/components/ui/Photo";
+import { Packshot } from "@/components/ui/Packshot";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+// A generated 1x1 gif: no real photo is ever used in tests.
+const PREVIEW = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+
+let host: HTMLDivElement;
+let root: Root;
+const render = (el: ReactElement) => act(() => root.render(el));
+const q = <T extends Element = HTMLElement>(sel: string) => host.querySelector<T>(sel)!;
+const wrapper = () => q("[data-photo-state]");
+const state = () => wrapper().getAttribute("data-photo-state");
+function load(img: HTMLImageElement, naturalWidth = 800) {
+  Object.defineProperty(img, "naturalWidth", { configurable: true, value: naturalWidth });
+  act(() => void img.dispatchEvent(new Event("load")));
+}
+const fail = (img: HTMLImageElement) => act(() => void img.dispatchEvent(new Event("error")));
+
+beforeEach(() => {
+  host = document.createElement("div");
+  document.body.appendChild(host);
+  root = createRoot(host);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+  vi.restoreAllMocks();
+});
+
+describe("<Photo>", () => {
+  it("is a sized wrapper with exactly one lazy img, loading until the image arrives", () => {
+    render(<Photo src="/a.jpg" name="Tacos" crop="tile" preview={PREVIEW} />);
+    expect(state()).toBe("loading");
+    expect(wrapper().className).toMatch(/aspect-tile/);
+    expect(wrapper().className).toMatch(/bg-sunk/);
+    expect(host.querySelectorAll("img")).toHaveLength(1);
+    const img = q<HTMLImageElement>("img");
+    expect(img.className).toContain("bk-photo");
+    expect(img.getAttribute("alt")).toBe("");
+    expect(img.getAttribute("loading")).toBe("lazy");
+    expect(img.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(img.getAttribute("decoding")).toBe("async");
+    expect(img.className).toMatch(/opacity-0/);
+    expect(wrapper().getAttribute("style")).toContain("--bk-photo-preview");
+    expect(wrapper().getAttribute("style")).toContain(PREVIEW);
+    expect(wrapper().className).toMatch(/before:/); // the preview is a layer, not a second <img>
+  });
+
+  it("uses the three aspect classes", () => {
+    render(<Photo src="/a.jpg" name="Tacos" crop="hero" />);
+    expect(wrapper().className).toMatch(/aspect-hero/);
+    render(<Photo src="/a.jpg" name="Tacos" crop="thumb" />);
+    expect(wrapper().className).toMatch(/aspect-thumb/);
+  });
+
+  it("priority drops lazy loading and asks for high fetch priority", () => {
+    render(<Photo src="/a.jpg" name="Tacos" crop="hero" priority />);
+    const img = q<HTMLImageElement>("img");
+    expect(img.getAttribute("loading")).toBeNull();
+    expect(img.getAttribute("fetchpriority")).toBe("high");
+  });
+
+  it("is ready and shows the photo on load", () => {
+    render(<Photo src="/a.jpg" name="Tacos" crop="tile" />);
+    load(q<HTMLImageElement>("img"));
+    expect(state()).toBe("ready");
+    expect(q("img").className).toMatch(/opacity-100/);
+    expect(q("img").className).toMatch(/motion-reduce:transition-none/);
+  });
+
+  it("holds the preview when the photo never finishes loading", () => {
+    render(<Photo src="/a.jpg" name="Tacos" crop="tile" preview={PREVIEW} />);
+    expect(state()).toBe("loading");
+    expect(wrapper().getAttribute("style")).toContain(PREVIEW);
+  });
+
+  it("falls back with no img when src is null", () => {
+    render(<Photo src={null} name="tacos" crop="tile" />);
+    expect(state()).toBe("fallback");
+    expect(host.querySelectorAll("img")).toHaveLength(0);
+    expect(q(".bk-fallback-letter").textContent).toBe("T");
+    expect(host.textContent).toContain("Add a photo");
+  });
+
+  it("falls back when the photo 404s after its preview showed, and the box stays the same shape", () => {
+    render(<Photo src="/gone.jpg" name="Tacos" crop="tile" preview={PREVIEW} />);
+    fail(q<HTMLImageElement>("img"));
+    expect(state()).toBe("fallback");
+    expect(host.querySelectorAll("img")).toHaveLength(0);
+    expect(wrapper().className).toMatch(/relative .*aspect-tile/); // same box: only the preview layer goes
+    expect(wrapper().getAttribute("style") ?? "").not.toContain(PREVIEW);
+  });
+
+  it("falls back when the loaded photo is too small", () => {
+    render(<Photo src="/small.jpg" name="Tacos" crop="tile" />);
+    load(q<HTMLImageElement>("img"), 250);
+    expect(state()).toBe("fallback");
+    expect(host.querySelectorAll("img")).toHaveLength(0);
+  });
+
+  it("uses the width prop over the natural width", () => {
+    render(<Photo src="/a.jpg" name="Tacos" crop="tile" width={200} />);
+    load(q<HTMLImageElement>("img"), 900);
+    expect(state()).toBe("fallback");
+  });
+
+  it("a small hero is never the hero: it asks to be demoted and does not fall back", () => {
+    const onDemote = vi.fn();
+    render(<Photo src="/mid.jpg" name="Tacos" crop="hero" onDemote={onDemote} />);
+    load(q<HTMLImageElement>("img"), 450);
+    expect(onDemote).toHaveBeenCalledTimes(1);
+    expect(state()).toBe("ready");
+  });
+
+  it("a hero under 300 wide is the fallback, not a demotion", () => {
+    const onDemote = vi.fn();
+    render(<Photo src="/tiny.jpg" name="Tacos" crop="hero" onDemote={onDemote} />);
+    load(q<HTMLImageElement>("img"), 250);
+    expect(onDemote).not.toHaveBeenCalled();
+    expect(state()).toBe("fallback");
+  });
+
+  it("treats an unreadable photo (width 0) as the fallback", () => {
+    render(<Photo src="/a.jpg" name="Tacos" crop="thumb" width={0} />);
+    load(q<HTMLImageElement>("img"));
+    expect(state()).toBe("fallback");
+  });
+
+  it("shows the hint under the letter unless hint is false", () => {
+    render(<Photo src={null} name="Soup" crop="hero" />);
+    expect(host.textContent).toContain("Add a photo");
+    expect(host.querySelector(".text-small.font-semibold.text-ink-soft")).not.toBeNull();
+    render(<Photo src={null} name="Soup" crop="hero" hint={false} />);
+    expect(host.textContent).not.toContain("Add a photo");
+  });
+
+  it("thumb fallback is the letter alone, in Gloock at 24 px", () => {
+    render(<Photo src={null} name="Soup" crop="thumb" />);
+    expect(host.textContent).toBe("S");
+    expect(host.innerHTML).toMatch(/font-display/);
+    expect(host.innerHTML).toMatch(/text-title/);
+  });
+
+  it("a cached photo that is already complete on mount is ready without a load event", () => {
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(900);
+    render(<Photo src="/cached.jpg" name="Tacos" crop="tile" />);
+    expect(state()).toBe("ready");
+  });
+
+  it("a complete image with no pixels (broken) is the fallback", () => {
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(0);
+    render(<Photo src="/broken.jpg" name="Tacos" crop="tile" />);
+    expect(state()).toBe("fallback");
+  });
+
+  it("a re-signed link for a shown photo does not drop back to loading", () => {
+    render(<Photo src="/a.jpg?sig=1" name="Tacos" crop="tile" />);
+    load(q<HTMLImageElement>("img"));
+    expect(state()).toBe("ready");
+    render(<Photo src="/a.jpg?sig=2" name="Tacos" crop="tile" />);
+    expect(state()).toBe("ready");
+    expect(q("img").className).toMatch(/opacity-100/);
+  });
+
+  it("a new link after a failure tries again", () => {
+    render(<Photo src="/a.jpg" name="Tacos" crop="tile" />);
+    fail(q<HTMLImageElement>("img"));
+    expect(state()).toBe("fallback");
+    render(<Photo src="/b.jpg" name="Tacos" crop="tile" />);
+    expect(state()).toBe("loading");
+    expect(host.querySelectorAll("img")).toHaveLength(1);
+  });
+
+  it("hands the img to imgRef", () => {
+    const ref = { current: null as HTMLImageElement | null };
+    render(<Photo src="/a.jpg" name="Tacos" crop="tile" imgRef={ref} />);
+    expect(ref.current).toBe(q("img"));
+  });
+});
+
+describe("<Packshot>", () => {
+  it("is a lazy, no-referrer image in a .bk-packshot of 44 or 64 px", () => {
+    render(<Packshot src="https://example.test/p.jpg" alt="Black Beans" />);
+    const box = q(".bk-packshot");
+    expect(box.className).toMatch(/size-11/);
+    const img = box.querySelector("img")!;
+    expect(img.parentElement).toBe(box);
+    expect(img.getAttribute("alt")).toBe("Black Beans");
+    expect(img.getAttribute("loading")).toBe("lazy");
+    expect(img.getAttribute("referrerpolicy")).toBe("no-referrer");
+    render(<Packshot src="https://example.test/p.jpg" alt="" size={64} />);
+    expect(q(".bk-packshot").className).toMatch(/size-16/);
+  });
+
+  it("renders nothing without a src", () => {
+    render(<Packshot src={null} alt="x" />);
+    expect(host.querySelector(".bk-packshot")).toBeNull();
+  });
+
+  it("disappears when the image fails, and tries again for a new src", () => {
+    render(<Packshot src="https://example.test/p.jpg" alt="x" />);
+    fail(q<HTMLImageElement>("img"));
+    expect(host.querySelector(".bk-packshot:not([hidden])")).toBeNull();
+    render(<Packshot src="https://example.test/q.jpg" alt="x" />);
+    expect(host.querySelector(".bk-packshot:not([hidden])")).not.toBeNull();
+  });
+});
