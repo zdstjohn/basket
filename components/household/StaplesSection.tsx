@@ -6,7 +6,14 @@ import { deleteStaple, listStaples, saveStaple, setStapleActive, type Staple } f
 import type { Household } from "@/lib/db/rows";
 import type { Role } from "@/lib/domain/types";
 import { ROLE_LABELS, ROLES } from "@/lib/list/groups";
-import { focusRing, pillButton, primaryButton, textInput } from "@/lib/ui";
+import { dangerGhost } from "@/components/household/danger";
+import { Button } from "@/components/ui/Button";
+import { SelectField, TextField } from "@/components/ui/Field";
+import { Qty } from "@/components/ui/Qty";
+import { ErrorBanner, Loading, SkeletonLines } from "@/components/ui/states";
+import { Switch } from "@/components/ui/Switch";
+import { quantityOrCount } from "@/lib/domain/units";
+import { ghostButton } from "@/lib/ui";
 
 interface Draft {
   id?: string;
@@ -26,14 +33,16 @@ export function StaplesSection({ household }: { household: Household }) {
   const [staples, setStaples] = useState<Staple[] | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setStaples(await listStaples(sb, household.id));
-      setError(null); // a good load clears a "couldn't load" left by an earlier failure
+      setLoadFailed(false);
+      setError(null); // a good load clears a save message left by an earlier failure
     } catch {
-      setError("We couldn't load your staples.");
+      setLoadFailed(true);
     }
   }, [sb, household.id]);
   useEffect(() => {
@@ -63,7 +72,7 @@ export function StaplesSection({ household }: { household: Household }) {
       setDraft(null);
       await load();
     } catch {
-      setError("That didn't save. Try again.");
+      setError("That didn’t save. Try again.");
     } finally {
       setSaving(false);
     }
@@ -75,7 +84,7 @@ export function StaplesSection({ household }: { household: Household }) {
       await setStapleActive(sb, s.id, active);
     } catch {
       await load(); // put the switch back where it was, then say so (a good load clears errors)
-      setError("That didn't save. Try again.");
+      setError("That didn’t save. Try again.");
     }
   }
 
@@ -85,95 +94,76 @@ export function StaplesSection({ household }: { household: Household }) {
       setDraft(null);
       await load();
     } catch {
-      setError("That didn't save. Try again.");
+      setError("That didn’t save. Try again.");
     }
   }
 
-  const field = "grid gap-1 text-xs text-muted";
   return (
-    <section aria-label="Staples" className="mx-5 mt-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold">Staples</h2>
-        <button type="button" onClick={() => setDraft(BLANK)} className={`h-11 rounded-full px-3 text-sm font-semibold text-green ${focusRing}`}>
-          + Add staple
-        </button>
-      </div>
-      <p className="mb-1.5 text-xs text-muted">Bought every week, on top of the dinners.</p>
-      <ul className="overflow-hidden rounded-2xl border border-line bg-white">
-        {(staples ?? []).map((s) => (
-          <li key={s.id} data-testid="staple-row" className="flex min-h-12 items-center border-b border-[#F0F2EF] last:border-b-0">
-            <button
-              type="button"
-              onClick={() => setDraft({ id: s.id, name: s.canonical, amount: String(s.amount), unit: s.unit, role: s.role, active: s.active })}
-              className={`min-h-12 min-w-0 flex-1 py-1 pl-3.5 text-left ${focusRing} ${s.active ? "" : "opacity-60"}`}
-            >
-              <span className="block text-[15px] font-medium">{displayName(s.canonical)}</span>
-              <span className="block text-xs text-muted">
-                {s.amount} {s.unit} · {ROLE_LABELS[s.role]}
-              </span>
-            </button>
-            <label className="relative flex size-12 shrink-0 items-center justify-center">
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label={displayName(s.canonical)}
-                checked={s.active}
-                onChange={(e) => void toggle(s, e.target.checked)}
-                className="size-5 cursor-pointer accent-green"
-              />
-            </label>
-          </li>
-        ))}
-        {staples?.length === 0 && !draft && <li className="px-3.5 py-3 text-[13px] text-muted">No staples yet. Milk, eggs, bread?</li>}
-        {draft && (
-          <li>
-            <form onSubmit={save} className="grid gap-2.5 p-3.5">
-              <label className={field}>
-                Name
-                <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className={textInput} />
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <label className={field}>
-                  Amount
-                  <input inputMode="decimal" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} className={textInput} />
-                </label>
-                <label className={field}>
-                  Unit
-                  <input value={draft.unit} placeholder="each, lb, gallon" onChange={(e) => setDraft({ ...draft, unit: e.target.value })} className={textInput} />
-                </label>
-              </div>
-              <label className={field}>
-                Type
-                <select value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })} className={textInput}>
+    <section aria-label="Staples" className="flex flex-col gap-2">
+      <h2 className="text-heading text-ink">Staples</h2>
+      <p className="text-small text-ink-soft">Bought every week, on top of the dinners.</p>
+      {staples === null && !loadFailed && (
+        <>
+          <SkeletonLines lines={3} size="body" />
+          <Loading label="Loading your staples" />
+        </>
+      )}
+      {loadFailed && <ErrorBanner message="We couldn’t load your staples." actionLabel="Try again" onAction={() => void load()} />}
+      {staples !== null && (staples.length > 0 || draft) && (
+        <ul className="divide-y divide-line">
+          {staples.map((s) => (
+            <li key={s.id} data-testid="staple-row" className="flex min-h-13 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDraft({ id: s.id, name: s.canonical, amount: String(s.amount), unit: s.unit, role: s.role, active: s.active })}
+                className={`min-h-13 min-w-0 flex-1 py-2 text-left ${s.active ? "text-ink" : "text-ink-soft"}`}
+              >
+                <span className="block text-body">{displayName(s.canonical)}</span>
+                <span className="block text-small text-ink-soft">
+                  <Qty q={quantityOrCount(s.amount, s.unit)} /> · {ROLE_LABELS[s.role]}
+                </span>
+              </button>
+              <Switch label={`Buy ${displayName(s.canonical)} every week`} checked={s.active} onChange={(on) => void toggle(s, on)} />
+            </li>
+          ))}
+          {draft && (
+            <li className="py-3">
+              <form onSubmit={save} className="grid gap-3">
+                <TextField label="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+                <div className="grid grid-cols-2 gap-3">
+                  <TextField label="Amount" inputMode="decimal" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
+                  <TextField label="Unit" value={draft.unit} placeholder="each, lb, gallon" onChange={(e) => setDraft({ ...draft, unit: e.target.value })} />
+                </div>
+                <SelectField label="Type" value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}>
                   {ROLES.map((r) => (
                     <option key={r} value={r}>
                       {ROLE_LABELS[r]}
                     </option>
                   ))}
-                </select>
-              </label>
-              <button type="submit" disabled={saving} className={primaryButton}>
-                Save staple
-              </button>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setDraft(null)} className={`${pillButton} flex-1`}>
-                  Cancel
-                </button>
-                {draft.id && (
-                  <button type="button" onClick={() => void remove(draft.id as string)} className={`${pillButton} flex-1 text-[#A6261B]`}>
-                    Delete
+                </SelectField>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="submit" variant="ghost" busy={saving} busyLabel="Saving…">
+                    Save staple
+                  </Button>
+                  <button type="button" onClick={() => setDraft(null)} className={ghostButton}>
+                    Cancel
                   </button>
-                )}
-              </div>
-            </form>
-          </li>
-        )}
-      </ul>
-      {error && (
-        <p role="alert" className="mt-2 text-[13px] text-sale">
-          {error}
-        </p>
+                  {draft.id && (
+                    <button type="button" onClick={() => void remove(draft.id as string)} className={`${dangerGhost} ml-auto`}>
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </form>
+            </li>
+          )}
+        </ul>
       )}
+      {staples?.length === 0 && !draft && <p className="text-small text-ink-soft">No staples yet. Milk, eggs, bread?</p>}
+      {error && <ErrorBanner message={error} />}
+      <Button variant="ghost" className="self-start" onClick={() => setDraft(BLANK)}>
+        + Add staple
+      </Button>
     </section>
   );
 }

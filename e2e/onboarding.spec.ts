@@ -11,7 +11,7 @@ test("a new family signs in, sets up the household and sees it", async ({
 
   await expect(page.getByLabel("Weekly budget target")).toHaveValue("$200");
   await expect(page.getByLabel("Wiggle room")).toHaveValue("+$25");
-  await expect(page.getByText("3.8 servings")).toBeVisible();
+  await expect(page.getByText("3.8 servings").first()).toBeVisible();
   await page.screenshot({ path: `${shots}/onboarding.png`, fullPage: true });
 
   await page.getByRole("button", { name: "Start planning" }).click();
@@ -21,7 +21,7 @@ test("a new family signs in, sets up the household and sees it", async ({
   await page.getByRole("link", { name: "Household" }).click();
   await expect(page).toHaveURL(/\/household$/);
   await expect(
-    page.getByRole("heading", { name: "Who's eating · 3.8 servings" }),
+    page.getByRole("heading", { name: "Who’s eating · 3.8 servings" }),
   ).toBeVisible();
   const rows = page.getByTestId("person-row");
   await expect(rows).toHaveCount(FAMILY.length);
@@ -91,7 +91,7 @@ test("an owner invites a partner who joins the same household", async ({
   await expect(partnerPage).toHaveURL(/\/week$/);
   await partnerPage.goto("/household");
   await expect(
-    partnerPage.getByRole("heading", { name: "Who's eating · 3.8 servings" }),
+    partnerPage.getByRole("heading", { name: "Who’s eating · 3.8 servings" }),
   ).toBeVisible();
   await expect(partnerPage.getByTestId("person-row")).toHaveCount(FAMILY.length);
   await expect(partnerPage.getByRole("button", { name: "Invite" })).toHaveCount(0);

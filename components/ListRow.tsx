@@ -15,7 +15,7 @@ import { ghostButton, quietLink } from "@/lib/ui";
 export const displayName = (canonical: string): string => canonical.charAt(0).toUpperCase() + canonical.slice(1);
 
 /** What a row needs, in kitchen words ("1 + 7.1 oz"), one <Qty> per part. A lone "1 to taste" reads as "to taste". */
-function Need({ parts }: { parts: Quantity[] }) {
+export function Need({ parts }: { parts: Quantity[] }) {
   return (
     <>
       {parts.map((p, i) => (

@@ -1,39 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { Sheet } from "@/components/Sheet";
+import { Check, ChevronRight } from "lucide-react";
+import { Sheet, useSheetClose } from "@/components/Sheet";
+import { Button } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/Field";
+import { Icon } from "@/components/ui/Icon";
+import { Packshot } from "@/components/ui/Packshot";
+import { Loading } from "@/components/ui/states";
+import { formatMoney } from "@/lib/domain/money-input";
 import type { ListItem } from "@/lib/domain/list";
 import type { Offer, Recommendation } from "@/lib/domain/packages";
 import { searchMessage } from "@/lib/list/match-requests";
-import { formatPrice, krogerImageUrl } from "@/lib/list/prices";
-import { focusRing, pillButton, textInput } from "@/lib/ui";
+import { krogerImageUrl } from "@/lib/list/prices";
+import { quietLink } from "@/lib/ui";
 
 /** The words typed for a search: 2 to 80 letters once trimmed (the database holds the same limit). */
 export const validSearchTerm = (t: string): boolean => t.trim().length >= 2 && t.trim().length <= 80;
 
 /** "1 package · $3.99", "2 × $1.25 · $2.50" or, sold by the pound, "about $3.99 · 1 lb". */
 export function offerLine(o: Offer): string {
-  if (o.candidate.soldBy === "WEIGHT") return `about ${formatPrice(o.totalCents)} · ${o.count} lb`;
+  if (o.candidate.soldBy === "WEIGHT") return `about ${formatMoney(o.totalCents)} · ${o.count} lb`;
   return o.count === 1
-    ? `1 package · ${formatPrice(o.totalCents)}`
-    : `${o.count} × ${formatPrice(o.unitCents)} · ${formatPrice(o.totalCents)}`;
+    ? `1 package · ${formatMoney(o.totalCents)}`
+    : `${o.count} × ${formatMoney(o.unitCents)} · ${formatMoney(o.totalCents)}`;
 }
 
-const tag = "inline-block rounded-full px-1.5 text-[11px] font-semibold";
-
-/** Pick another Fred Meyer product for a food, or look for it with other words. */
-export function SwapSheet({
-  item,
-  rec,
-  searchTerm,
-  usualUpc,
-  hasChoice,
-  busy,
-  onChoose,
-  onSearch,
-  onReset,
-  onClose,
-}: {
+type Props = {
   item: ListItem;
   rec: Recommendation;
   /** The household's own search words for this food, if any. */
@@ -47,10 +40,41 @@ export function SwapSheet({
   onSearch: (term: string) => Promise<void>;
   onReset: () => void;
   onClose: () => void;
-}) {
-  const food = item.canonical;
+};
+
+/** Pick another Fred Meyer product for a food, or look for it with other words. */
+export function SwapSheet(props: Props) {
+  const food = props.item.canonical;
+  return (
+    <Sheet label={`Swap ${food}`} title={`Swap ${food}`} onClose={props.onClose}>
+      <SwapBody {...props} />
+    </Sheet>
+  );
+}
+
+function SwapBody({
+  rec,
+  searchTerm,
+  usualUpc,
+  hasChoice,
+  busy,
+  onChoose,
+  onSearch,
+  onReset,
+}: Props) {
+  const close = useSheetClose();
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Once a choice is made the sheet keeps showing what it showed while it leaves, and further taps do nothing.
+  const [leaving, setLeaving] = useState<Recommendation | null>(null);
+  const shown = leaving ?? rec;
+  const chosenUpc = shown.pick?.candidate.upc ?? null;
+  const leave = (act: () => void) => {
+    if (leaving) return;
+    setLeaving(rec);
+    act();
+    close();
+  };
 
   async function search(e: React.FormEvent) {
     e.preventDefault();
@@ -69,87 +93,71 @@ export function SwapSheet({
   }
 
   return (
-    <Sheet label={`Swap ${food}`} title={`Swap ${food}`} onClose={onClose}>
-      <div className="flex flex-col gap-2 p-4 pb-6">
-
-        {rec.options.length === 0 ? (
-          <p className="px-1 text-[15px] text-muted">Nothing matched at your Fred Meyer. Try other words.</p>
-        ) : (
-          <ul className="flex flex-col gap-1.5">
-            {rec.options.map((o) => {
-              const c = o.candidate;
-              const photo = krogerImageUrl(c.imageUrl);
-              return (
-                <li key={c.upc}>
-                  <button
-                    type="button"
-                    data-testid="swap-option"
-                    disabled={!c.inStock || busy}
-                    onClick={() => onChoose(c.upc)}
-                    className={`flex min-h-14 w-full items-center gap-2.5 rounded-xl border border-line bg-white p-2 text-left disabled:opacity-60 ${focusRing}`}
-                  >
-                    {photo && (
-                      // eslint-disable-next-line @next/next/no-img-element -- a small photo from Kroger; it is hidden if it won't load
-                      <img
-                        src={photo}
-                        alt=""
-                        width={40}
-                        height={40}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          e.currentTarget.style.display = "none";
-                        }}
-                        className="size-10 flex-none rounded-lg border border-line bg-white object-contain"
-                      />
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="line-clamp-2 block text-sm font-semibold">{c.name}</span>
-                      {c.sizeText && <span className="block text-xs text-muted">{c.sizeText}</span>}
-                      <span className="block text-xs text-muted">{offerLine(o)}</span>
-                      <span className="mt-0.5 flex flex-wrap gap-1">
-                        {c.upc === rec.cheapestUpc && c.inStock && (
-                          <span className={`${tag} bg-[#E3EFE6] text-[#1F5A33]`}>Cheapest</span>
-                        )}
-                        {c.upc === usualUpc && <span className={`${tag} border border-line bg-white text-ink`}>Your usual</span>}
-                        {!c.inStock && <span className={`${tag} bg-[#EDF0EC] text-[#4A544F]`}>Out of stock</span>}
-                      </span>
+    <div className="flex flex-col gap-3 px-4 pb-4">
+      <Loading label={busy ? "Loading" : ""} />
+      {shown.options.length === 0 ? (
+        <p className="text-body text-ink">Nothing matched at your Fred Meyer. Try other words.</p>
+      ) : (
+        <ul className="divide-y divide-line border-y border-line">
+          {shown.options.map((o) => {
+            const c = o.candidate;
+            const chosen = c.upc === chosenUpc;
+            return (
+              <li key={c.upc}>
+                <button
+                  type="button"
+                  data-testid="swap-option"
+                  aria-current={chosen ? "true" : undefined}
+                  disabled={!c.inStock || busy || !!leaving}
+                  onClick={() => leave(() => onChoose(c.upc))}
+                  className={`flex min-h-16 w-full items-center gap-3 py-2 text-left bk-press ${c.inStock ? "" : "opacity-45"}`}
+                >
+                  {krogerImageUrl(c.imageUrl) ? (
+                    <Packshot src={krogerImageUrl(c.imageUrl)} alt="" size={64} />
+                  ) : (
+                    <span aria-hidden="true" className="bk-packshot block size-16 shrink-0" style={{ "--bk-packshot-radius": "var(--radius-md)" } as React.CSSProperties} />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-start gap-1">
+                      <span className="line-clamp-2 block flex-1 text-small font-semibold text-ink">{c.name}</span>
+                      {chosen && <Icon icon={Check} className="mt-0.5 text-ink" />}
                     </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    {c.sizeText && <span className="block text-label text-ink-soft">{c.sizeText}</span>}
+                    <span className="flex flex-wrap gap-x-2 text-label font-semibold">
+                      {c.upc === shown.cheapestUpc && c.inStock && <span className="text-ink">Cheapest</span>}
+                      {c.upc === usualUpc && <span className="text-ink">Your usual</span>}
+                      {!c.inStock && <span className="font-semibold text-ink-soft">Out of stock</span>}
+                    </span>
+                  </span>
+                  <span data-testid="swap-price" className="bk-price shrink-0 whitespace-nowrap text-right text-label text-ink-soft">{offerLine(o)}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
-        <form onSubmit={search} className="mt-2 grid gap-2 px-1">
-          <label className="grid gap-1 text-[13px] text-muted">
-            Search with other words
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              maxLength={200}
-              enterKeyHint="search"
-              className={textInput}
-            />
-          </label>
-          {error && (
-            <p role="alert" className="text-[13px] font-medium text-[#A6261B]">
-              {error}
-            </p>
-          )}
-          <button type="submit" disabled={busy} className={`${pillButton} justify-self-start`}>
-            Search
-          </button>
-        </form>
-        {searchTerm && <p className="px-1 text-[13px] text-muted">Searching for &quot;{searchTerm}&quot;</p>}
+      <form onSubmit={search} className="grid gap-2">
+        <TextField
+          label="Search with other words"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          maxLength={200}
+          enterKeyHint="search"
+          error={error ?? undefined}
+        />
+        <Button variant="ghost" type="submit" disabled={busy} className="justify-self-start">
+          Search
+        </Button>
+      </form>
+      {searchTerm && <p className="text-small text-ink-soft">Searching for “{searchTerm}”</p>}
 
-        {hasChoice && (
-          <button type="button" disabled={busy} onClick={onReset} className={`${pillButton} mt-1 justify-self-start`}>
-            Back to Basket&apos;s pick
-          </button>
-        )}
-      </div>
-    </Sheet>
+      {hasChoice && (
+        <button type="button" disabled={busy || !!leaving} onClick={() => leave(onReset)} className={`${quietLink} justify-self-start`}>
+          Back to Basket’s pick
+          <Icon icon={ChevronRight} />
+        </button>
+      )}
+    </div>
   );
 }

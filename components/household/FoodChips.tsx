@@ -2,7 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import { cleanFood, coversLine } from "@/lib/domain/families";
-import { focusRing } from "@/lib/ui";
+import { TriangleAlert } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Chip } from "@/components/ui/Chip";
+import { Icon } from "@/components/ui/Icon";
+import { TextField } from "@/components/ui/Field";
+import { ghostButton } from "@/lib/ui";
 
 const MAX_FOODS = 30;
 const MAX_LETTERS = 40;
@@ -45,17 +50,6 @@ export function mergeList(base: string[], mine: string[], fresh: string[]): stri
 
 export const EXACT_WORDS = "Basket will look for these exact words only.";
 
-function WarningIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">
-      <path d="M12 3.5l9.5 16.5h-19z" />
-      <path d="M12 10v4.5M12 17.6h.01" />
-    </svg>
-  );
-}
-
-const chipBase = `inline-flex h-11 max-w-full items-center rounded-full border bg-white font-semibold text-ink ${focusRing}`;
-
 /** One list of foods for a person (won't eat, or allergies): chips, a box to add, and a covers line. */
 export function FoodChips({
   label,
@@ -85,12 +79,12 @@ export function FoodChips({
   suggestions?: readonly string[];
   allergy?: boolean;
 }) {
-  const input = useRef<HTMLInputElement>(null);
+  const field = useRef<HTMLDivElement>(null);
   const refocus = useRef(false);
   useEffect(() => {
     if (refocus.current) {
       refocus.current = false;
-      input.current?.focus();
+      field.current?.querySelector("input")?.focus();
     }
   });
 
@@ -105,37 +99,29 @@ export function FoodChips({
 
   const covers = typed.trim() ? coversLine(typed, { wide: allergy }) : null;
   const statusText = covers ?? (allergy && typed.trim() ? EXACT_WORDS : null);
-  const border = allergy ? "border-[#A6261B]" : "border-[#D5DBD5]";
   const offered = (suggestions ?? []).filter((s) => !value.includes(s));
   const showOffer = suggestions !== undefined && (allergy ? showSuggestions(value) : value.length === 0);
 
   return (
     <div className="grid gap-2" role="group" aria-label={label}>
       <div>
-        <p className="text-sm font-semibold text-ink">{label}</p>
-        {help && <p className="mt-px text-xs text-muted">{help}</p>}
+        <p className="text-small font-semibold text-ink">{label}</p>
+        {help && <p className="text-small text-ink-soft">{help}</p>}
       </div>
       {value.length > 0 && (
         <ul className="flex flex-wrap items-start gap-2">
           {value.map((food) => (
             <li key={food} className="max-w-full">
-              <span className={`inline-flex h-11 max-w-full items-center rounded-full border bg-white text-sm font-semibold text-ink ${border}`}>
-                <span className="truncate pr-1 pl-3.5">{food}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${food}`}
-                  onClick={() => {
-                    refocus.current = true;
-                    onChange(value.filter((f) => f !== food));
-                  }}
-                  className={`flex h-11 w-11 flex-none items-center justify-center rounded-full ${focusRing}`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4A544F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M6 6l12 12M18 6L6 18" />
-                  </svg>
-                </button>
-              </span>
-              {allergy && exactWordsOnly(food) && <p className="mt-1 max-w-[16rem] text-xs text-[#4A544F]">{EXACT_WORDS}</p>}
+              <Chip
+                removeLabel={`Remove ${food}`}
+                onRemove={() => {
+                  refocus.current = true;
+                  onChange(value.filter((f) => f !== food));
+                }}
+              >
+                <span className="min-w-0 break-words py-2">{food}</span>
+              </Chip>
+              {allergy && exactWordsOnly(food) && <p className="mt-1 text-small text-ink-soft">{EXACT_WORDS}</p>}
             </li>
           ))}
         </ul>
@@ -144,7 +130,7 @@ export function FoodChips({
         <ul className="flex flex-wrap gap-2">
           {offered.map((s) => (
             <li key={s}>
-              <button type="button" onClick={() => add(s, false)} className={`${chipBase} border-[#D5DBD5] px-3.5 text-[13px]`}>
+              <button type="button" onClick={() => add(s, false)} className={ghostButton}>
                 + {s}
               </button>
             </li>
@@ -152,13 +138,14 @@ export function FoodChips({
         </ul>
       )}
       <div>
-        <div className="flex gap-2">
-          <input
-            ref={input}
-            value={typed}
+        <div ref={field} className="flex items-start gap-2">
+          <TextField
+            className="min-w-0 flex-1"
+            label={placeholder}
+            hideLabel
             placeholder={placeholder}
-            aria-label={placeholder}
-            aria-invalid={error ? true : undefined}
+            value={typed}
+            error={error ?? undefined}
             onChange={(e) => {
               onTyped(e.target.value);
               onError(null);
@@ -169,31 +156,19 @@ export function FoodChips({
                 add(typed);
               }
             }}
-            className="h-11 w-full min-w-0 rounded-xl border border-line bg-white px-3 text-base text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
           />
-          <button
-            type="button"
-            onClick={() => add(typed)}
-            className={`inline-flex h-11 items-center justify-center whitespace-nowrap rounded-full border border-[#D5DBD5] bg-white px-[18px] text-[13px] font-semibold text-ink ${focusRing}`}
-          >
+          <Button variant="ghost" onClick={() => add(typed)}>
             {addLabel}
-          </button>
+          </Button>
         </div>
-        {error && (
-          <p role="alert" className="mt-1.5 text-[13px] font-medium text-[#B33A0B]">
-            {error}
-          </p>
-        )}
-        <p role="status" className={statusText ? "mt-1.5 text-[13px] text-[#4A544F]" : "sr-only"}>
+        <p role="status" className={statusText ? "mt-2 text-small text-ink-soft" : "sr-only"}>
           {statusText}
         </p>
       </div>
       {allergy && (
-        <p className="flex gap-2 text-[13px] text-ink">
-          <span className="mt-px flex text-[#A6261B]">
-            <WarningIcon />
-          </span>
-          Basket only reads ingredient names, so it can miss things. Always check labels.
+        <p className="flex items-start gap-2 text-small text-ink">
+          <Icon icon={TriangleAlert} size={18} className="mt-0.5 text-error" />
+          <span className="min-w-0">Basket only reads ingredient names, so it can miss things. Always check labels.</span>
         </p>
       )}
     </div>

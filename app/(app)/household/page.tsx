@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { createServerClient } from "@/lib/db/server";
 import { listPeople } from "@/lib/db/queries/household";
 import { getMyHouseholdOnce } from "@/lib/db/queries/household-server";
@@ -5,6 +6,8 @@ import { linkStatus } from "@/lib/kroger/link";
 import { isCartConfigured } from "@/lib/kroger/oauth";
 import { isKrogerConfigured } from "@/lib/kroger/token";
 import { HouseholdScreen } from "./HouseholdScreen";
+
+export const metadata: Metadata = { title: "Household" };
 
 export default async function HouseholdPage({
   searchParams,

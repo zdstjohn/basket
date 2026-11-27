@@ -1,15 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { Sheet, useSheetClose } from "@/components/Sheet";
-import { displayName } from "@/components/ListRow";
+import { displayName, Need } from "@/components/ListRow";
+import { offerLine } from "@/components/SwapSheet";
+import { Button } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/Field";
+import { Icon } from "@/components/ui/Icon";
+import { Packshot } from "@/components/ui/Packshot";
 import type { ListItem, Store } from "@/lib/domain/list";
 import { parseMoneyToCents } from "@/lib/domain/money-input";
-import { formatNeed } from "@/lib/domain/units";
-import { STORES, STORE_NAMES } from "@/lib/list/prices";
-import { focusRing, textInput } from "@/lib/ui";
+import type { Offer } from "@/lib/domain/packages";
+import { STORES, STORE_NAMES, krogerImageUrl } from "@/lib/list/prices";
 
-const action = `flex min-h-12 w-full items-center rounded-xl px-3.5 text-left text-[15px] font-medium text-ink hover:bg-[#F3F5F2] ${focusRing}`;
+/** An action: a 48 px row split from the next by a hairline, with a chevron. */
+const action = "flex min-h-12 w-full items-center justify-between gap-3 py-2 text-left text-body text-ink bk-press";
 
 type Props = {
   item: ListItem;
@@ -24,6 +30,10 @@ type Props = {
   onSwap?: () => void;
   /** The row has a Fred Meyer product that can be swapped. */
   canSwap?: boolean;
+  /** The row has no Fred Meyer match yet: the same swap sheet is where to look for one. */
+  canFind?: boolean;
+  /** The chosen Fred Meyer product, shown at the top. */
+  product?: Offer | null;
   /** A Fred Meyer product sets the price, so there is nothing to type. */
   hasProduct?: boolean;
 };
@@ -41,19 +51,20 @@ export function ListSheet(props: Props) {
 function ListSheetBody(props: Props) {
   const close = useSheetClose();
   // Once an action is chosen the sheet keeps showing what it showed, so the labels don't flip while it leaves.
-  const [leaving, setLeaving] = useState<Pick<Props, "item" | "hasProduct" | "canSwap"> | null>(null);
+  const [leaving, setLeaving] = useState<Pick<Props, "item" | "hasProduct" | "canSwap" | "canFind" | "product"> | null>(null);
   const { onHave, onMove, onPrice, onBudget, onSwap } = props;
-  const { item, hasProduct = false, canSwap = false } = leaving ?? props;
+  const { item, hasProduct = false, canSwap = false, canFind = false, product = null } = leaving ?? props;
   const go = (act: () => void) => {
-    setLeaving({ item: props.item, hasProduct: props.hasProduct, canSwap: props.canSwap });
+    setLeaving({ item: props.item, hasProduct: props.hasProduct, canSwap: props.canSwap, canFind: props.canFind, product: props.product });
     act();
     close();
   };
-  const name = displayName(item.canonical);
   const [view, setView] = useState<"menu" | "price">("menu");
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const name = displayName(item.canonical);
+  const photo = krogerImageUrl(product?.candidate.imageUrl);
 
   async function savePrice(e: React.FormEvent) {
     e.preventDefault();
@@ -68,82 +79,90 @@ function ListSheetBody(props: Props) {
       await onPrice(cents);
       close();
     } catch {
-      setError("That didn't save. Try again.");
+      setError("That didn’t save. Try again.");
       setSaving(false);
     }
   }
 
   return (
-    <>
-      <div className="flex flex-col gap-1 p-4 pb-6">
-        <div className="px-3.5 pb-2">
-          <p className="text-[13px] text-muted">
-            {formatNeed(item.parts)} · {STORE_NAMES[item.store]}
-          </p>
-        </div>
+    <div className="flex flex-col gap-2 px-4 pb-4">
+      <p className="text-small text-ink-soft">
+        <Need parts={item.parts} /> · {STORE_NAMES[item.store]}
+      </p>
 
-        {view === "menu" ? (
-          <>
+      {view === "menu" ? (
+        <>
+          {product && (
+            <div className="flex items-center gap-3 py-2">
+              <Packshot src={photo} alt={product.candidate.name} size={64} />
+              <div className="min-w-0 flex-1">
+                <p className="line-clamp-2 text-small font-semibold text-ink">{product.candidate.name}</p>
+                {product.candidate.sizeText && <p className="text-label text-ink-soft">{product.candidate.sizeText}</p>}
+                <p className="bk-price whitespace-nowrap text-label text-ink-soft">{offerLine(product)}</p>
+              </div>
+            </div>
+          )}
+          <div className="divide-y divide-line border-y border-line">
             {canSwap && onSwap && (
               <button type="button" aria-label={`Swap ${name} product`} className={action} onClick={() => go(onSwap)}>
                 Swap
+                <Icon icon={ChevronRight} className="text-ink-soft" />
+              </button>
+            )}
+            {canFind && onSwap && (
+              <button type="button" className={action} onClick={() => go(onSwap)}>
+                Find a product
+                <Icon icon={ChevronRight} className="text-ink-soft" />
               </button>
             )}
             {item.alwaysHave ? (
-              <p className="px-3.5 pb-1 text-[13px] text-muted">
-                It&apos;s on your always-have list. Take it off in Household to buy it.
-              </p>
+              <p className="py-3 text-small text-ink-soft">It’s on your always-have list. Take it off in Household to buy it.</p>
             ) : (
               <button type="button" className={action} onClick={() => go(() => onHave(!item.haveIt))}>
                 {item.haveIt ? "I need it" : "I have it"}
+                <Icon icon={ChevronRight} className="text-ink-soft" />
               </button>
             )}
             {STORES.filter((s) => s !== item.store).map((s) => (
               <button key={s} type="button" className={action} onClick={() => go(() => onMove(s))}>
                 Move to {STORE_NAMES[s]}
+                <Icon icon={ChevronRight} className="text-ink-soft" />
               </button>
             ))}
             {!hasProduct && (
               <button type="button" className={action} onClick={() => setView("price")}>
                 Set price
+                <Icon icon={ChevronRight} className="text-ink-soft" />
               </button>
             )}
             <button type="button" className={action} onClick={() => go(() => onBudget(!item.outsideBudget))}>
               {item.outsideBudget ? "Count in budget" : "Leave out of budget"}
+              <Icon icon={ChevronRight} className="text-ink-soft" />
             </button>
-          </>
-        ) : (
-          <form onSubmit={savePrice} className="grid gap-2 px-3.5">
-            <label className="grid gap-1 text-[13px] text-muted">
-              Price
-              <input
-                autoFocus
-                inputMode="decimal"
-                placeholder="$0.00"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className={textInput}
-              />
-            </label>
-            <p className="text-xs text-muted">The total for {formatNeed(item.parts)}.</p>
-            {error && (
-              <p role="alert" className="text-[13px] font-medium text-[#A6261B]">
-                {error}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={saving}
-              className={`inline-flex h-12 items-center justify-center rounded-full bg-green text-[15px] font-semibold text-white disabled:opacity-60 ${focusRing}`}
-            >
-              Save price
-            </button>
-            <button type="button" onClick={() => setView("menu")} className={action}>
-              Back
-            </button>
-          </form>
-        )}
-      </div>
-    </>
+          </div>
+        </>
+      ) : (
+        <form onSubmit={savePrice} className="grid gap-3">
+          <TextField
+            label="Price"
+            autoFocus
+            inputMode="decimal"
+            placeholder="$0.00"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            error={error ?? undefined}
+          />
+          <p className="text-small text-ink-soft">
+            The total for <Need parts={item.parts} />.
+          </p>
+          <Button variant="main" type="submit" busy={saving}>
+            Save price
+          </Button>
+          <Button variant="ghost" onClick={() => setView("menu")}>
+            Back
+          </Button>
+        </form>
+      )}
+    </div>
   );
 }

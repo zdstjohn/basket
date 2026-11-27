@@ -31,7 +31,7 @@ test("household: a sixth person can be added and deleted in two taps; won't-eat 
   await expect(page.getByTestId("person-row")).toHaveCount(5);
 
   // Add a sixth person, open them, and delete them: the first tap only asks.
-  await page.getByRole("region", { name: "Who's eating" }).getByRole("button", { name: "+ Add", exact: true }).click();
+  await page.getByRole("region", { name: "Who’s eating" }).getByRole("button", { name: "+ Add person" }).click();
   const added = page.getByRole("form", { name: "Add a person" });
   await added.getByLabel("Name").fill("Grandma");
   await added.getByLabel("Age").fill("70");
@@ -392,4 +392,32 @@ test("a dinner added despite an allergy keeps its warning on the tile and on the
   await expect(hero.locator("svg.lucide-triangle-alert")).toHaveCount(1);
   await expectUnclipped(hero.getByText(/Tree nut allergy: Daughter \(4\)/));
   expect(await hero.innerText()).not.toMatch(SAFE_WORDS);
+});
+
+test("a person’s allergy line shows in full in both looks at 360 px", async ({ page }) => {
+  await createHousehold(page, "family-flags-household-line", WITH_LISTS);
+  await page.setViewportSize({ width: 360, height: 800 });
+  for (const look of ["light", "dark"] as const) {
+    await setLook(page, look);
+    await page.goto("/household");
+    await expect(page.locator("html")).toHaveAttribute("data-look", look);
+    const line = youngest(page).getByText("Allergy: tree nuts");
+    await expect(line).toBeVisible();
+    await expectUnclipped(line);
+    await expect(youngest(page).locator("svg.lucide-triangle-alert")).toHaveCount(1);
+  }
+});
+
+test("the check-labels sentence is always visible in the editor", async ({ page }) => {
+  await createHousehold(page, "family-flags-labels");
+  await page.goto("/household");
+  await youngest(page).click();
+  const form = page.getByRole("form", { name: "Edit Daughter" });
+  const sentence = form.getByText("Basket only reads ingredient names, so it can miss things. Always check labels.");
+  await expect(sentence).toBeVisible(); // with no allergy yet
+  await form.getByRole("button", { name: "+ tree nuts" }).click();
+  await expect(sentence).toBeVisible(); // and with one
+  const ink = await sentence.evaluate((el) => getComputedStyle(el).color);
+  const soft = await form.getByText("Nothing yet. Add foods to steer around.").evaluate((el) => getComputedStyle(el).color);
+  expect(ink).not.toBe(soft); // ink, not the soft color
 });

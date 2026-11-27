@@ -2,10 +2,14 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { DIETS } from "@/components/PersonRow";
+import { Button } from "@/components/ui/Button";
+import { SelectField, TextField } from "@/components/ui/Field";
+import { ErrorBanner } from "@/components/ui/states";
 import { FoodChips, addFood, allergyHelp, mergeList } from "@/components/household/FoodChips";
+import { dangerGhost } from "@/components/household/danger";
 import { COMMON_ALLERGENS } from "@/lib/domain/families";
 import type { Diet, Person } from "@/lib/domain/types";
-import { focusRing, pillButton, textInput } from "@/lib/ui";
+import { ghostButton } from "@/lib/ui";
 
 const APPETITES = [
   { value: 0.75, label: "Small appetite" },
@@ -74,7 +78,7 @@ export function PersonEditor({
     try {
       await action();
     } catch {
-      setError("That didn't save. Try again.");
+      setError("That didn’t save. Try again.");
       setBusy(false);
     }
   }
@@ -104,66 +108,41 @@ export function PersonEditor({
     <form
       onSubmit={submit}
       aria-label={initial.id ? `Edit ${initial.name}` : "Add a person"}
-      className="grid gap-3 border-t border-[#F0F2EF] bg-ground px-3.5 py-3"
+      className="grid gap-4 rounded-md bg-sunk p-3"
     >
       {changedElsewhere && (
-        <p role="status" className="text-[13px] font-medium text-[#4A544F]">
+        <p role="status" className="text-small font-semibold text-ink">
           Changed on the other phone. Your edits are kept; check before saving.
         </p>
       )}
-      <label className="grid gap-1 text-xs text-muted">
-        Name
-        <input
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className={textInput}
-        />
-      </label>
+      <TextField label="Name" required value={name} onChange={(e) => setName(e.target.value)} />
       <div className="grid grid-cols-2 gap-3">
-        <label className="grid gap-1 text-xs text-muted">
-          Age
-          <input
-            required
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={120}
-            step={1}
-            value={age}
-            onChange={(e) => setAge(e.target.value)}
-            className={textInput}
-          />
-        </label>
-        <label className="grid gap-1 text-xs text-muted">
-          Diet
-          <select
-            value={diet}
-            onChange={(e) => setDiet(e.target.value as Diet)}
-            className={textInput}
-          >
-            {DIETS.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <label className="grid gap-1 text-xs text-muted">
-        Appetite
-        <select
-          value={appetite}
-          onChange={(e) => setAppetite(Number(e.target.value))}
-          className={textInput}
-        >
-          {appetites.map((a) => (
-            <option key={a.value} value={a.value}>
-              {a.label}
+        <TextField
+          label="Age"
+          required
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={120}
+          step={1}
+          value={age}
+          onChange={(e) => setAge(e.target.value)}
+        />
+        <SelectField label="Diet" value={diet} onChange={(e) => setDiet(e.target.value as Diet)}>
+          {DIETS.map((d) => (
+            <option key={d.value} value={d.value}>
+              {d.label}
             </option>
           ))}
-        </select>
-      </label>
+        </SelectField>
+      </div>
+      <SelectField label="Appetite" value={appetite} onChange={(e) => setAppetite(Number(e.target.value))}>
+        {appetites.map((a) => (
+          <option key={a.value} value={a.value}>
+            {a.label}
+          </option>
+        ))}
+      </SelectField>
       <FoodChips
         label="Won’t eat"
         help={
@@ -194,54 +173,30 @@ export function PersonEditor({
         suggestions={COMMON_ALLERGENS}
         allergy
       />
-      {error && (
-        <p role="alert" className="text-[13px] text-sale">
-          {error}
-        </p>
-      )}
-      <div className="flex items-center gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className={`inline-flex h-11 items-center rounded-full bg-green px-5 text-[14px] font-semibold text-white disabled:opacity-60 ${focusRing}`}
-        >
+      {error && <ErrorBanner message={error} />}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" variant="ghost" busy={busy}>
           Save
-        </button>
-        <button type="button" onClick={onCancel} disabled={busy} className={pillButton}>
+        </Button>
+        <button type="button" onClick={onCancel} disabled={busy} className={ghostButton}>
           Cancel
         </button>
         {onDelete && !confirmingDelete && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => setConfirmingDelete(true)}
-            className={`ml-auto h-11 rounded-full px-3 text-[14px] font-semibold text-sale ${focusRing}`}
-          >
+          <button type="button" disabled={busy} onClick={() => setConfirmingDelete(true)} className={`${dangerGhost} ml-auto`}>
             Delete
           </button>
         )}
       </div>
       {onDelete && confirmingDelete && (
-        <div role="group" aria-label="Confirm delete" className="grid gap-2 rounded-xl border border-[#A6261B] bg-white p-3">
-          <p className="text-[14px] font-semibold text-ink">
+        <div role="group" aria-label="Confirm delete" className="grid gap-2 rounded-md bg-surface p-3">
+          <p className="text-body font-semibold text-ink">
             Delete {deleteLabel ?? initial.name}? This can’t be undone.
           </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => run(onDelete)}
-              className={`inline-flex h-11 items-center rounded-full bg-[#A6261B] px-5 text-[14px] font-semibold text-white disabled:opacity-60 ${focusRing}`}
-            >
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={busy} onClick={() => run(onDelete)} className={dangerGhost}>
               Delete
             </button>
-            <button
-              ref={cancelDelete}
-              type="button"
-              disabled={busy}
-              onClick={() => setConfirmingDelete(false)}
-              className={pillButton}
-            >
+            <button ref={cancelDelete} type="button" disabled={busy} onClick={() => setConfirmingDelete(false)} className={ghostButton}>
               Cancel
             </button>
           </div>

@@ -352,7 +352,9 @@ export function ListScreen({ household }: { household: Household }) {
           onMove={(s) => void run(() => list.moveItem(open, s))}
           onPrice={(cents) => list.setPrice(open, cents)}
           hasProduct={!!products[open.key]?.pick}
+          product={products[open.key]?.pick ?? null}
           canSwap={productMode && open.store === "fred_meyer" && !open.haveIt && !!products[open.key]?.pick}
+          canFind={productMode && open.store === "fred_meyer" && !open.haveIt && !!products[open.key] && !products[open.key]?.pick}
           onSwap={() => {
             swapAfterClose.current = open.key;
           }}
@@ -370,12 +372,10 @@ export function ListScreen({ household }: { household: Household }) {
           busy={swapBusy}
           onClose={() => setSwapKey(null)}
           onChoose={(upc) => {
-            setSwapKey(null);
             void run(() => list.chooseProduct(swapping, upc));
           }}
           onSearch={(term) => whileBusy(() => list.searchWith(swapping, term), true)}
           onReset={() => {
-            setSwapKey(null);
             void run(() => list.resetChoice(swapping));
           }}
         />
