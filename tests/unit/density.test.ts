@@ -24,6 +24,14 @@ describe('gramsPerMl', () => {
   it('does not match a keyword inside another word', () => {
     expect(gramsPerMl('unsalted butter')).toBe(0.96);
   });
+  it('knows sauces that contain a lighter word', () => {
+    for (const n of ['pasta sauce', 'marinara', 'cheese sauce', 'pesto', 'orange juice', 'tomato paste', 'salsa']) {
+      expect(gramsPerMl(n)).toBeGreaterThanOrEqual(1);
+    }
+    expect(eachGramsKnown('tomato paste')).toBeNull();
+    expect(eachGramsKnown('orange juice')).toBeNull();
+    expect(eachGramsKnown('tomato')).toBe(150);
+  });
   it('knows light, airy foods (I2)', () => {
     for (const n of ['baby spinach', 'kale', 'arugula', 'romaine lettuce']) expect(gramsPerMl(n)).toBeLessThan(0.2);
     expect(gramsPerMl('shredded cheese')).toBe(0.47);

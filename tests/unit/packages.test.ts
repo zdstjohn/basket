@@ -30,6 +30,10 @@ describe('packagesNeeded', () => {
     ['shredded cheese', [q(2, 'cups')], '8 oz', 1],
     ['hamburger buns', [q(8, '')], '12 oz', 1],
     ['dragonfruit', [q(3, '')], '1 lb', 1],
+    // dozens and composite foods
+    ['eggs', [q(2, 'dozen')], '12 ct', 2],
+    ['pasta sauce', [q(4, 'cups')], '24 oz', 2],
+    ['tomato paste', [q(2, '')], '6 oz', 1],
     // M6: plural container units
     ['ketchup', [q(2, 'bottles')], '20 oz', 2],
     ['spinach', [q(2, 'bags')], '5 oz', 2],

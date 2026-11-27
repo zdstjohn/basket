@@ -56,7 +56,10 @@ function convert(canonical: string, amount: number, from: Quantity['kind'], to: 
 }
 
 /** Packages of `size` that one part of a recipe needs (fractional); 0 when it adds nothing. */
-function partNeeds(canonical: string, part: Quantity, size: Quantity | null): number {
+function partNeeds(canonical: string, rawPart: Quantity, size: Quantity | null): number {
+  // A dozen is twelve plain items.
+  const dozens = rawPart.kind === 'count' && (rawPart.countUnit === 'dozen' || rawPart.countUnit === 'dozens');
+  const part: Quantity = dozens ? { amount: rawPart.amount * 12, kind: 'count', base: 'each' } : rawPart;
   if (isVague(part)) return 0;
   const unit = part.countUnit;
   if (part.kind === 'count' && unit !== undefined) {

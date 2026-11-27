@@ -22,6 +22,8 @@ const DENSITY: Record<string, number> = {
   milk: 1.03, cream: 1, 'half and half': 1.02, broth: 1, stock: 1, juice: 1.04, vinegar: 1.01, wine: 0.99,
   'soy sauce': 1.15, ketchup: 1.15, mayonnaise: 0.95, mayo: 0.95, mustard: 1.05, 'dijon mustard': 1.05,
   salsa: 1.05, 'tomato paste': 1.1, 'tomato sauce': 1.03, 'hot sauce': 1.05, yogurt: 1.04, 'sour cream': 1,
+  'pasta sauce': 1.03, 'spaghetti sauce': 1.03, marinara: 1.03, 'cheese sauce': 1.05, pesto: 1.0,
+  'orange juice': 1.04, 'lemon juice': 1.03, 'lime juice': 1.03,
   'cream cheese': 1, 'cottage cheese': 1, ricotta: 1.03,
   // nut butters
   'peanut butter': 1.1, 'almond butter': 1.1, 'nut butter': 1.1, tahini: 1.05,
@@ -55,10 +57,9 @@ function compile(table: Record<string, number>): { re: RegExp; value: number; le
 const DENSITY_RULES = compile(DENSITY);
 const EACH_RULES = compile(EACH);
 
-const find = (rules: ReturnType<typeof compile>, canonical: string): number | null => {
-  const name = canonical.toLowerCase();
-  return rules.find((r) => r.re.test(name))?.value ?? null;
-};
+const findRule = (rules: ReturnType<typeof compile>, name: string) => rules.find((r) => r.re.test(name));
+const find = (rules: ReturnType<typeof compile>, canonical: string): number | null =>
+  findRule(rules, canonical.toLowerCase())?.value ?? null;
 
 /** Grams in one millilitre of this food; 1 (water) when unknown. */
 export function gramsPerMl(canonical: string): number {
@@ -67,7 +68,11 @@ export function gramsPerMl(canonical: string): number {
 
 /** Typical grams of one loose item of this food, or null when we have no idea. */
 export function eachGramsKnown(canonical: string): number | null {
-  return find(EACH_RULES, canonical);
+  const name = canonical.toLowerCase();
+  const each = findRule(EACH_RULES, name);
+  // "tomato paste" or "orange juice" is a liquid or sauce, not a loose tomato or orange.
+  if (!each || (findRule(DENSITY_RULES, name)?.len ?? 0) > each.len) return null;
+  return each.value;
 }
 
 /** Typical grams of one loose item of this food; 150 when unknown. */
