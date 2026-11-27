@@ -411,54 +411,78 @@ export type Database = {
           base_servings: number
           created_at: string
           everyone_vegetarian: boolean
+          facts_checked_at: string | null
           household_id: string
           id: string
           ingredients: Json
           is_favorite: boolean
+          likes: number | null
+          make_ahead: boolean
+          method: string | null
           name: string
+          person_changes: Json
           photo_credit: string | null
           photo_credit_url: string | null
           photo_path: string | null
           photo_url: string | null
+          rating: number | null
+          rating_count: number | null
           source_url: string | null
-          person_changes?: Json | null
+          steps: Json | null
           times_planned: number
+          total_minutes: number | null
           veg_swap: Json | null
         }
         Insert: {
           base_servings?: number
           created_at?: string
           everyone_vegetarian?: boolean
+          facts_checked_at?: string | null
           household_id: string
           id?: string
           ingredients?: Json
           is_favorite?: boolean
+          likes?: number | null
+          make_ahead?: boolean
+          method?: string | null
           name: string
+          person_changes?: Json
           photo_credit?: string | null
           photo_credit_url?: string | null
           photo_path?: string | null
           photo_url?: string | null
+          rating?: number | null
+          rating_count?: number | null
           source_url?: string | null
-          person_changes?: Json | null
+          steps?: Json | null
           times_planned?: number
+          total_minutes?: number | null
           veg_swap?: Json | null
         }
         Update: {
           base_servings?: number
           created_at?: string
           everyone_vegetarian?: boolean
+          facts_checked_at?: string | null
           household_id?: string
           id?: string
           ingredients?: Json
           is_favorite?: boolean
+          likes?: number | null
+          make_ahead?: boolean
+          method?: string | null
           name?: string
+          person_changes?: Json
           photo_credit?: string | null
           photo_credit_url?: string | null
           photo_path?: string | null
           photo_url?: string | null
+          rating?: number | null
+          rating_count?: number | null
           source_url?: string | null
-          person_changes?: Json | null
+          steps?: Json | null
           times_planned?: number
+          total_minutes?: number | null
           veg_swap?: Json | null
         }
         Relationships: [
@@ -468,6 +492,57 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "households"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      meal_verdicts: {
+        Row: {
+          created_at: string
+          eaten_on: string
+          household_id: string
+          id: string
+          meal_id: string
+          status: string
+          updated_at: string
+          updated_by: string | null
+          votes: Json
+        }
+        Insert: {
+          created_at?: string
+          eaten_on: string
+          household_id: string
+          id?: string
+          meal_id: string
+          status: string
+          updated_at?: string
+          updated_by?: string | null
+          votes?: Json
+        }
+        Update: {
+          created_at?: string
+          eaten_on?: string
+          household_id?: string
+          id?: string
+          meal_id?: string
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+          votes?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meal_verdicts_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meal_verdicts_meal_id_household_id_fkey"
+            columns: ["meal_id", "household_id"]
+            isOneToOne: false
+            referencedRelation: "meals"
+            referencedColumns: ["id", "household_id"]
           },
         ]
       }
@@ -506,7 +581,7 @@ export type Database = {
       people: {
         Row: {
           age: number | null
-          allergies?: string[] | null
+          allergies: string[]
           appetite: number
           created_at: string
           diet: string
@@ -518,7 +593,7 @@ export type Database = {
         }
         Insert: {
           age?: number | null
-          allergies?: string[] | null
+          allergies?: string[]
           appetite?: number
           created_at?: string
           diet?: string
@@ -530,7 +605,7 @@ export type Database = {
         }
         Update: {
           age?: number | null
-          allergies?: string[] | null
+          allergies?: string[]
           appetite?: number
           created_at?: string
           diet?: string
