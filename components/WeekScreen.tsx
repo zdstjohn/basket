@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { BudgetMeter } from "@/components/BudgetMeter";
 import { DayRow } from "@/components/DayRow";
+import { BusyLine } from "@/components/busy/BusyLine";
+import { BusyNightsSheet } from "@/components/busy/BusyNightsSheet";
 import { MealSheet } from "@/components/MealSheet";
 import { LeftoverSheet } from "@/components/leftovers/LeftoverSheet";
 import { Sheet } from "@/components/Sheet";
@@ -14,6 +16,7 @@ import { useWeekList } from "@/lib/useWeekList";
 import { copyWeek } from "@/lib/db/queries/weeks";
 import { toMeal } from "@/lib/db/queries/meals";
 import type { Household } from "@/lib/db/rows";
+import { busyDays as allBusyDays } from "@/lib/domain/busy";
 import { cookNightOf, cookState, isLeftover } from "@/lib/domain/leftovers";
 import { householdServings } from "@/lib/domain/portions";
 import { daysOfWeek, type Day } from "@/lib/domain/weeks";
@@ -48,8 +51,8 @@ export function WeekScreen({ household }: { household: Household }) {
   const open = openDay && data ? forDay(openDay) : null;
   const openMeal = open && data ? (data.meals.get(open.meal_id) ?? null) : null;
   const mealNames = Object.fromEntries([...(data?.meals ?? [])].map(([id, m]) => [id, m.name]));
-  // Task 7 supplies the busy nights; until then none are marked.
-  const busyDays: Day[] = [];
+  const [busyOpen, setBusyOpen] = useState(false);
+  const busyDays = data ? allBusyDays(data.busy.every, data.busy.thisWeek) : [];
 
   async function repeat() {
     if (!data?.lastWeek) return;
@@ -146,6 +149,7 @@ export function WeekScreen({ household }: { household: Household }) {
                 key={d}
                 day={d}
                 slot={slot}
+                busy={busyDays.includes(d)}
                 onOpen={() => {
                   setNotice(null);
                   setOpenDay(d);
@@ -176,6 +180,7 @@ export function WeekScreen({ household }: { household: Household }) {
             );
           })
         )}
+        {data && <BusyLine days={busyDays} weekDays={days} onOpen={() => setBusyOpen(true)} />}
       </section>
 
       <div className="mt-auto" />
@@ -218,6 +223,18 @@ export function WeekScreen({ household }: { household: Household }) {
           busyDays={busyDays}
           onClose={() => setOpenDay(null)}
           onNotice={setNotice}
+          onChanged={reload}
+        />
+      )}
+
+      {data && busyOpen && (
+        <BusyNightsSheet
+          sb={sb}
+          householdId={household.id}
+          weekId={data.week.id}
+          weekDays={days}
+          busy={data.busy}
+          onClose={() => setBusyOpen(false)}
           onChanged={reload}
         />
       )}

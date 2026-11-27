@@ -6,6 +6,7 @@ import { listPeople } from "@/lib/db/queries/household";
 import { getMeals, mealPhotoSrcs } from "@/lib/db/queries/meals";
 import { findWeek, getOrCreateWeek, listWeekMeals } from "@/lib/db/queries/weeks";
 import type { Household, MealRow, Week, WeekMeal } from "@/lib/db/rows";
+import { cleanDays } from "@/lib/domain/busy";
 import type { Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { singleFlight } from "@/lib/list/single-flight";
@@ -20,6 +21,8 @@ export interface WeekData {
   people: Person[];
   /** Dinners planned last week (the Repeat button needs at least one). */
   lastWeek: { id: string; count: number } | null;
+  /** Busy nights: `every` is the household's list (read fresh), `thisWeek` is this week's own. */
+  busy: { every: Day[]; thisWeek: Day[] };
 }
 
 /** The current week for a household, kept fresh by realtime changes from either phone. */
@@ -39,11 +42,14 @@ export function useWeekData(household: Household) {
     const run = ++latest.current;
     try {
       const weekStart = weekStartFor(new Date(), household.week_start as Day, household.time_zone);
-      const [people, week, prev] = await Promise.all([
+      const [people, week, prev, hh] = await Promise.all([
         listPeople(sb, household.id),
         getOrCreateWeek(sb, household.id, weekStart),
         findWeek(sb, household.id, previousWeekStart(weekStart)),
+        // The household prop is as old as the page, so the list is read here.
+        sb.from("households").select("busy_days").eq("id", household.id).single(),
       ]);
+      if (hh.error) throw new Error(hh.error.message);
       const [weekMeals, prevMeals] = await Promise.all([
         listWeekMeals(sb, week.id),
         prev ? listWeekMeals(sb, prev.id) : Promise.resolve([]),
@@ -58,6 +64,7 @@ export function useWeekData(household: Household) {
         photos,
         people,
         lastWeek: prev ? { id: prev.id, count: prevMeals.length } : null,
+        busy: { every: cleanDays(hh.data?.busy_days), thisWeek: cleanDays(week.busy_days) },
       });
       setError(false);
     } catch {
@@ -73,7 +80,7 @@ export function useWeekData(household: Household) {
     void load();
     const stop = subscribeHousehold(
       household.id,
-      ["week_meals", "meals", "people", "meal_verdicts"],
+      ["week_meals", "meals", "people", "weeks", "households", "meal_verdicts"],
       () => {
         setChanges((n) => n + 1);
         void load();
