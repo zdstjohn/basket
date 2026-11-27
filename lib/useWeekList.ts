@@ -22,7 +22,9 @@ import { loadDraft, saveDraft } from "@/lib/drafts";
 import { clampPackCount, foldItemState, mergeFlags, writeFlags } from "@/lib/list/state";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import { type Choice, type MatchRow } from "@/lib/list/matches";
-import { answered, askableNow, began, failed as failedAsk, foodsToAsk, latchBad, pricesStale, type Asked } from "@/lib/list/match-requests";
+import {
+  answered, askableNow, began, failed as failedAsk, foodsToAsk, latchBad, pricesStale, SearchNotReturned, SearchNotSaved, type Asked,
+} from "@/lib/list/match-requests";
 import { requestMatches } from "@/lib/list/matches-client";
 import {
   enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
@@ -320,13 +322,21 @@ export function useWeekList(household: Household, weekId: string | null) {
   const askMatches = useCallback(
     (wanted: string[], locationId: string, choice: ReadonlyMap<string, Choice>): Promise<ReadonlyMap<string, MatchRow>> => {
       for (const w of wanted) began(requestedMatches.current, matchKey(locationId, w));
+      const settle = (): void => {
+        for (const w of wanted) if (requestedMatches.current.get(matchKey(locationId, w))?.inFlight) failedAsk(requestedMatches.current, matchKey(locationId, w));
+      };
       return requestMatches(wanted).then(({ matches, unreached }) => {
         const back = new Map(matches.map((m) => [m.canonical, m]));
+        // The household may have changed its words while this was out: judge the answer by the latest ones.
+        const nowChoice = rawRef.current?.choices ? new Map(rawRef.current.choices.map((c) => [c.canonical, c])) : choice;
         for (const w of wanted) {
           const k = matchKey(locationId, w);
           // A batch that was answered before a later one went unreached still counts for its own foods.
-          if (unreached && !back.has(w)) failedAsk(requestedMatches.current, k);
-          else answered(requestedMatches.current, k, back.get(w));
+          const got = back.get(w);
+          // An answer made with other words than the household's (the day's limit hands back the old row)
+          // is no answer: ask again after the backoff, not a day later.
+          if ((unreached && !got) || (got && got.term !== (nowChoice.get(w)?.searchTerm || w))) failedAsk(requestedMatches.current, k);
+          else answered(requestedMatches.current, k, got);
         }
         setBadFoods((prev) => latchBad(prev, wanted, back, choice));
         if (matches.length > 0) {
@@ -336,6 +346,9 @@ export function useWeekList(household: Household, weekId: string | null) {
           );
         }
         return back;
+      }, (err) => {
+        settle();
+        throw err;
       });
     },
     [],
@@ -463,23 +476,27 @@ export function useWeekList(household: Household, weekId: string | null) {
 
   /**
    * Looks for a food with the household's own words. That one food skips the day's hold, but not the backoff
-   * after a failed request, and the server still charges the household's daily cap. Throws when the words
-   * can't be saved, or when the search didn't come back (the words stay saved and are tried again later).
+   * after a failed request, and the server still charges the household's daily cap. Throws SearchNotSaved when the words
+   * can't be saved, or SearchNotReturned when the search didn't come back (the words stay saved and are tried again later).
    */
   const searchWith = useCallback(
     async (item: ListItem, term: string) => {
       const words = term.trim();
-      await setChoice(sb, household.id, item.canonical, { searchTerm: words, upc: null });
+      try {
+        await setChoice(sb, household.id, item.canonical, { searchTerm: words, upc: null });
+      } catch {
+        throw new SearchNotSaved();
+      }
       latest.current++;
       const current = rawRef.current;
       const locationId = current?.locationId ?? null;
       const choices = withChoice(current?.choices ?? [], item.canonical, { searchTerm: words, upc: null });
       setRaw((r) => (r ? { ...r, choices } : r));
-      if (!locationId || (typeof navigator !== "undefined" && navigator.onLine === false)) throw new Error("not searched");
-      if (!askableNow(requestedMatches.current, matchKey(locationId, item.canonical))) throw new Error("not searched");
+      if (!locationId || (typeof navigator !== "undefined" && navigator.onLine === false)) throw new SearchNotReturned();
+      if (!askableNow(requestedMatches.current, matchKey(locationId, item.canonical))) throw new SearchNotReturned();
       const back = await askMatches([item.canonical], locationId, new Map(choices.map((c) => [c.canonical, c])));
       // Over the day's limit the server hands back the old search: it is not an answer to these words.
-      if (back.get(item.canonical)?.term !== words) throw new Error("not searched");
+      if (back.get(item.canonical)?.term !== words) throw new SearchNotReturned();
     },
     [sb, household.id, askMatches],
   );

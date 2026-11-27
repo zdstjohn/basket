@@ -1,10 +1,25 @@
 import { MATCH_MAX_AGE_MS, type Choice, type MatchRow } from './matches';
 
-/** A search that is missing, a day old, or made with other words than the household's chosen ones. */
+/**
+ * A search that is missing, a day old, or made with other words than the household's chosen ones. With no
+ * chosen words the food is searched by its own name, so a row made with other words (a choice that was
+ * since reset) is due too.
+ */
 export const matchDue = (row: MatchRow | undefined, choice: Choice | undefined, now = Date.now()): boolean =>
   !row ||
   !(now - Date.parse(row.fetchedAt) < MATCH_MAX_AGE_MS) ||
-  (!!choice?.searchTerm && row.term !== choice.searchTerm);
+  row.term !== (choice?.searchTerm || row.canonical);
+
+/** The household's own words could not be saved. */
+export class SearchNotSaved extends Error {}
+/** The words are saved, but the search for them did not come back (skipped, in flight, offline or capped). */
+export class SearchNotReturned extends Error {}
+
+/** What the swap sheet says when a search with the household's own words fails. */
+export const searchMessage = (err: unknown): string =>
+  err instanceof SearchNotReturned
+    ? "That search didn't come back. Your words are saved; we'll try again soon."
+    : "That didn't save. Try again.";
 
 const MINUTE = 60_000;
 /** After a request that never got an answer: wait this long before the first, second and later retries. */
@@ -14,6 +29,8 @@ export const BACKOFF_MS = [5 * MINUTE, 15 * MINUTE, 60 * MINUTE];
 export interface Ask {
   retryAt: number;
   failures: number;
+  /** A request for this food has gone out and not come back. */
+  inFlight?: boolean;
 }
 export type Asked = Map<string, Ask>;
 
@@ -45,16 +62,17 @@ export function foodsToAsk(
 /**
  * May a search the household asked for (new words, back to Basket's pick) go out now? It skips the day's
  * hold, which is only there to stop the list asking again on its own, but not the backoff after a request
- * that never got an answer: that food waits its 5, 15 or 60 minutes.
+ * that never got an answer: that food waits its 5, 15 or 60 minutes. Nor while a request for the food is
+ * already out, so two searches for it never both spend.
  */
 export function askableNow(asked: Asked, k: string, now = Date.now()): boolean {
   const ask = asked.get(k);
-  return !ask || ask.failures === 0 || now >= ask.retryAt;
+  return !ask || (!ask.inFlight && (ask.failures === 0 || now >= ask.retryAt));
 }
 
 /** A request is going out: hold the food for a day (failures so far are kept until an answer comes). */
 export function began(asked: Asked, k: string, now = Date.now()): void {
-  asked.set(k, { retryAt: now + MATCH_MAX_AGE_MS, failures: asked.get(k)?.failures ?? 0 });
+  asked.set(k, { retryAt: now + MATCH_MAX_AGE_MS, failures: asked.get(k)?.failures ?? 0, inFlight: true });
 }
 
 /** The request never got an answer: retry after 5 minutes, then 15, then every hour. */

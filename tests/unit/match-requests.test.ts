@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MatchRow } from '@/lib/list/matches';
 import { MATCH_MAX_AGE_MS } from '@/lib/list/matches';
-import { answered, askableNow, began, BACKOFF_MS, failed, foodsToAsk, latchBad, pricesStale, type Asked } from '@/lib/list/match-requests';
+import {
+  answered, askableNow, began, BACKOFF_MS, failed, foodsToAsk, latchBad, matchDue, pricesStale, searchMessage,
+  SearchNotReturned, SearchNotSaved, type Asked,
+} from '@/lib/list/match-requests';
 import { requestMatches } from '@/lib/list/matches-client';
 
 const NOW = Date.parse('2026-11-26T12:00:00Z');
@@ -138,5 +141,51 @@ describe('askableNow: a search the household asked for', () => {
     expect(askableNow(asked, 'b', 1000 + BACKOFF_MS[0] - 1)).toBe(false);
     expect(askableNow(asked, 'b', 1000 + BACKOFF_MS[0])).toBe(true);
     expect(askableNow(asked, 'a', 2000)).toBe(true); // another food's backoff does not matter
+  });
+});
+
+describe('askableNow: a request already in flight', () => {
+  it('refuses while a request for that food has not come back, and allows it once it has', () => {
+    const asked: Asked = new Map();
+    began(asked, 'a', 1000);
+    expect(askableNow(asked, 'a', 2000)).toBe(false);
+    expect(askableNow(asked, 'b', 2000)).toBe(true); // another food is free
+    answered(asked, 'a', undefined, 3000);
+    expect(askableNow(asked, 'a', 4000)).toBe(true);
+    began(asked, 'a', 5000);
+    failed(asked, 'a', 6000);
+    expect(askableNow(asked, 'a', 6000 + BACKOFF_MS[0])).toBe(true);
+  });
+});
+
+describe('matchDue: a custom-term row with the choice gone', () => {
+  const custom = { ...row('milk', 1000), term: 'organic whole milk' };
+  it('is due when there is no saved choice and the row was searched with other words', () => {
+    expect(matchDue(custom, undefined, NOW)).toBe(true);
+    expect(matchDue(custom, { canonical: 'milk', upc: '1', searchTerm: null }, NOW)).toBe(true);
+  });
+  it('is not due when the row used the food\'s own name, or the choice still names the same words', () => {
+    expect(matchDue(row('milk', 1000), undefined, NOW)).toBe(false);
+    expect(matchDue(custom, { canonical: 'milk', upc: null, searchTerm: 'organic whole milk' }, NOW)).toBe(false);
+  });
+  it('the auto effect asks again after the backoff, and not before', () => {
+    const asked: Asked = new Map();
+    failed(asked, key('milk'), NOW);
+    const have = new Map([['milk', custom]]);
+    expect(foodsToAsk(['milk'], key, have, none, asked, NOW + BACKOFF_MS[0] - 1)).toEqual([]);
+    expect(foodsToAsk(['milk'], key, have, none, asked, NOW + BACKOFF_MS[0])).toEqual(['milk']);
+  });
+  it('shows prices as possibly old while the custom row is still there', () => {
+    expect(pricesStale(['milk'], new Map([['milk', custom]]), none, new Set(), NOW)).toBe(true);
+  });
+});
+
+describe('searchMessage: what the sheet says when a search fails', () => {
+  it('says it did not save when the words were not saved, and never claims they were', () => {
+    expect(searchMessage(new SearchNotSaved())).toBe("That didn't save. Try again.");
+    expect(searchMessage(new Error('network'))).toBe("That didn't save. Try again.");
+  });
+  it('says the words are saved only when they were and the search did not come back', () => {
+    expect(searchMessage(new SearchNotReturned())).toBe("That search didn't come back. Your words are saved; we'll try again soon.");
   });
 });

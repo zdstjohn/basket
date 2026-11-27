@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sheet } from "@/components/Sheet";
 import type { ListItem } from "@/lib/domain/list";
 import type { Offer, Recommendation } from "@/lib/domain/packages";
+import { searchMessage } from "@/lib/list/match-requests";
 import { formatPrice, krogerImageUrl } from "@/lib/list/prices";
 import { focusRing, pillButton, textInput } from "@/lib/ui";
 
@@ -61,8 +62,9 @@ export function SwapSheet({
     try {
       await onSearch(text.trim());
       setText("");
-    } catch {
-      setError("That search didn't come back. Your words are saved; we'll try again soon.");
+    } catch (err) {
+      // The typed words stay in the field. "Saved" is said only when the save went through.
+      setError(searchMessage(err));
     }
   }
 
