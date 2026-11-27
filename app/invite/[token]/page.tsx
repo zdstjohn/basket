@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/db/server";
@@ -14,6 +15,8 @@ function messageFor(error: string): string {
   const key = Object.keys(MESSAGES).find((k) => error.includes(k));
   return key ? MESSAGES[key] : "We couldn't open that invite. Try again in a moment.";
 }
+
+export const metadata: Metadata = { title: "Invite" };
 
 export default async function InvitePage({
   params,
