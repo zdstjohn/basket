@@ -122,7 +122,7 @@ export function ListScreen({ household }: { household: Household }) {
       <div data-testid="list-bar" className={stickyAboveNav}>
         <div className="flex items-center justify-between rounded-2xl border border-line bg-white px-4 py-3">
           <div>
-            <p className="text-xs text-muted">Estimated total</p>
+            <p className="text-xs text-muted">Estimated total, for the amounts you&apos;ll use</p>
             <p className="font-heading text-[24px] font-semibold leading-tight">
               <span data-testid="list-total">{formatDollars(totals.totalCents)}</span>{" "}
               <span className="font-sans text-[13px] font-medium text-muted">of {formatDollars(household.budget_cents)}</span>

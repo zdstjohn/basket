@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { createBrowserClient } from "@/lib/db/client";
+import { verifyEmailCode } from "@/lib/auth/verify-code";
 import { focusRing, pillButton, primaryButton, textInput } from "@/lib/ui";
 
 type Status = "idle" | "sending" | "sent";
@@ -18,6 +19,9 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(
     linkFailed ? "That sign-in link didn't work. Ask for a new one." : null,
   );
+
+  const [code, setCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
 
   const redirectTo = () =>
     `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
@@ -38,6 +42,19 @@ export function LoginForm({
     setStatus("sent");
   }
 
+  async function signInWithCode(e: FormEvent) {
+    e.preventDefault();
+    setVerifying(true);
+    setError(null);
+    const r = await verifyEmailCode(createBrowserClient(), email, code, next);
+    if (r.ok) {
+      window.location.assign(r.next);
+      return;
+    }
+    setVerifying(false);
+    setError(r.message);
+  }
+
   async function withGoogle() {
     setError(null);
     const { error } = await createBrowserClient().auth.signInWithOAuth({
@@ -55,12 +72,40 @@ export function LoginForm({
       >
         <h2 className="text-xl font-bold text-ink">Check your email</h2>
         <p className="mt-2 text-[15px] text-muted">
-          We sent a sign-in link to <strong className="text-ink">{email.trim()}</strong>.
-          Open it on this phone to come straight in.
+          We sent a link and a 6-digit code to <strong className="text-ink">{email.trim()}</strong>.
+          Tap the link, or type the code here.
         </p>
+        <form onSubmit={signInWithCode} className="mt-4 flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-muted">6-digit code</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]*"
+              maxLength={6}
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className={textInput}
+            />
+          </label>
+          {error && (
+            <p role="alert" className="rounded-xl bg-sale-tint px-3 py-2 text-[14px] text-sale">
+              {error}
+            </p>
+          )}
+          <button type="submit" disabled={verifying} className={primaryButton}>
+            {verifying ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
         <button
           type="button"
-          onClick={() => setStatus("idle")}
+          onClick={() => {
+            setStatus("idle");
+            setCode("");
+            setError(null);
+          }}
           className={`mt-4 ${pillButton}`}
         >
           Use a different email

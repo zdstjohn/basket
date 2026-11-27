@@ -25,7 +25,7 @@ interface Row {
   note?: string;
 }
 
-const field = `h-11 rounded-lg border border-[#D5DBD5] bg-white px-2.5 text-[15px] ${focusRing}`;
+const field = `h-11 rounded-lg border border-[#D5DBD5] bg-white px-2.5 text-base ${focusRing}`;
 
 /** Edit the recipe's ingredients as written (for its own serving count): change, remove or add lines. */
 export function IngredientEditor({

@@ -8,6 +8,9 @@ import { updateHousehold } from '@/lib/db/queries/household';
 import { searchRecipes } from '@/lib/recipes/search';
 import { SourceLimitError } from '@/lib/recipes/search/provider';
 
+// Model time plus two searches can pass the platform default.
+export const maxDuration = 60;
+
 const MAX_IMAGE_BYTES = 1_572_864; // 1.5 MB decoded; the browser sends at most about 300 KB.
 
 function decodedLength(b64: string): number {

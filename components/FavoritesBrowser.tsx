@@ -150,7 +150,7 @@ export function FavoritesBrowser({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search meals or ingredients"
-          className={`h-12 w-full rounded-xl border border-[#D5DBD5] bg-white pl-[42px] pr-3.5 text-[15px] ${focusRing}`}
+          className={`h-12 w-full rounded-xl border border-[#D5DBD5] bg-white pl-[42px] pr-3.5 text-base ${focusRing}`}
         />
       </div>
 

@@ -89,7 +89,10 @@ async function build(
   let vegSwap: RecipeDraft['vegSwap'] = null;
   if (input.structured && input.structured.length > 0) {
     ingredients = input.structured.slice(0, MAX_LINES);
-    if (wantSwap && hasMeatOrFish(ingredients)) vegSwap = await swapForLines(ingredients, report);
+    if (wantSwap && hasMeatOrFish(ingredients)) {
+      // A failed swap call (usage is already reported) must not lose the draft: the UI has a "no swap yet" state.
+      vegSwap = await swapForLines(ingredients, report).catch(() => null);
+    }
   } else {
     const r = await linesFromStrings(input.strings, wantSwap, report);
     ingredients = r.ingredients;

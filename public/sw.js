@@ -3,7 +3,7 @@
 const CACHE = "basket-offline-v1";
 const PAGE = "/list";
 const MAX_STATIC = 150;
-importScripts("/sw-trim.js");
+importScripts("/sw-trim.js", "/sw-nav.js");
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => {
@@ -77,6 +77,18 @@ self.addEventListener("fetch", (event) => {
           return res;
         })
         .catch(async () => (await caches.match(PAGE)) || Response.error()),
+    );
+    return;
+  }
+
+  // Any other page: only step in when the network is down (a cold start from the Home Screen at /week).
+  if (req.mode === "navigate") {
+    event.respondWith(
+      fetch(req).catch(
+        async () =>
+          (await self.offlineStart((p) => caches.match(p), PAGE, (to, status) => Response.redirect(to, status))) ||
+          Response.error(),
+      ),
     );
   }
 });

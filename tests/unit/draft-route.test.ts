@@ -176,3 +176,21 @@ describe('POST /api/recipes/search', () => {
     expect((await searchPost(req({ query: 'x', source: 'bing' }))).status).toBe(400);
   });
 });
+
+describe('vegetarian swap failure', () => {
+  const structuredOption: RecipeOption = {
+    ...option,
+    structured: [
+      { canonical: 'chicken thighs', amount: 1, unit: 'lb', role: 'meat' },
+      { canonical: 'corn tortillas', amount: 12, unit: 'each', role: 'bakery' },
+    ],
+  };
+
+  it('still returns the draft, with no swap, when the swap call fails', async () => {
+    vi.mocked(generateStructured).mockRejectedValueOnce(new Error('gateway out of credits'));
+    const draft = await draftFromOption(structuredOption, familyOfFive);
+    expect(draft.name).toBe('Chicken tacos');
+    expect(draft.ingredients).toHaveLength(2);
+    expect(draft.vegSwap).toBeNull();
+  });
+});

@@ -282,13 +282,14 @@
       //   "sender_name": "Admin"
       // },
 
-      // Uncomment to customize email template
-      // "template": {
-      //   "invite": {
-      //     "subject": "You have been invited",
-      //     "content_path": "./supabase/templates/invite.html"
-      //   }
-      // },
+      // Sign-in email carries the link and the 6-digit code (the code signs in inside an installed iPhone app).
+      // Production: paste the same body into Supabase dashboard > Authentication > Email Templates > Magic Link.
+      "template": {
+        "magic_link": {
+          "subject": "Your Basket sign-in link and code",
+          "content_path": "./supabase/templates/magic_link.html"
+        }
+      },
 
       // Uncomment to customize notification email template
       // "notification": {

@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(94);
+select plan(96);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -242,6 +242,12 @@ reset role;
 select pg_temp.act_as(null);
 select throws_ok($q$select public.ai_spend_since(gen_random_uuid(), '-infinity')$q$, '42501', null, 'anon cannot call ai_spend_since');
 reset role;
+
+-- ---------------------------------------------------------------------------
+-- Photo bucket limits (0005)
+-- ---------------------------------------------------------------------------
+select is((select file_size_limit from storage.buckets where id = 'meal-photos'), 5242880::bigint, 'meal-photos is capped at 5 MB');
+select is((select allowed_mime_types from storage.buckets where id = 'meal-photos'), array['image/jpeg'], 'meal-photos accepts only JPEG');
 
 select * from finish();
 rollback;

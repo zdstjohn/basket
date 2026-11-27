@@ -223,6 +223,11 @@ test("two phones: a staple is checked off live, and the list works offline", asy
   await expect(row(page, "Milk")).toBeVisible();
   await page.screenshot({ path: `${shots}/list-offline.png`, fullPage: true });
 
+  // A cold start at the app's start page (/week) with no signal lands on the saved list.
+  await page.goto("/week");
+  await expect(page).toHaveURL(/\/list$/);
+  await expect(row(page, "Milk")).toBeVisible();
+
   await page.getByRole("checkbox", { name: "Got Milk" }).check();
   await expect(page.getByRole("checkbox", { name: "Got Milk" })).toBeChecked();
   await context.setOffline(false);

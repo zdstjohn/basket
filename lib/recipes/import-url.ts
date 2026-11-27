@@ -13,7 +13,7 @@ export class ImportError extends Error {
 }
 
 const MAX_REDIRECTS = 3;
-const USER_AGENT = 'Mozilla/5.0 (compatible; BasketRecipeImport/1.0; +https://github.com/zdstjohn/basket)';
+const USER_AGENT = 'Basket/0.1 (recipe import; family meal planner)';
 
 /**
  * Connect-time DNS lookup: the address that passes this check is the one the socket connects to,
