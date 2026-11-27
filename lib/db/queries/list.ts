@@ -132,6 +132,25 @@ export async function setItemState(
   if (error) throw Object.assign(new Error(error.message), { code: error.code, status });
 }
 
+/**
+ * Sets the flags of many items with one request. Every entry must name the same columns (the caller
+ * groups them), so one array upsert writes them all; a column an entry did not name is left alone.
+ */
+export async function setItemStates(
+  sb: Sb,
+  householdId: string,
+  entries: { weekId: string; itemKey: string; patch: ItemPatch }[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  const { error, status } = await sb
+    .from('week_item_state')
+    .upsert(
+      entries.map((e) => ({ household_id: householdId, week_id: e.weekId, item_key: e.itemKey, ...e.patch })),
+      { onConflict: 'week_id,item_key' },
+    );
+  if (error) throw Object.assign(new Error(error.message), { code: error.code, status });
+}
+
 // ---------------------------------------------------------------------------
 // Where each item is bought, and what it costs.
 // ---------------------------------------------------------------------------

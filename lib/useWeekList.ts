@@ -6,7 +6,7 @@ import { listPeople } from "@/lib/db/queries/household";
 import { clearChoice, listChoices, listMatches, setChoice } from "@/lib/db/queries/kroger";
 import {
   listAlwaysHave, listItemState, listItemStores, listPrices, listStaples,
-  setEstimate, setItemState, setItemStore, type ItemState,
+  setEstimate, setItemState, setItemStates, setItemStore, type ItemState,
 } from "@/lib/db/queries/list";
 import { getMeals, toMeal } from "@/lib/db/queries/meals";
 import { getOrCreateWeek, listWeekMeals } from "@/lib/db/queries/weeks";
@@ -19,7 +19,7 @@ import type { IngredientLine, Meal, Person, Quantity } from "@/lib/domain/types"
 import { isVague } from "@/lib/domain/units";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
-import { clampPackCount, foldItemState, mergeFlags, writeFlags } from "@/lib/list/state";
+import { clampPackCount, foldItemState, mergeFlags, overlayQueue, writeFlags } from "@/lib/list/state";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import { type Choice, type MatchRow } from "@/lib/list/matches";
 import {
@@ -27,8 +27,9 @@ import {
 } from "@/lib/list/match-requests";
 import { requestMatches } from "@/lib/list/matches-client";
 import {
-  enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
+  enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch, type QueuedPatch,
 } from "@/lib/list/offline";
+import { backoffDelay, FAILED_REQUEST_HOLD_MS, retryAfter, singleFlight } from "@/lib/list/single-flight";
 import {
   estimateFor, priceKey, storeFor, toPriceMap, userCentsFor, userCentsPerBase,
   type PriceRow, type PriceSource,
@@ -108,8 +109,6 @@ function withChoice(choices: Choice[], canonical: string, patch: { upc?: string 
   return [...choices.filter((c) => c.canonical !== canonical), next];
 }
 
-const RETRY_OFFLINE_MS = 5000;
-
 export function buildList(raw: ListInputs) {
   const prices = toPriceMap(raw.prices);
   const itemStores = new Map(raw.itemStores);
@@ -140,10 +139,16 @@ export function buildList(raw: ListInputs) {
     if (!productMode || i.store !== "fred_meyer") return i;
     const row = matches.get(i.canonical);
     if (!row) return i;
-    const rec = recommend(i.canonical, i.parts, row.candidates, {
-      chosenUpc: choices.get(i.canonical)?.upc ?? null,
-      count: state[i.key]?.pack_count ?? null,
-    });
+    // The saved search is cast from the database, not checked: one malformed row counts as no row.
+    let rec: Recommendation;
+    try {
+      rec = recommend(i.canonical, i.parts, row.candidates, {
+        chosenUpc: choices.get(i.canonical)?.upc ?? null,
+        count: state[i.key]?.pack_count ?? null,
+      });
+    } catch {
+      return i;
+    }
     products[i.key] = rec;
     return rec.pick ? { ...i, estimateCents: rec.pick.totalCents } : i;
   });
@@ -172,8 +177,10 @@ export function useWeekList(household: Household, weekId: string | null) {
   const [error, setError] = useState(false);
   const [live, setLive] = useState(false);
   const latest = useRef(0);
+  const liveRef = useRef(false);
   const rawRef = useRef<ListInputs | null>(null);
-  const requested = useRef(new Set<string>());
+  // Estimate keys already asked: Infinity while out or answered, a time when the request failed (held for a minute).
+  const requested = useRef(new Map<string, number>());
   // Fred Meyer searches fetched this visit, kept for the same reason as the prices.
   const fetchedMatches = useRef(new Map<string, MatchRow>());
   const requestedMatches = useRef<Asked>(new Map());
@@ -190,6 +197,9 @@ export function useWeekList(household: Household, weekId: string | null) {
   useEffect(() => {
     rawRef.current = raw;
   }, [raw]);
+  useEffect(() => {
+    liveRef.current = live;
+  }, [live]);
 
   // Set when the server refuses a queued change (not a network failure): the change was dropped.
   const refused = useRef(false);
@@ -204,9 +214,11 @@ export function useWeekList(household: Household, weekId: string | null) {
     };
     // One flush runs at a time; a call that joined it may have missed a change added just now, so look once more.
     const gaveUp = () => void (refused.current = true);
-    let left = await flushQueue(household.id, send, undefined, gaveUp);
+    // Runs of changes for one week and the same flags go as one request; a refused batch is sent one by one.
+    const sendBatch = (entries: QueuedPatch[]) => setItemStates(sb, household.id, entries);
+    let left = await flushQueue(household.id, send, undefined, gaveUp, sendBatch);
     if (loadQueue(household.id).length > 0 && !(typeof navigator !== "undefined" && navigator.onLine === false)) {
-      left = await flushQueue(household.id, send, undefined, gaveUp);
+      left = await flushQueue(household.id, send, undefined, gaveUp, sendBatch);
     }
     return left;
   }, [sb, household.id]);
@@ -224,7 +236,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     return true;
   }, [weekId]);
 
-  const load = useCallback(async () => {
+  const loadOnce = useCallback(async () => {
     if (!weekId) return;
     const run = ++latest.current;
     try {
@@ -255,7 +267,8 @@ export function useWeekList(household: Household, weekId: string | null) {
         people,
         staples: staples.filter((s) => s.active).map(({ canonical, amount, unit, role }) => ({ canonical, amount, unit, role })),
         alwaysHave,
-        itemState,
+        // A change still waiting in the queue (the signal dropped mid-flush) stays on screen.
+        itemState: overlayQueue(itemState, loadQueue(household.id), weekId),
         itemStores: [...itemStores],
         categoryStore: (household.category_store ?? {}) as Record<string, unknown>,
         prices: withFetched(prices, fetched.current),
@@ -272,6 +285,10 @@ export function useWeekList(household: Household, weekId: string | null) {
       if (run === latest.current) setLoading(false);
     }
   }, [sb, weekId, household.id, household.category_store, household.kroger_location_id, flushPending, fromCache]);
+  // One load at a time: a call while one is out joins it, and it repeats once at the end.
+  const [flight] = useState(() => singleFlight());
+  const load = useCallback(() => flight.run(loadOnce), [flight, loadOnce]);
+  const joinLoad = useCallback(() => flight.join(loadOnce), [flight, loadOnce]);
 
   useEffect(() => {
     if (!weekId) return;
@@ -295,12 +312,28 @@ export function useWeekList(household: Household, weekId: string | null) {
     };
   }, [household.id, weekId, load, invalidate]);
 
-  // While offline, look again every few seconds: not every browser says when the network is back.
+  // While offline, look again after 5, 10, 20, then every 30 seconds: not every browser says when the network
+  // is back. A look that comes due while a load is still out joins it instead of starting another.
   useEffect(() => {
     if (!offline) return;
-    const t = setInterval(() => void load(), RETRY_OFFLINE_MS);
-    return () => clearInterval(t);
-  }, [offline, load]);
+    let attempt = 0;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        void joinLoad().then(() => {
+          if (stopped) return;
+          attempt++;
+          schedule();
+        });
+      }, backoffDelay(attempt));
+    };
+    schedule();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [offline, joinLoad]);
 
   const built = useMemo(() => (raw ? buildList(raw) : null), [raw]);
   const items: ListItem[] = useMemo(() => built?.items ?? [], [built]);
@@ -400,7 +433,7 @@ export function useWeekList(household: Household, weekId: string | null) {
       const asked = i.parts.filter((p) => !isVague(p) || i.parts.every(isVague));
       for (const p of asked) {
         const k = priceKey(i.canonical, i.store, p.kind);
-        if (requested.current.has(k) || seen.has(k)) continue;
+        if (retryAfter(requested.current.get(k), now) > 0 || seen.has(k)) continue;
         const have = saved.get(k);
         if (have) continue;
         seen.add(k);
@@ -408,11 +441,12 @@ export function useWeekList(household: Household, weekId: string | null) {
       }
     }
     if (missing.length === 0) return;
-    for (const m of missing) requested.current.add(priceKey(m.canonical, m.store, m.qty.kind));
+    for (const m of missing) requested.current.set(priceKey(m.canonical, m.store, m.qty.kind), Infinity);
     for (const [store, wanted] of groupMissing(missing)) {
       const forget = () => {
-        // No answer (offline, over the cap): let it be asked again next time the list changes.
-        for (const w of wanted) requested.current.delete(priceKey(w.canonical, store, w.qty.kind));
+        // No answer (offline, over the cap): hold it for a minute, then let it be asked again.
+        const again = Date.now() + FAILED_REQUEST_HOLD_MS;
+        for (const w of wanted) requested.current.set(priceKey(w.canonical, store, w.qty.kind), again);
       };
       void requestEstimates(wanted, store).then((rows) => {
         if (rows.length === 0) return forget();
@@ -420,7 +454,7 @@ export function useWeekList(household: Household, weekId: string | null) {
         setRaw((r) => (r ? { ...r, prices: mergeFetched(r.prices, rows) } : r));
       }, forget);
     }
-  }, [raw, items, offline]);
+  }, [raw, items, offline, now]);
 
   /** Sets have-it, got-it or outside-budget for an item. Offline, it waits in the queue. */
   const updateMany = useCallback(
@@ -453,7 +487,8 @@ export function useWeekList(household: Household, weekId: string | null) {
         if (refused.current) void load();
         return;
       }
-      void load();
+      // Realtime brings our own writes back; reload ourselves only when it isn't live, or when a change was refused.
+      if (!liveRef.current || refused.current) void load();
       // The server said no (not a network problem): the screen is put back and the caller says so.
       if (refused.current) throw new Error("refused");
     },
@@ -575,31 +610,79 @@ export function useWeekList(household: Household, weekId: string | null) {
   };
 }
 
-/** This week's id. Offline it falls back to the one seen last time, so the cached list can still show. */
-export function useWeekId(household: Household): string | null {
+/** True when the household's current week is not the one `seen` (a week start, YYYY-MM-DD) names; null means none seen yet. */
+export function weekChanged(seen: string | null, now: Date, household: Pick<Household, "week_start" | "time_zone">): boolean {
+  return seen !== weekStartFor(now, household.week_start as Day, household.time_zone);
+}
+
+/** What the list area shows: the error card, the skeleton, the empty note or the list. */
+export function listView(o: { weekFailed: boolean; error: boolean; loading: boolean; itemCount: number }): "error" | "skeleton" | "empty" | "list" {
+  if ((o.weekFailed || o.error) && o.itemCount === 0) return "error";
+  if (o.loading) return "skeleton";
+  return o.itemCount === 0 ? "empty" : "list";
+}
+
+/**
+ * This week's id. Offline it falls back to the one seen last time, so the cached list can still show.
+ * It looks again when the phone comes back to the foreground or online, so a list left open past the turn
+ * of the week moves on to the new one. `failed` means the last try got no answer; with `id` still null
+ * there is nothing to show, and `retry` tries again.
+ */
+export function useWeekId(household: Household): { id: string | null; failed: boolean; retry: () => void } {
   const sb = useMemo(() => createBrowserClient(), []);
   const [id, setId] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [tries, setTries] = useState(0);
+  // The week start the server last confirmed; null until then (a remembered id alone does not count).
+  const seen = useRef<string | null>(null);
+  const retry = useCallback(() => {
+    setFailed(false);
+    setTries((n) => n + 1);
+  }, []);
+  const { id: householdId, week_start: weekStartDay, time_zone: timeZone } = household;
   useEffect(() => {
     let alive = true;
-    const weekStart = weekStartFor(new Date(), household.week_start as Day, household.time_zone);
-    // The week seen last time is used right away, so a phone with no signal doesn't wait on the network.
-    const seen = loadDraft<{ householdId: string; weekStart: string; id: string }>("list-week");
-    if (seen?.householdId === household.id && seen.weekStart === weekStart) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setId(seen.id);
-    }
-    (async () => {
-      try {
-        const week = await getOrCreateWeek(sb, household.id, weekStart);
-        saveDraft("list-week", { householdId: household.id, weekStart, id: week.id });
-        if (alive) setId(week.id);
-      } catch {
-        // Offline: the remembered week above stands.
+    let running: Promise<void> | null = null;
+    const resolve = (): Promise<void> => {
+      if (running) return running;
+      const weekStart = weekStartFor(new Date(), weekStartDay as Day, timeZone);
+      // The week seen last time is used right away, so a phone with no signal doesn't wait on the network.
+      const remembered = loadDraft<{ householdId: string; weekStart: string; id: string }>("list-week");
+      if (remembered?.householdId === householdId && remembered.weekStart === weekStart) {
+        setId(remembered.id);
       }
-    })();
+      running = (async () => {
+        try {
+          const week = await getOrCreateWeek(sb, householdId, weekStart);
+          saveDraft("list-week", { householdId: householdId, weekStart, id: week.id });
+          seen.current = weekStart;
+          if (alive) {
+            setId(week.id);
+            setFailed(false);
+          }
+        } catch {
+          // Offline: the remembered week above stands.
+          if (alive) setFailed(true);
+        } finally {
+          running = null;
+        }
+      })();
+      return running;
+    };
+    const recheck = () => {
+      if (weekChanged(seen.current, new Date(), { week_start: weekStartDay, time_zone: timeZone })) void resolve();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") recheck();
+    };
+    void resolve();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", recheck);
     return () => {
       alive = false;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", recheck);
     };
-  }, [sb, household.id, household.week_start, household.time_zone]);
-  return id;
+  }, [sb, householdId, weekStartDay, timeZone, tries]);
+  return { id, failed, retry };
 }
