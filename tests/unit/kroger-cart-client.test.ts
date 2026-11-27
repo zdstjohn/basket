@@ -25,10 +25,18 @@ describe('sendCart', () => {
     expect(await sendCart(body)).toEqual({ ok: false, reason: 'failed' });
   });
   it('maps the other statuses', async () => {
-    for (const [status, reason] of [[502, 'rejected'], [500, 'no_answer'], [503, 'no_answer'], [400, 'no_answer']] as const) {
+    for (const [status, reason] of [[500, 'no_answer'], [503, 'no_answer'], [400, 'no_answer']] as const) {
       answer(status, { error: 'x' });
       expect(await sendCart(body)).toEqual({ ok: false, reason });
     }
+  });
+  it('a 502 is a refusal only when its body says so; a crashed function is no_answer', async () => {
+    answer(502, { error: 'rejected' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'rejected' });
+    answer(502, { error: 'x' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'no_answer' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>Bad Gateway', { status: 502 })));
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'no_answer' });
   });
   it('says nothing was added only for the route\'s known pre-send codes', async () => {
     for (const [status, error] of [[400, 'bad_request'], [400, 'unknown_product'], [409, 'no_store'], [503, 'not_configured'], [503, 'unavailable'], [500, 'save_failed'], [403, 'forbidden']] as const) {
@@ -47,6 +55,8 @@ describe('sendCart', () => {
     expect(await sendCart(body)).toEqual({ ok: false, reason: 'too_many' });
     answer(429, { error: 'slow_down' });
     expect(await sendCart(body)).toEqual({ ok: false, reason: 'busy' });
+    answer(429, { error: 'allowance_spent' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'allowance_spent' });
     answer(429, {});
     expect(await sendCart(body)).toEqual({ ok: false, reason: 'no_answer' });
   });

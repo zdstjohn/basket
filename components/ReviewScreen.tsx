@@ -33,6 +33,7 @@ type Outcome =
   | { kind: "rejected" }
   | { kind: "too_many" }
   | { kind: "busy" }
+  | { kind: "allowance_spent" }
   | { kind: "failed" }
   | { kind: "no_answer" };
 
@@ -494,6 +495,7 @@ export function ReviewScreen({
             {outcome.kind === "rejected" && <p>Fred Meyer wouldn&apos;t take these items. Try swapping them.</p>}
             {outcome.kind === "too_many" && <p>You’ve sent this list a lot today. Try again tomorrow.</p>}
             {outcome.kind === "busy" && <p>Fred Meyer is busy. Try again in a minute.</p>}
+            {outcome.kind === "allowance_spent" && <p>Basket has looked up a lot of Fred Meyer prices today. Try again tomorrow.</p>}
             {outcome.kind === "no_answer" && <p>{SENT_CHECK_ADVICE}</p>}
             {outcome.kind === "failed" && <p role="alert" className="text-[#A6261B]">That didn&apos;t go through. Nothing was added.</p>}
             </>

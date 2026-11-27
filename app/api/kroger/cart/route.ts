@@ -204,8 +204,9 @@ export async function POST(req: Request) {
       return e.status === 429 ? fail('slow_down', 429, { 'retry-after': '3600' }) : fail('rejected', 502);
     }
     if (e instanceof KrogerLimited) {
+      // Basket's own daily Kroger allowance is spent (until midnight UTC), unlike slow_down, which is Kroger's rate limit.
       await markFailed(sb, sendId);
-      return fail('slow_down', 429, { 'retry-after': '3600' });
+      return fail('allowance_spent', 429, { 'retry-after': '3600' });
     }
     // Timeout, network error, 5xx or anything unexpected: Kroger may have added the items. The row stays pending.
     console.error(e instanceof KrogerUnsure ? 'kroger cart unsure' : 'kroger cart unexpected failure');

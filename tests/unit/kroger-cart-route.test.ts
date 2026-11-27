@@ -500,7 +500,7 @@ describe('POST /api/kroger/cart', () => {
     });
     const res = await post(body());
     expect(res.status).toBe(429);
-    expect((await res.json()).error).toBe('slow_down');
+    expect((await res.json()).error).toBe('allowance_spent');
     expect((w.sends[0] as { status: string }).status).toBe('failed');
     expect(w.spent()).toBe(2);
   });
