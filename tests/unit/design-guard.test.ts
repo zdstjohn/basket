@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 const LISTS = ["shared", "a", "b", "later"] as const;
-const ROUND_OK = ["components/ui/Switch.tsx", "components/PersonRow.tsx"];
+const ROUND_OK = ["components/ui/RadioRows.tsx", "components/ui/Switch.tsx", "components/PersonRow.tsx"];
 
 const SPACING_OK = new Set(["0", "0.5", "1", "2", "2.5", "3", "4", "6", "8", "12", "16", "px", "auto"]);
 const BUTTON_LIKE = new Set(["button", "a", "input", "Link"]);
@@ -30,7 +30,8 @@ const STRING_RULES: [string, RegExp][] = [
   ["retired color name", /\b(text|bg|border|outline|accent)-(green|green-tint|muted)\b/],
   ["raw safe-area inset", /env\(safe-area-inset/],
   ["html entity quote", /&apos;|&quot;/],
-  ["arbitrary shadow", /\bshadow-\[/],
+  // The one allowed bracket form is the hairline on a pinned bar: shadow-[inset_0_1px_0_var(--bk-line)].
+  ["arbitrary shadow", /\bshadow-\[(?!inset_0_1px_0_var\(--bk-line\)\])/],
   ["dead font-heading class", /\bfont-heading\b/],
 ];
 
@@ -207,6 +208,7 @@ describe("class flags", () => {
   it("flags an arbitrary shadow", () => {
     expect(flags(`export const A = () => <div className="shadow-[0_1px_2px_#000]" />;`)).toContain("arbitrary shadow");
     expect(flags(`export const A = () => <div className="shadow-2" />;`)).not.toContain("arbitrary shadow");
+    expect(flags(`export const x = "shadow-[inset_0_1px_0_var(--bk-line)]";`, "lib/ui.ts")).not.toContain("arbitrary shadow");
   });
 
   it("flags the dead font-heading class", () => {

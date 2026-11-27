@@ -10,7 +10,11 @@ export function parseLook(v: unknown): Look {
   return v === "light" || v === "dark" ? v : "auto";
 }
 
+/** The look chosen this session when the device would not store it (private mode, full storage). Lasts until the page closes. */
+let sessionLook: Look | null = null;
+
 export function readLook(storage?: Pick<Storage, "getItem"> | null): Look {
+  if (storage === undefined && sessionLook) return sessionLook;
   try {
     const s = storage === undefined ? window.localStorage : storage;
     return s ? parseLook(s.getItem(LOOK_KEY)) : "auto";
@@ -23,8 +27,10 @@ export function saveLook(look: Look, storage?: Pick<Storage, "setItem"> | null):
   try {
     const s = storage === undefined ? window.localStorage : storage;
     s?.setItem(LOOK_KEY, look);
+    if (storage === undefined) sessionLook = null;
   } catch {
-    // A full or blocked storage just means the choice lasts until the page closes.
+    // A full or blocked storage: the choice is kept in memory, so it still applies (through applyLook) until the page closes.
+    if (storage === undefined) sessionLook = look;
   }
 }
 
@@ -32,7 +38,7 @@ export function saveLook(look: Look, storage?: Pick<Storage, "setItem"> | null):
  * Sets <html data-look> and every theme-color tag from the stored look.
  * It is serialized into an inline script, so it must stay self-contained: no imports, no closures, no helpers.
  */
-export function boot(key: string, colors: { light: string; dark: string }): void {
+export function boot(key: string, colors: { light: string; dark: string }, forced?: "light" | "dark" | "auto" | null): void {
   let look: "light" | "dark" | "auto" = "auto";
   try {
     const v = window.localStorage.getItem(key);
@@ -40,6 +46,7 @@ export function boot(key: string, colors: { light: string; dark: string }): void
   } catch {
     look = "auto";
   }
+  if (forced) look = forced;
   const root = document.documentElement;
   if (root.getAttribute("data-look") !== look) root.setAttribute("data-look", look);
   const tags = document.querySelectorAll('meta[name="theme-color"]');
@@ -53,7 +60,7 @@ export function boot(key: string, colors: { light: string; dark: string }): void
 
 export const LOOK_BOOT_SCRIPT = `(${boot})(${JSON.stringify(LOOK_KEY)}, ${JSON.stringify(THEME_COLOR)})`;
 
-/** Re-applies the stored look to the page (same function as the inline script). */
+/** Re-applies the stored look (or, when the device would not store it, this session's choice) to the page. */
 export function applyLook(): void {
-  boot(LOOK_KEY, THEME_COLOR);
+  boot(LOOK_KEY, THEME_COLOR, sessionLook);
 }

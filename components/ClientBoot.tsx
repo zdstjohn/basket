@@ -22,5 +22,12 @@ export function ClientBoot() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  // Safari applies :active to buttons only when the page has a touch listener, so the press state needs one.
+  useEffect(() => {
+    const noop = () => {};
+    document.addEventListener("touchstart", noop, { passive: true });
+    return () => document.removeEventListener("touchstart", noop);
+  }, []);
+
   return null;
 }

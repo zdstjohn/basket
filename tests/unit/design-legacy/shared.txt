@@ -1,4 +1,3 @@
 app/manifest.ts
 components/BottomNav.tsx
 components/Sheet.tsx
-lib/ui.ts
