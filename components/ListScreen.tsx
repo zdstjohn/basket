@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BUDGET_LOOK } from "@/components/BudgetMeter";
 import { ListRow } from "@/components/ListRow";
@@ -18,7 +19,7 @@ import { useWeekId, useWeekList } from "@/lib/useWeekList";
 export function ListScreen({ household }: { household: Household }) {
   const weekId = useWeekId(household);
   const list = useWeekList(household, weekId);
-  const { items, totals, state, checked, priceSource, priceDetail } = list;
+  const { items, totals, state, checked, priceSource, priceDetail, products, productMode } = list;
   const [store, setStore] = useState<Store>("fred_meyer");
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -70,6 +71,9 @@ export function ListScreen({ household }: { household: Household }) {
       checked={checked.has(i.key)}
       source={priceSource[i.key]}
       detail={priceDetail[i.key]}
+      product={products[i.key]}
+      productMode={productMode}
+      lookingUp={!list.offline && !list.stalePrices}
       onToggle={(c) => void run(() => list.update(i.key, { checked: c }))}
       onOpen={() => setOpenKey(i.key)}
     />
@@ -93,6 +97,11 @@ export function ListScreen({ household }: { household: Household }) {
       {list.offline && (
         <p role="status" className="mx-5 mt-2.5 text-[13px] text-muted">
           Offline, showing your last list
+        </p>
+      )}
+      {list.stalePrices && (
+        <p role="status" className="mx-5 mt-2.5 text-[13px] text-muted">
+          Fred Meyer prices may be out of date.
         </p>
       )}
       {problem && (
@@ -132,6 +141,15 @@ export function ListScreen({ household }: { household: Household }) {
                 </p>
               )}
             </div>
+            {store === "fred_meyer" && !productMode && (
+              <p className="mt-1 text-[13px] text-muted">
+                Choose your Fred Meyer in{" "}
+                <Link href="/household" className={`inline-flex min-h-11 items-center font-semibold text-green underline ${focusRing}`}>
+                  Household
+                </Link>{" "}
+                to see real products and prices.
+              </p>
+            )}
             {toCheck.length > 0 && (
               <button type="button" onClick={checkOffAll} className={`${pillButton} mt-2.5 self-start`}>
                 Check off all ({toCheck.length})
@@ -162,7 +180,9 @@ export function ListScreen({ household }: { household: Household }) {
       <div data-testid="list-bar" className={stickyAboveNav}>
         <div className="flex items-center justify-between rounded-2xl border border-line bg-white px-4 py-3">
           <div>
-            <p className="text-xs text-muted">Estimated total, for the amounts you&apos;ll use</p>
+            <p className="text-xs text-muted">
+              {productMode ? "This week's total" : "Estimated total, for the amounts you'll use"}
+            </p>
             <p className="font-heading text-[24px] font-semibold leading-tight">
               <span data-testid="list-total">{formatDollars(totals.totalCents)}</span>{" "}
               <span className="font-sans text-[13px] font-medium text-muted">of {formatDollars(household.budget_cents)}</span>
@@ -193,6 +213,7 @@ export function ListScreen({ household }: { household: Household }) {
             await list.setPrice(open, cents);
             setOpenKey(null);
           }}
+          hasProduct={!!products[open.key]?.pick}
           onBudget={(outside) => {
             setOpenKey(null);
             void run(() => list.update(open.key, { outside_budget: outside }));

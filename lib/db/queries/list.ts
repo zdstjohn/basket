@@ -92,17 +92,19 @@ export interface ItemState {
   have_it: boolean;
   checked: boolean;
   outside_budget: boolean;
+  /** The household's own package count for the food this week; null or missing means "work it out". */
+  pack_count?: number | null;
 }
 
 export async function listItemState(sb: Sb, weekId: string): Promise<Record<string, ItemState>> {
   const { data, error } = await sb
     .from('week_item_state')
-    .select('item_key, have_it, checked, outside_budget')
+    .select('item_key, have_it, checked, outside_budget, pack_count')
     .eq('week_id', weekId);
   if (error) throw new Error(error.message);
   const out: Record<string, ItemState> = {};
   for (const r of data ?? []) {
-    out[r.item_key] = { have_it: r.have_it, checked: r.checked, outside_budget: r.outside_budget };
+    out[r.item_key] = { have_it: r.have_it, checked: r.checked, outside_budget: r.outside_budget, pack_count: r.pack_count };
   }
   return out;
 }

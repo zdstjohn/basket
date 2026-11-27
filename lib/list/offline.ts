@@ -7,6 +7,8 @@ export interface ItemPatch {
   have_it?: boolean;
   checked?: boolean;
   outside_budget?: boolean;
+  /** How many packages to buy, 1 to 99; null goes back to what the list works out. */
+  pack_count?: number | null;
 }
 
 export interface QueuedPatch {

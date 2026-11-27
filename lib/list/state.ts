@@ -5,8 +5,8 @@ import type { ItemState } from '@/lib/db/queries/list';
 const OLD_KEY = /^([\s\S]*)#(?:mass|volume|count(?::[\s\S]*)?)$/;
 
 /**
- * One row of flags per food. A row keyed exactly by the food wins whole;
- * otherwise the flags are the OR of the old `food#kind` rows.
+ * One row of flags per food. A row keyed exactly by the food wins whole (with its package count);
+ * otherwise the flags are the OR of the old `food#kind` rows, which never carried a package count.
  */
 export function foldItemState(state: Record<string, ItemState>): Record<string, ItemState> {
   const out: Record<string, ItemState> = {};
@@ -24,7 +24,7 @@ export function foldItemState(state: Record<string, ItemState>): Record<string, 
           checked: prev.checked || flags.checked,
           outside_budget: prev.outside_budget || flags.outside_budget,
         }
-      : { ...flags };
+      : { have_it: flags.have_it, checked: flags.checked, outside_budget: flags.outside_budget };
   }
   for (const [food, flags] of Object.entries(old)) if (!(food in out)) out[food] = flags;
   return out;

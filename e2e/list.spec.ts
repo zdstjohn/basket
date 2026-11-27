@@ -65,6 +65,10 @@ test("list: tabs, groups, scaled amounts and estimates", async ({ page }, testIn
 
   // Every price waits for its estimate, then reads "estimate".
   await expect(page.getByTestId("list-row").getByText("estimate", { exact: true })).toHaveCount(4);
+  // No Fred Meyer chosen yet: the list says how to get real products, and keeps the estimates.
+  await expect(page.getByText("Choose your Fred Meyer in Household to see real products and prices.")).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: "Household" })).toHaveAttribute("href", "/household");
+  await expect(page.getByText("Estimated total, for the amounts you'll use")).toBeVisible();
   await expect(total(page)).toContainText("$");
   await expect(page.getByText(/without a price/)).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Review and fill carts" })).toHaveCount(0);
@@ -167,8 +171,9 @@ test("stores and prices: a move sticks; your own price replaces the estimate", a
   await expect(page.getByRole("tab", { name: /^Amazon.*· 1$/ })).toBeVisible();
   await page.getByRole("tab", { name: /^Amazon/ }).click();
   await expect(row(page, "Corn tortillas")).toBeVisible();
-  // Amazon has no price yet for tortillas, so one is asked for and arrives.
-  await expect(row(page, "Corn tortillas").getByText("estimate", { exact: true })).toBeVisible();
+  // Amazon never guesses: until you type a price, the row says so.
+  await expect(row(page, "Corn tortillas").getByText("no price yet", { exact: true })).toBeVisible();
+  await expect(row(page, "Corn tortillas").getByText("estimate", { exact: true })).toHaveCount(0);
 
   // The choice is the household's, not the week's: it is still there on reload and next week.
   await page.reload();

@@ -40,10 +40,10 @@ test("Fred Meyer prices: choose a store, then the list shows real shelf prices",
   await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();
 
   const chicken = row(page, "Boneless chicken thighs");
-  await expect(chicken.getByText("Fred Meyer price", { exact: true })).toBeVisible();
   await expect(chicken.getByText("Heritage Farm Boneless Skinless Chicken Thighs")).toBeVisible();
-  // 11.2 oz at $3.99 a pound is $2.79.
-  await expect(chicken).toContainText("$2.79");
+  // Sold by the pound: the whole pound is what you buy, so $3.99, not the 11.2 oz used.
+  await expect(chicken.getByTestId("row-total")).toHaveText("about $3.99");
+  await expect(chicken.getByTestId("row-count")).toHaveText("1 lb");
   // The photo may not load where www.kroger.com is blocked, so check it is on the row rather than painted.
   const photo = chicken.locator("img");
   await expect(photo).toBeAttached();
@@ -52,19 +52,49 @@ test("Fred Meyer prices: choose a store, then the list shows real shelf prices",
   await expect(photo).toHaveAttribute("loading", "lazy");
   await expect(photo).toHaveAttribute("referrerpolicy", "no-referrer");
 
-  // Black beans have a Fred Meyer product (no photo); corn tortillas have none, so they keep the model's
-  // estimate, and so does another store.
-  await expect(row(page, "Black beans").getByText("Fred Meyer price", { exact: true })).toBeVisible();
-  await expect(row(page, "Black beans").locator("img")).toHaveCount(0);
-  await expect(row(page, "Corn tortillas").getByText("estimate", { exact: true })).toBeVisible();
+  const beans = row(page, "Black beans");
+  await expect(beans.getByTestId("row-count")).toBeVisible();
+  await expect(beans.getByTestId("row-total")).toContainText("$");
+  await expect(beans.getByText("Simple Truth Organic Black Beans")).toBeVisible();
+  await expect(beans.locator("img")).toHaveCount(0); // the fixture product has no photo
+  // Foods with no Fred Meyer product say so, and never guess.
+  await expect(row(page, "Corn tortillas")).toContainText("No Fred Meyer match yet");
+  await expect(row(page, "Corn tortillas").getByTestId("row-total")).toHaveText("—");
+  await expect(page.getByTestId("list-row").getByText("estimate")).toHaveCount(0);
+  await expect(page.getByText("Choose your Fred Meyer")).toHaveCount(0);
+  await expect(page.getByText("This week's total")).toBeVisible();
 
+  // The total is the sum of the package prices on every tab.
+  const dollars = (t: string | null): number => {
+    const m = /\$([\d,]+(?:\.\d{2})?)/.exec(t ?? "");
+    return m ? Math.round(Number(m[1].replace(/,/g, "")) * 100) : 0;
+  };
+  async function visibleSum(): Promise<number> {
+    let sum = 0;
+    for (const name of [/^Fred Meyer/, /^Amazon/, /^Costco/]) {
+      await page.getByRole("tab", { name }).click();
+      for (const t of await page.getByTestId("row-total").allTextContents()) sum += dollars(t);
+    }
+    return sum;
+  }
+  await expect.poll(async () => (await visibleSum()) > 0).toBe(true);
+  const sum = await visibleSum();
+  await page.getByRole("tab", { name: /^Fred Meyer/ }).click();
+  expect(dollars(await page.getByTestId("list-total").textContent())).toBe(sum);
+
+  // The Week screen's budget meter follows the same number.
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Week" }).click();
+  await expect(page.getByRole("meter", { name: "Weekly budget" })).toHaveAttribute("aria-valuenow", String(sum));
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "List" }).click();
+  await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();
+
+  // Moving a food to Amazon drops its guess: only a price you type counts there.
   const sheetButton = row(page, "Corn tortillas").getByRole("button", { name: /Corn tortillas/ });
   await sheetButton.click();
   await page.getByRole("dialog", { name: "Corn tortillas" }).getByRole("button", { name: "Move to Amazon" }).click();
   await page.getByRole("tab", { name: /^Amazon/ }).click();
-  await expect(row(page, "Corn tortillas").getByText("estimate", { exact: true })).toBeVisible();
-  await expect(row(page, "Corn tortillas").getByText("Fred Meyer price")).toHaveCount(0);
+  await expect(row(page, "Corn tortillas").getByText("no price yet", { exact: true })).toBeVisible();
 
   await page.getByRole("tab", { name: /^Fred Meyer/ }).click();
-  await page.screenshot({ path: `${shots}/fred-meyer-prices.png`, fullPage: true });
+  await page.screenshot({ path: `${shots}/fred-meyer-products.png`, fullPage: true });
 });

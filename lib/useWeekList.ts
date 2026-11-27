@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserClient } from "@/lib/db/client";
 import { listPeople } from "@/lib/db/queries/household";
+import { listChoices, listMatches } from "@/lib/db/queries/kroger";
 import {
   listAlwaysHave, listItemState, listItemStores, listPrices, listStaples,
   setEstimate, setItemState, setItemStore, type ItemState,
@@ -12,6 +13,7 @@ import { getOrCreateWeek, listWeekMeals } from "@/lib/db/queries/weeks";
 import type { Household } from "@/lib/db/rows";
 import { budgetState, type BudgetState } from "@/lib/domain/budget";
 import { buildShoppingList, listTotals, type ListItem, type Store } from "@/lib/domain/list";
+import { recommend, type Recommendation } from "@/lib/domain/packages";
 import { scaleMeal } from "@/lib/domain/scaling";
 import type { IngredientLine, Meal, Person, Quantity } from "@/lib/domain/types";
 import { isVague } from "@/lib/domain/units";
@@ -19,11 +21,13 @@ import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
 import { foldItemState, mergeFlags } from "@/lib/list/state";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
+import { MATCH_MAX_AGE_MS, type Choice, type MatchRow } from "@/lib/list/matches";
+import { requestMatches } from "@/lib/list/matches-client";
 import {
   enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
 } from "@/lib/list/offline";
 import {
-  estimateFor, KROGER_PRICE_MAX_AGE_MS, priceKey, storeFor, toPriceMap, userCentsFor, userCentsPerBase,
+  estimateFor, priceKey, storeFor, toPriceMap, userCentsFor, userCentsPerBase,
   type PriceRow, type PriceSource,
 } from "@/lib/list/prices";
 import { subscribeHousehold } from "@/lib/realtime";
@@ -38,7 +42,36 @@ export interface ListInputs {
   itemStores: [string, Store][];
   categoryStore: Record<string, unknown>;
   prices: PriceRow[];
+  /** Fred Meyer searches for this store; an older cache has none. */
+  matches?: MatchRow[];
+  /** The household's remembered products; an older cache has none. */
+  choices?: Choice[];
+  /** The chosen Fred Meyer store (product mode); null or missing means no store is chosen. */
+  locationId?: string | null;
 }
+
+const matchKey = (locationId: string, canonical: string): string => `${locationId}|${canonical}`;
+
+/** Saved searches, plus any fetched this visit that are newer (or that the saved ones don't have). */
+function withFetchedMatches(saved: MatchRow[], fetched: Map<string, MatchRow>): MatchRow[] {
+  const byKey = new Map(saved.map((m) => [matchKey(m.locationId, m.canonical), m]));
+  for (const [k, f] of fetched) {
+    const old = byKey.get(k);
+    if (!old || f.fetchedAt > old.fetchedAt) byKey.set(k, f);
+  }
+  return [...byKey.values()];
+}
+
+/** The list as it is saved for offline use: only the searches for foods that are on this week's list. */
+export function trimForCache(raw: ListInputs, foods: ReadonlySet<string>): ListInputs {
+  return raw.matches ? { ...raw, matches: raw.matches.filter((m) => foods.has(m.canonical)) } : raw;
+}
+
+/** A search that is missing, a day old, or made with other words than the household's chosen ones. */
+const matchDue = (row: MatchRow | undefined, choice: Choice | undefined): boolean =>
+  !row ||
+  !(Date.now() - Date.parse(row.fetchedAt) < MATCH_MAX_AGE_MS) ||
+  (!!choice?.searchTerm && row.term !== choice.searchTerm);
 
 /** A fetched Kroger shelf price takes the place of an AI guess or an older Kroger price, never of a typed one. */
 const replaces = (fresh: PriceRow, old: PriceRow): boolean =>
@@ -67,41 +100,55 @@ function mergeFetched(prices: PriceRow[], rows: PriceRow[]): PriceRow[] {
   return [...byKey.values()];
 }
 
-/** Fred Meyer shelf prices to look up again: AI guesses (once a store is chosen) and Kroger prices over a day old. */
-const dueForShelfPrice = (row: PriceRow | undefined): boolean =>
-  !!row &&
-  (row.source === "ai" ||
-    (row.source === "kroger" && !(Date.now() - Date.parse(row.updatedAt ?? "") < KROGER_PRICE_MAX_AGE_MS)));
-
 const RETRY_OFFLINE_MS = 5000;
 
 export function buildList(raw: ListInputs) {
   const prices = toPriceMap(raw.prices);
   const itemStores = new Map(raw.itemStores);
+  const locationId = raw.locationId ?? null;
+  const productMode = !!locationId;
+  const matches = new Map((raw.matches ?? []).filter((m) => m.locationId === locationId).map((m) => [m.canonical, m]));
+  const choices = new Map((raw.choices ?? []).map((c) => [c.canonical, c]));
   const scaled = raw.entries.flatMap((e) => scaleMeal(e.meal, raw.people, e.servings ?? undefined));
   // Flags are saved per food; rows saved the old way (per kind of amount) are folded in.
   const state = foldItemState(raw.itemState);
-  const flagged = (f: keyof ItemState) =>
+  const flagged = (f: "have_it" | "checked" | "outside_budget") =>
     new Set(Object.entries(state).filter(([, s]) => s[f]).map(([k]) => k));
-  const items = buildShoppingList({
+  // Only Fred Meyer, with no store chosen, still guesses a price. A shelf product sets the price in
+  // product mode (below), and at Amazon and Costco only a price you typed counts.
+  const guessing = (s: Store): boolean => s === "fred_meyer" && !productMode;
+  const built = buildShoppingList({
     scaled,
     staples: raw.staples,
     alwaysHave: raw.alwaysHave,
     haveIt: flagged("have_it"),
     outsideBudget: flagged("outside_budget"),
     storeFor: (c, r) => storeFor(c, r, itemStores, raw.categoryStore),
-    estimateFor: (c, q, s) => estimateFor(prices, c, q, s),
+    estimateFor: (c, q, s) => (guessing(s) ? estimateFor(prices, c, q, s) : null),
     userCents: (c, q, s) => userCentsFor(prices, c, q, s),
+  });
+  const products: Record<string, Recommendation> = {};
+  const items = built.map((i) => {
+    if (!productMode || i.store !== "fred_meyer") return i;
+    const row = matches.get(i.canonical);
+    if (!row) return i;
+    const rec = recommend(i.canonical, i.parts, row.candidates, {
+      chosenUpc: choices.get(i.canonical)?.upc ?? null,
+      count: state[i.key]?.pack_count ?? null,
+    });
+    products[i.key] = rec;
+    return rec.pick ? { ...i, estimateCents: rec.pick.totalCents } : i;
   });
   const priceSource: Record<string, PriceSource> = {};
   const priceDetail: Record<string, PriceRow> = {};
   for (const i of items) {
     const row = prices.get(priceKey(i.canonical, i.store, i.qty.kind));
     if (!row) continue;
-    priceSource[i.key] = row.source;
-    if (row.source === "kroger") priceDetail[i.key] = row;
+    if (row.source === "user" && !(i.key in products && products[i.key].pick)) priceSource[i.key] = "user";
+    else if (guessing(i.store)) priceSource[i.key] = row.source;
+    if (guessing(i.store) && row.source === "kroger") priceDetail[i.key] = row;
   }
-  return { items, priceSource, priceDetail, checked: flagged("checked") };
+  return { items, priceSource, priceDetail, products, productMode, checked: flagged("checked") };
 }
 
 /**
@@ -119,6 +166,11 @@ export function useWeekList(household: Household, weekId: string | null) {
   const latest = useRef(0);
   const rawRef = useRef<ListInputs | null>(null);
   const requested = useRef(new Set<string>());
+  // Fred Meyer searches fetched this visit, kept for the same reason as the prices.
+  const fetchedMatches = useRef(new Map<string, MatchRow>());
+  const requestedMatches = useRef(new Set<string>());
+  // A product lookup came back limited or failed this visit.
+  const [lookupBad, setLookupBad] = useState(false);
   // Prices fetched this visit. A load that began before the server saved them must not wipe them out.
   const fetched = useRef(new Map<string, PriceRow>());
   const invalidate = useCallback(() => {
@@ -127,8 +179,7 @@ export function useWeekList(household: Household, weekId: string | null) {
 
   useEffect(() => {
     rawRef.current = raw;
-    if (raw && weekId) saveListCache(weekId, raw);
-  }, [raw, weekId]);
+  }, [raw]);
 
   // Set when the server refuses a queued change (not a network failure): the change was dropped.
   const refused = useRef(false);
@@ -168,7 +219,8 @@ export function useWeekList(household: Household, weekId: string | null) {
     try {
       if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("offline");
       await flushPending();
-      const [weekMeals, people, staples, alwaysHave, itemState, itemStores, prices] = await Promise.all([
+      const locationId = household.kroger_location_id ?? null;
+      const [weekMeals, people, staples, alwaysHave, itemState, itemStores, prices, matches, choices] = await Promise.all([
         listWeekMeals(sb, weekId),
         listPeople(sb, household.id),
         listStaples(sb, household.id),
@@ -176,6 +228,8 @@ export function useWeekList(household: Household, weekId: string | null) {
         listItemState(sb, weekId),
         listItemStores(sb, household.id),
         listPrices(sb, household.id),
+        locationId ? listMatches(sb, household.id, locationId) : Promise.resolve([] as MatchRow[]),
+        locationId ? listChoices(sb, household.id) : Promise.resolve([] as Choice[]),
       ]);
       const meals = new Map((await getMeals(sb, [...new Set(weekMeals.map((m) => m.meal_id))])).map((m) => [m.id, m]));
       if (run !== latest.current) return;
@@ -194,6 +248,9 @@ export function useWeekList(household: Household, weekId: string | null) {
         itemStores: [...itemStores],
         categoryStore: (household.category_store ?? {}) as Record<string, unknown>,
         prices: withFetched(prices, fetched.current),
+        matches: withFetchedMatches(matches, fetchedMatches.current),
+        choices,
+        locationId,
       });
       setOffline(false);
       setError(false);
@@ -203,7 +260,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     } finally {
       if (run === latest.current) setLoading(false);
     }
-  }, [sb, weekId, household.id, household.category_store, flushPending, fromCache]);
+  }, [sb, weekId, household.id, household.category_store, household.kroger_location_id, flushPending, fromCache]);
 
   useEffect(() => {
     if (!weekId) return;
@@ -214,7 +271,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     void load();
     const stop = subscribeHousehold(
       household.id,
-      ["week_meals", "week_item_state", "staples", "meals", "people", "item_store", "always_have", "price_estimates", "households"],
+      ["week_meals", "week_item_state", "staples", "meals", "people", "item_store", "always_have", "price_estimates", "households", "kroger_matches", "item_product_choice"],
       () => void load(),
       setLive,
     );
@@ -238,24 +295,70 @@ export function useWeekList(household: Household, weekId: string | null) {
   const items: ListItem[] = useMemo(() => built?.items ?? [], [built]);
   const totals = useMemo(() => listTotals(items), [items]);
   const state: BudgetState = budgetState(totals.totalCents, household.budget_cents, household.cushion_cents);
+  const products = useMemo(() => built?.products ?? {}, [built]);
+  const productMode = built?.productMode ?? false;
+
+  // Offline use needs only the searches for foods on this week's list.
+  useEffect(() => {
+    if (raw && built && weekId) saveListCache(weekId, trimForCache(raw, new Set(built.items.map((i) => i.key))));
+  }, [raw, built, weekId]);
+
+  // Look up the Fred Meyer products of what's to buy and has no fresh search: once per food per visit,
+  // so a day's limit or a failed search isn't asked again until the next visit.
+  useEffect(() => {
+    if (!raw || offline || !raw.locationId) return;
+    const locationId = raw.locationId;
+    const have = new Map((raw.matches ?? []).filter((m) => m.locationId === locationId).map((m) => [m.canonical, m]));
+    const choice = new Map((raw.choices ?? []).map((c) => [c.canonical, c]));
+    const wanted = [
+      ...new Set(
+        items
+          .filter((i) => i.store === "fred_meyer" && !i.haveIt && !requestedMatches.current.has(matchKey(locationId, i.canonical)))
+          .filter((i) => matchDue(have.get(i.canonical), choice.get(i.canonical)))
+          .map((i) => i.canonical),
+      ),
+    ];
+    if (wanted.length === 0) return;
+    for (const w of wanted) requestedMatches.current.add(matchKey(locationId, w));
+    void requestMatches(wanted).then(({ matches, limited, failed }) => {
+      const got = new Set(matches.map((m) => m.canonical));
+      // A food the server didn't answer for is as good as a failed lookup.
+      if (limited || failed || wanted.some((w) => !got.has(w))) setLookupBad(true);
+      if (matches.length === 0) return;
+      for (const m of matches) fetchedMatches.current.set(matchKey(m.locationId, m.canonical), m);
+      setRaw((r) =>
+        r && r.locationId === locationId ? { ...r, matches: withFetchedMatches(r.matches ?? [], fetchedMatches.current) } : r,
+      );
+    });
+  }, [raw, items, offline]);
+
+  // Prices may be old when a lookup failed or ran out and a food still has no search from the last day.
+  const stalePrices = useMemo(() => {
+    if (!lookupBad || !raw?.locationId) return false;
+    const have = new Map((raw.matches ?? []).filter((m) => m.locationId === raw.locationId).map((m) => [m.canonical, m]));
+    const choice = new Map((raw.choices ?? []).map((c) => [c.canonical, c]));
+    return items.some((i) => i.store === "fred_meyer" && !i.haveIt && matchDue(have.get(i.canonical), choice.get(i.canonical)));
+  }, [lookupBad, raw, items]);
 
   // Price whatever nobody has priced yet: one request per store.
   useEffect(() => {
     if (!raw || offline) return;
+    // Only Fred Meyer with no store chosen is still priced by the model; a chosen store uses real products,
+    // and Amazon and Costco show only a price you typed.
+    if (raw.locationId) return;
     const saved = toPriceMap(raw.prices);
-    const shelf = !!household.kroger_location_id;
     // One question per part: a row can need a volume price and a count price.
     const missing: { canonical: string; qty: Quantity; store: Store }[] = [];
     const seen = new Set<string>();
     for (const i of items) {
-      if (i.haveIt) continue;
+      if (i.haveIt || i.store !== "fred_meyer") continue;
       // A "to taste" note is not worth pricing when the row has a real amount.
       const asked = i.parts.filter((p) => !isVague(p) || i.parts.every(isVague));
       for (const p of asked) {
         const k = priceKey(i.canonical, i.store, p.kind);
         if (requested.current.has(k) || seen.has(k)) continue;
         const have = saved.get(k);
-        if (have && !(shelf && i.store === "fred_meyer" && dueForShelfPrice(have))) continue;
+        if (have) continue;
         seen.add(k);
         missing.push({ canonical: i.canonical, qty: p, store: i.store });
       }
@@ -273,7 +376,7 @@ export function useWeekList(household: Household, weekId: string | null) {
         setRaw((r) => (r ? { ...r, prices: mergeFetched(r.prices, rows) } : r));
       }, forget);
     }
-  }, [raw, items, offline, household.kroger_location_id]);
+  }, [raw, items, offline]);
 
   /** Sets have-it, got-it or outside-budget for an item. Offline, it waits in the queue. */
   const updateMany = useCallback(
@@ -310,6 +413,12 @@ export function useWeekList(household: Household, weekId: string | null) {
     [weekId, household.id, flushPending, load],
   );
   const update = useCallback((itemKey: string, patch: ItemPatch) => updateMany([itemKey], patch), [updateMany]);
+
+  /** How many packages to buy of a food this week; null goes back to what the list works out. */
+  const setPackCount = useCallback(
+    (item: ListItem, count: number | null) => update(item.key, { pack_count: count }),
+    [update],
+  );
 
   /** A price you typed: the total for the quantity on the list. Throws when it can't be saved. */
   const setPrice = useCallback(
@@ -348,8 +457,12 @@ export function useWeekList(household: Household, weekId: string | null) {
     checked: built?.checked ?? new Set<string>(),
     priceSource: built?.priceSource ?? ({} as Record<string, PriceSource>),
     priceDetail: built?.priceDetail ?? ({} as Record<string, PriceRow>),
+    products,
+    productMode,
+    stalePrices,
     update,
     updateMany,
+    setPackCount,
     setPrice,
     moveItem,
     reload: load,

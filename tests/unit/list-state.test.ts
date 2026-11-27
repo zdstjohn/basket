@@ -62,6 +62,19 @@ describe('buildList reads old-key rows', () => {
   });
 });
 
+describe('foldItemState and pack_count', () => {
+  it('carries pack_count from the food-keyed row only', () => {
+    expect(foldItemState({ beans: { ...flags(), pack_count: 3 }, 'beans#count': { ...flags(), pack_count: 9 } }).beans.pack_count).toBe(3);
+    expect(foldItemState({ 'beans#count': { ...flags({ checked: true }), pack_count: 9 } }).beans.pack_count ?? null).toBeNull();
+  });
+
+  it('mergeFlags keeps pack_count and a patch can clear it', () => {
+    const state = { rice: { ...flags(), pack_count: 2 } };
+    expect(mergeFlags(state, ['rice'], { checked: true }).rice.pack_count).toBe(2);
+    expect(mergeFlags(state, ['rice'], { pack_count: null }).rice.pack_count).toBeNull();
+  });
+});
+
 describe('mergeFlags', () => {
   it('writes the food key with the old-row flags kept and the patch on top', () => {
     expect(mergeFlags({ 'milk#volume': flags({ outside_budget: true }) }, ['milk'], { checked: true })).toEqual({

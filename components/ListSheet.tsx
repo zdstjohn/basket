@@ -19,6 +19,7 @@ export function ListSheet({
   onMove,
   onPrice,
   onBudget,
+  hasProduct = false,
 }: {
   item: ListItem;
   onClose: () => void;
@@ -26,6 +27,8 @@ export function ListSheet({
   onMove: (store: Store) => void;
   onPrice: (cents: number) => Promise<void>;
   onBudget: (outside: boolean) => void;
+  /** A Fred Meyer product sets the price, so there is nothing to type. */
+  hasProduct?: boolean;
 }) {
   const name = displayName(item.canonical);
   const [view, setView] = useState<"menu" | "price">("menu");
@@ -76,9 +79,11 @@ export function ListSheet({
                 Move to {STORE_NAMES[s]}
               </button>
             ))}
-            <button type="button" className={action} onClick={() => setView("price")}>
-              Set price
-            </button>
+            {!hasProduct && (
+              <button type="button" className={action} onClick={() => setView("price")}>
+                Set price
+              </button>
+            )}
             <button type="button" className={action} onClick={() => onBudget(!item.outsideBudget)}>
               {item.outsideBudget ? "Count in budget" : "Leave out of budget"}
             </button>
