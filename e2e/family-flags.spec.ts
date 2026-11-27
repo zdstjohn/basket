@@ -232,10 +232,17 @@ async function clippedBy(target: Locator): Promise<string[]> {
     }
 
     const box = el.getBoundingClientRect();
+    // Past a scroller, what lies beyond the edge is reached by scrolling, so only clamps count from there up.
+    let inScroller = false;
     for (let up = el.parentElement; up && up !== document.documentElement; up = up.parentElement) {
       if (lineClamped(up)) out.push(`ancestor ${name(up)} is clamped or ellipsized`);
       const s = up.tagName === "BODY" ? null : style(up);
       if (!s) continue;
+      if (!inScroller && (s.overflowY === "auto" || s.overflowY === "scroll")) {
+        inScroller = true;
+        continue;
+      }
+      if (inScroller) continue;
       const r = up.getBoundingClientRect();
       const hidesX = cuts(s.overflowX) && (box.left < r.left - 0.5 || box.right > r.right + 0.5);
       const hidesY = cuts(s.overflowY) && (box.top < r.top - 0.5 || box.bottom > r.bottom + 0.5);
@@ -254,6 +261,11 @@ async function allClipped(locator: Locator): Promise<string[]> {
   return found;
 }
 
+/** A sheet is still sliding in when it first shows, so a moving box is measured again until it settles; a real clip never clears. */
+async function expectUnclipped(locator: Locator): Promise<void> {
+  await expect.poll(() => allClipped(locator), { timeout: 5000 }).toEqual([]);
+}
+
 for (const look of ["light", "dark"] as const) {
   test(`an allergy line is never clipped, in either look, at 360 px (${look})`, async ({ page }) => {
     await setLook(page, look);
@@ -265,12 +277,12 @@ for (const look of ["light", "dark"] as const) {
 
     // Every flag line on every result card.
     await expect(page.getByTestId("result-flag").first()).toBeVisible();
-    expect(await allClipped(page.getByTestId("result-flag"))).toEqual([]);
+    await expectUnclipped(page.getByTestId("result-flag"));
 
     // The box on the draft.
     await page.getByRole("button", { name: PILAF }).click();
     await expect(page.getByTestId("allergy-box")).toBeVisible();
-    expect(await allClipped(page.getByTestId("allergy-box"))).toEqual([]);
+    await expectUnclipped(page.getByTestId("allergy-box"));
     await page.getByRole("button", { name: "Add to Thursday anyway" }).click();
     await expect(page).toHaveURL(/\/week$/);
 
@@ -278,18 +290,18 @@ for (const look of ["light", "dark"] as const) {
     const thursday = page.getByTestId("day-row-thu");
     const weekLine = thursday.getByText(/Tree nut allergy: Daughter \(4\)/);
     await expect(weekLine).toBeVisible();
-    expect(await allClipped(weekLine)).toEqual([]);
+    await expectUnclipped(weekLine);
     await thursday.getByRole("button").click();
     const sheet = page.getByRole("dialog", { name: "Broccolini quinoa pilaf with toasted almonds" });
     await expect(sheet.getByTestId("allergy-box")).toBeVisible();
-    expect(await allClipped(sheet.getByTestId("allergy-box"))).toEqual([]);
+    await expectUnclipped(sheet.getByTestId("allergy-box"));
     await sheet.getByRole("button", { name: "Close" }).click();
 
     // Favorites.
     await page.goto("/favorites");
     const row = page.getByTestId("favorite-row").filter({ hasText: "Broccolini quinoa pilaf" });
     await expect(row.getByTestId("result-flag")).toBeVisible();
-    expect(await allClipped(row.getByTestId("result-flag"))).toEqual([]);
+    await expectUnclipped(row.getByTestId("result-flag"));
 
     // The swap sheet's allergy box (a walnut swap for the daughter who is allergic to tree nuts).
     await addSoupToFriday(page);
@@ -299,7 +311,7 @@ for (const look of ["light", "dark"] as const) {
     const swap = page.getByRole("dialog", { name: "Instead of mushrooms" });
     await swap.getByLabel("Or something else").fill("walnuts");
     await expect(swap.getByTestId("allergy-box")).toBeVisible();
-    expect(await allClipped(swap.getByTestId("allergy-box"))).toEqual([]);
+    await expectUnclipped(swap.getByTestId("allergy-box"));
   });
 
   test(`the allergy box has an edge and an icon in both looks (${look})`, async ({ page }) => {
