@@ -7,7 +7,8 @@ import { Photo } from "@/components/ui/Photo";
 import { dayName } from "@/lib/week/format";
 import type { Day } from "@/lib/domain/weeks";
 
-const SCRIM = "linear-gradient(rgb(var(--bk-scrim) / 0), rgb(var(--bk-scrim) / 0.8) 42%, rgb(var(--bk-scrim) / 0.92))";
+// The scrim is fully dark by a fixed 52 px, so the label and an allergy line keep contrast on a bright photo.
+const SCRIM = "linear-gradient(rgb(var(--bk-scrim) / 0), rgb(var(--bk-scrim) / 0.8) 52px, rgb(var(--bk-scrim) / 0.92))";
 
 /**
  * Tonight's dinner, full bleed and 2:1, with its words over a scrim. Only for a photo already known to be wide enough.
@@ -53,6 +54,7 @@ export function TonightHero({
             priority
             hint={false}
             onDemote={onDemote}
+            onFallback={onDemote}
             imgRef={imgRef}
             className="absolute! inset-0 aspect-auto!"
           />
@@ -69,7 +71,7 @@ export function TonightHero({
           </span>
         </span>
         {favorite && (
-          <span data-on-photo className="absolute right-4 top-3 text-on-photo">
+          <span data-on-photo style={{ backgroundColor: "rgb(var(--bk-scrim) / 0.6)" }} className="absolute right-3 top-3 rounded-sm p-1 text-on-photo">
             <Icon icon={Bookmark} size={18} label="Favorite" />
           </span>
         )}

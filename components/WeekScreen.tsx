@@ -76,11 +76,14 @@ export function WeekScreen({ household }: { household: Household }) {
           if (!img) return;
           const report = () => {
             const w = img.naturalWidth;
-            if (w <= 0 || store.wrote.has(mealId)) return;
-            const known = store.meals.get(mealId)?.photo_width;
+            const meal = store.meals.get(mealId);
+            // One write per meal and picture: a changed photo is a new key, so its width is written again.
+            const key = `${mealId}|${meal?.photo_path ?? meal?.photo_url ?? ""}`;
+            if (w <= 0 || store.wrote.has(key)) return;
+            const known = meal?.photo_width;
             if (known !== null && known !== undefined) return;
-            store.wrote.add(mealId);
-            updateMeal(sb, mealId, { photo_width: w }).catch(() => store.wrote.delete(mealId));
+            store.wrote.add(key);
+            updateMeal(sb, mealId, { photo_width: w }).catch(() => store.wrote.delete(key));
           };
           img.addEventListener("load", report);
           store.loaded.set(mealId, { img, onLoad: report });
@@ -114,6 +117,11 @@ export function WeekScreen({ household }: { household: Household }) {
       meal,
       photo: data.photos[meal.id] ?? null,
       note: dayNote(domain, data.people, wm.servings_override === null ? null : Number(wm.servings_override)),
+      // A tile keeps what is different about the night (leftovers, a person's change), not the "everyone" default.
+      tileNote: dayNote(domain, data.people, wm.servings_override === null ? null : Number(wm.servings_override))
+        .split(" · ")
+        .filter((part) => part !== "Everyone vegetarian" && part !== "Everyone eats this")
+        .join(" · "),
       lines: flags.length > 0 ? <FlagLines flags={flags} people={data.people} onPhoto={false} /> : null,
       flags,
     };
@@ -124,6 +132,7 @@ export function WeekScreen({ household }: { household: Household }) {
     !!tonightInfo &&
     !!tonightInfo.photo &&
     tonightInfo.meal.photo_width !== null &&
+    tonightInfo.meal.photo_width > 0 &&
     photoVerdict("hero", tonightInfo.meal.photo_width) === "ok" &&
     !demoted.has(tonightInfo.meal.id);
   const heroDay = heroOk ? tonight : null;
@@ -146,7 +155,7 @@ export function WeekScreen({ household }: { household: Household }) {
         width={meal.photo_width}
         stamp={isTonight ? "Tonight" : dayShort(d)}
         stampTone={isTonight ? "tonight" : "day"}
-        note={info.note}
+        note={info.tileNote}
         lines={info.lines}
         favorite={meal.is_favorite}
         onOpen={() => setOpenDay(d)}
@@ -182,7 +191,7 @@ export function WeekScreen({ household }: { household: Household }) {
         }
       />
 
-      <div ref={boardRef}>
+      <div>
         {data && heroDay && tonightInfo && (
           <TonightHero
             day={heroDay}
@@ -237,9 +246,11 @@ export function WeekScreen({ household }: { household: Household }) {
               <Loading label="Loading this week" />
             </div>
           ) : (
-            <div className="grid grid-cols-2 items-start gap-2">
+            // Two stacked columns with no row gaps, like the mockup. The DOM is in week order (tonight first when it is
+            // a tile or an open row), so the columns read down the left, then down the right.
+            <div ref={boardRef} className="columns-2 gap-2">
               {cells.map((d) => (
-                <div key={d} data-testid={`day-row-${d}`} data-flip-key={d} className={d === tonight && !forDay(d) ? "col-span-2" : undefined}>
+                <div key={d} data-testid={`day-row-${d}`} data-flip-key={d} className={`mb-2 break-inside-avoid ${d === tonight && !forDay(d) ? "col-span-all" : ""}`}>
                   {tile(d)}
                 </div>
               ))}

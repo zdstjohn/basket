@@ -5,7 +5,7 @@ import { FOOD_JPG, routeFoodImages } from "./helpers/fixtures";
 import { clientFor } from "./helpers/db";
 import { addFavoriteToDay, addFromSearch as plan, readWeekBudget, seedDinnerOnDay, weekBudget } from "./helpers/flows-a";
 import { pinToday } from "./helpers/clock";
-import { setBudget } from "./helpers/flows-b";
+import { openItemSheet, openList, setBudget } from "./helpers/flows-b";
 import { getOrCreateWeek, setWeekMeal } from "../lib/db/queries/weeks";
 import { getMyHousehold } from "../lib/db/queries/household";
 import { listFavorites } from "../lib/db/queries/meals";
@@ -23,7 +23,7 @@ test.use({ serviceWorkers: "block" });
 
 // Tonight is Wednesday unless a test pins another day; no test below plans a Wednesday.
 test.beforeEach(async ({ page }) => {
-  await routeFoodImages(page, { wide: /wide\.jpg/, failing: /gone\.jpg/ });
+  await routeFoodImages(page, { wide: /wide\.jpg/, failing: /gone\.jpg/, tiny: /tiny\.jpg/ });
   await pinToday(page, "wed");
 });
 
@@ -503,8 +503,17 @@ test("long names and big numbers fit at 360 px", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   const email = await createHousehold(page);
   await seedDinnerOnDay(email, "thu", { name: "W".repeat(80), photoUrl: "https://images.example.test/small.jpg", width: 400 });
+  await addFromSearch(page, "fri", "tacos", "Chicken tacos · Allrecipes");
   await setBudget(page, { target: 10000, wiggle: 500 });
-  await page.goto("/week");
+  // A price typed on one row makes the week's total a long amount.
+  await openList(page);
+  const sheet = await openItemSheet(page, "Corn tortillas");
+  await sheet.getByRole("button", { name: "Set price" }).click();
+  await sheet.getByLabel("Price").fill("$1234.56");
+  await sheet.getByRole("button", { name: "Save price" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "This week" }).click();
+  await expect(page).toHaveURL(/\/week$/);
   const thu = page.getByTestId("day-row-thu");
   await expect(thu).toContainText("WWWW");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
@@ -512,8 +521,44 @@ test("long names and big numbers fit at 360 px", async ({ page }) => {
   expect(name.height).toBeLessThanOrEqual(41);
   const budget = page.getByRole("region", { name: "Budget" });
   await expect.poll(async () => (await readWeekBudget(page)).text).toContain("of $10,000");
+  await expect.poll(async () => (await readWeekBudget(page)).totalCents).toBeGreaterThanOrEqual(123456);
+  expect((await readWeekBudget(page)).text).toMatch(/\$1,\d{3}\.\d{2}/);
   const total = await boxOf(budget.locator("strong"));
   expect(total.height).toBeLessThan(24);
+});
+
+test("a width of 0 never makes a tiny photo the hero", async ({ page }) => {
+  const email = await createHousehold(page);
+  await seedDinnerOnDay(email, "wed", { name: "Tiny photo soup", photoUrl: "https://images.example.test/tiny.jpg", width: 0 });
+  await page.reload();
+  const tonight = page.getByTestId("day-row-wed");
+  await expect(tonight).toContainText("Tonight");
+  await expect(tonight).toContainText("Tiny photo soup");
+  await expect(page.locator("[data-tonight]")).toHaveCount(0);
+  await expect(tonight.locator("[data-photo-state='fallback']")).toBeVisible();
+});
+
+test("a hero whose photo fails to load falls back to a tile marked Tonight", async ({ page }) => {
+  const email = await createHousehold(page);
+  await seedDinnerOnDay(email, "wed", { name: "Gone photo soup", photoUrl: "https://images.example.test/gone.jpg", width: 800 });
+  await page.reload();
+  const tonight = page.getByTestId("day-row-wed");
+  await expect(tonight).toContainText("Gone photo soup");
+  await expect(page.locator("[data-tonight]")).toHaveCount(0);
+  await expect(tonight).toContainText("Tonight");
+  await expect(tonight.getByText("Add a photo")).toBeVisible();
+  await expect(tonight.locator("img")).toHaveCount(0);
+  expect((await boxOf(tonight)).width).toBeLessThan(page.viewportSize()!.width / 2 + 1);
+});
+
+test("a tile keeps what is different about the night, not the everyone line", async ({ page }) => {
+  const email = await createHousehold(page);
+  const { sb, mealId } = await seedDinnerOnDay(email, "thu", { name: "Leftover soup" });
+  await sb.from("week_meals").update({ servings_override: 5.8 }).eq("meal_id", mealId);
+  await page.reload();
+  const tile = page.getByTestId("day-row-thu");
+  await expect(tile).toContainText("+2 for leftovers");
+  await expect(tile).not.toContainText("Everyone vegetarian");
 });
 
 test("the pinboard reads in week order", async ({ page }) => {
