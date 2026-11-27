@@ -246,11 +246,11 @@ export function WeekScreen({ household }: { household: Household }) {
               <Loading label="Loading this week" />
             </div>
           ) : (
-            // Two stacked columns with no row gaps, like the mockup. The DOM is in week order (tonight first when it is
-            // a tile or an open row), so the columns read down the left, then down the right.
-            <div ref={boardRef} className="columns-2 gap-2">
+            // A two-column grid in week order, row by row (tonight first when it is a tile or an open row). Cells
+            // stretch to the tallest in their row, so a short tile or an Add row never leaves a hole beside a tall one.
+            <div ref={boardRef} className="grid grid-cols-2 items-stretch gap-2">
               {cells.map((d) => (
-                <div key={d} data-testid={`day-row-${d}`} data-flip-key={d} className={`mb-2 break-inside-avoid ${d === tonight && !forDay(d) ? "[column-span:all]" : ""}`}>
+                <div key={d} data-testid={`day-row-${d}`} data-flip-key={d} className={`flex ${d === tonight && !forDay(d) ? "col-span-2" : ""}`}>
                   {tile(d)}
                 </div>
               ))}

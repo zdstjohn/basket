@@ -9,7 +9,7 @@ export function OpenDay({ day, slot, tonight, wide }: { day: Day; slot: string; 
   return (
     <Link
       href={`/week/add?day=${day}&slot=${slot}`}
-      className={`flex items-center gap-2 rounded-md border-[1.5px] border-dashed border-line-strong px-2.5 text-ink no-underline bk-press ${
+      className={`flex w-full flex-1 items-center gap-2 rounded-md border-[1.5px] border-dashed border-line-strong px-2.5 text-ink no-underline bk-press ${
         wide ? "min-h-13" : "min-h-12"
       }`}
     >

@@ -75,7 +75,7 @@ export function MealTile({
       </span>
     </>
   );
-  const shell = "relative block w-full rounded-md bg-surface text-left text-ink";
+  const shell = "relative block w-full flex-1 rounded-md bg-surface text-left text-ink";
   return onOpen ? (
     <button type="button" onClick={onOpen} className={`${shell} bk-press`}>
       {body}

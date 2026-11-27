@@ -567,7 +567,7 @@ test("the pinboard reads in week order", async ({ page }) => {
   await seedDinnerOnDay(email, "fri", { name: "Friday soup" });
   const order = () => page.locator('[data-testid^="day-row-"]').evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.slice(8)));
 
-  // Tonight is the first day of the week: the order is the week's.
+  // Tonight is the first day of the week: the order is the week's (a row-by-row grid, so DOM order is reading order).
   await pinToday(page, "sun");
   await page.reload();
   await expect(page.locator('[data-testid^="day-row-"]')).toHaveCount(7);
@@ -578,4 +578,27 @@ test("the pinboard reads in week order", async ({ page }) => {
   await page.reload();
   await expect(page.locator('[data-testid^="day-row-"]')).toHaveCount(7);
   expect(await order()).toEqual(["wed", "sun", "mon", "tue", "thu", "fri", "sat"]);
+});
+
+test("a tile and the Add row beside it are as tall as each other, and the days read left to right", async ({ page }) => {
+  const email = await createHousehold(page);
+  await seedDinnerOnDay(email, "mon", { name: "A rather long name for a Monday soup that wraps", photoUrl: "https://images.example.test/small.jpg", width: 400 });
+  await seedDinnerOnDay(email, "thu", { name: "Thursday soup" });
+  await pinToday(page, "sun");
+  await page.reload();
+  await expect(page.locator('[data-testid^="day-row-"]')).toHaveCount(7);
+
+  const mon = await boxOf(page.getByTestId("day-row-mon"));
+  const tue = await boxOf(page.getByTestId("day-row-tue"));
+  expect(Math.abs(mon.height - tue.height)).toBeLessThan(1);
+  expect(Math.abs(mon.y - tue.y)).toBeLessThan(1);
+  expect(mon.x).toBeLessThan(tue.x);
+  // The Add row fills its cell, so there is no hole under it.
+  const add = await boxOf(page.getByTestId("day-row-tue").getByRole("link"));
+  expect(Math.abs(add.height - tue.height)).toBeLessThan(1);
+
+  const days = ["mon", "tue", "wed", "thu", "fri", "sat"];
+  const boxes = await Promise.all(days.map(async (d) => ({ d, ...(await boxOf(page.getByTestId(`day-row-${d}`))) })));
+  const reading = [...boxes].sort((a, b) => Math.round(a.y) - Math.round(b.y) || a.x - b.x).map((b) => b.d);
+  expect(reading).toEqual(days);
 });
