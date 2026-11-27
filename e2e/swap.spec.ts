@@ -192,30 +192,25 @@ test("the choice is saved at the tap, a second tap during the exit does nothing,
   const pickName = (await pick.locator(".line-clamp-2").innerText()).trim();
   const others = sheet.getByTestId("swap-option").filter({ hasNotText: pickName });
 
-  // Note when the first write leaves the page and when the dialog is gone.
+  // Note when the first write leaves the page (clock of the test) and when the dialog is gone (clock of the page).
+  let write: number | null = null;
+  page.on("request", (r) => {
+    if (r.method() !== "GET" && r.url().includes("/rest/v1/") && write === null) write = Date.now();
+  });
   await page.evaluate(() => {
-    const w = window as unknown as { __write?: number; __gone?: number };
-    const orig = window.fetch.bind(window);
-    window.fetch = (input, init) => {
-      const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-      if (method !== "GET" && w.__write === undefined) w.__write = performance.now();
-      return orig(input, init);
-    };
+    const w = window as unknown as { __gone?: number };
     new MutationObserver(() => {
-      if (!document.querySelector("dialog[open]") && w.__gone === undefined) w.__gone = performance.now();
+      if (!document.querySelector("dialog[open]") && w.__gone === undefined) w.__gone = performance.timeOrigin + performance.now();
     }).observe(document.body, { childList: true, subtree: true, attributes: true });
   });
   await pick.click();
   // A second tap while the sheet leaves (the panel is inert and the rows are disabled): nothing happens.
   await others.first().evaluate((el) => (el as HTMLElement).click());
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  const times = await page.evaluate(() => {
-    const w = window as unknown as { __write?: number; __gone?: number };
-    return { write: w.__write ?? null, gone: w.__gone ?? null };
-  });
-  expect(times.write, "no write was made").not.toBeNull();
-  expect(times.gone, "the dialog never closed").not.toBeNull();
-  expect(times.write!, "the choice was written before the dialog was gone").toBeLessThan(times.gone!);
+  const gone = await page.evaluate(() => (window as unknown as { __gone?: number }).__gone ?? null);
+  expect(write, "no write was made").not.toBeNull();
+  expect(gone, "the dialog never closed").not.toBeNull();
+  expect(write!, "the choice was written before the dialog was gone").toBeLessThan(gone!);
   await expect(beans).toContainText(pickName);
   // The first tap won, and focus is back on the row's button.
   await expect(beans.getByRole("button", { name: /Black beans/ })).toBeFocused();
