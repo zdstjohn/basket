@@ -62,6 +62,12 @@ function SheetCloseButton({ variant, children }: { variant: "main" | "ghost"; ch
   );
 }
 
+/** The connect address is a route handler that redirects to Fred Meyer's sign-in, so it needs a full page load. */
+function connectAgain() {
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- an API route, not a page
+  location.assign(CONNECT_HREF);
+}
+
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
 export function ReviewScreen({
@@ -280,7 +286,7 @@ export function ReviewScreen({
       <ScreenHeader title="Review your Fred Meyer cart" size="title" back={{ href: "/list", label: "Back to list" }} />
 
       <div className="bk-gutter flex flex-col gap-2">
-        {fmNotice && <Banner>{FM_NOTICES[fmNotice].replace(/'/g, "’")}</Banner>}
+        {fmNotice && <Banner>{curly(FM_NOTICES[fmNotice])}</Banner>}
         {list.offline && <Banner>Offline, showing your last list</Banner>}
         {problem && <ErrorBanner message={problem} />}
       </div>
@@ -472,7 +478,7 @@ export function ReviewScreen({
                 <ErrorBanner
                   message={
                     outcome.rejected.length > 0
-                      ? `${curly(SENT_CHECK_ADVICE)} Not added: ${outcome.rejected.map((r) => r.name).join(", ")}.`
+                      ? `${SENT_CHECK_ADVICE} Not added: ${outcome.rejected.map((r) => r.name).join(", ")}.`
                       : SENT_CHECK_ADVICE
                   }
                 />
@@ -481,7 +487,7 @@ export function ReviewScreen({
                 <Banner role={null}>A send for this list is already in progress. Wait a moment, then check the Fred Meyer app.</Banner>
               )}
               {outcome.kind === "already_sent" && <Banner role={null}>Everything here is already in your cart.</Banner>}
-              {outcome.kind === "not_connected" && <ErrorBanner message="Connect Fred Meyer again." />}
+              {outcome.kind === "not_connected" && <ErrorBanner message="Connect Fred Meyer again." actionLabel="Connect Fred Meyer" onAction={connectAgain} />}
               {outcome.kind === "rejected" && <ErrorBanner message="Fred Meyer wouldn’t take these items. Try swapping them." />}
               {outcome.kind === "too_many" && <ErrorBanner message="You’ve sent this list a lot today. Try again tomorrow." />}
               {outcome.kind === "busy" && <ErrorBanner message="Fred Meyer is busy. Try again in a minute." />}

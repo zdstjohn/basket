@@ -74,8 +74,8 @@ export function ReviewLine({
         <span data-testid="review-count" className="inline-flex items-center gap-1 text-small text-ink">
           <Stepper
             value={line.quantity}
-            min={min}
-            max={max}
+            min={busy ? line.quantity : min}
+            max={busy ? line.quantity : max}
             fewerLabel={`One fewer ${line.name}`}
             moreLabel={`One more ${line.name}`}
             onChange={(n) => {
