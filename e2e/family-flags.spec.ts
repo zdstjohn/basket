@@ -173,6 +173,8 @@ test("a won't-eat can be left out or swapped for one person, and the list follow
   const sheet = page.getByRole("dialog", { name: "White bean and mushroom soup" });
   await expect(sheet.getByTestId("dislike-box")).toContainText("Mushrooms cut to 4 people");
   await sheet.getByTestId("dislike-box").getByRole("button", { name: "Change" }).click();
+  // Wait for the saved change to clear before leaving the sheet.
+  await expect(sheet.getByTestId("dislike-box")).toHaveAttribute("data-state", "ask");
   await sheet.getByRole("button", { name: "Keep it as is" }).click();
   await expect(sheet.getByTestId("dislike-box")).toHaveCount(0);
   await sheet.getByRole("button", { name: "Close" }).click();
