@@ -26,10 +26,12 @@ export function StaplesSection({ household }: { household: Household }) {
   const [staples, setStaples] = useState<Staple[] | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setStaples(await listStaples(sb, household.id));
+      setError(null); // a good load clears a "couldn't load" left by an earlier failure
     } catch {
       setError("We couldn't load your staples.");
     }
@@ -41,13 +43,14 @@ export function StaplesSection({ household }: { household: Household }) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!draft) return;
+    if (!draft || saving) return;
     const amount = Number(draft.amount);
     if (!draft.name.trim() || !(amount > 0)) {
       setError("A staple needs a name and an amount above zero.");
       return;
     }
     setError(null);
+    setSaving(true);
     try {
       await saveStaple(sb, household.id, {
         id: draft.id,
@@ -61,6 +64,8 @@ export function StaplesSection({ household }: { household: Household }) {
       await load();
     } catch {
       setError("That didn't save. Try again.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -69,8 +74,8 @@ export function StaplesSection({ household }: { household: Household }) {
     try {
       await setStapleActive(sb, s.id, active);
     } catch {
+      await load(); // put the switch back where it was, then say so (a good load clears errors)
       setError("That didn't save. Try again.");
-      await load();
     }
   }
 
@@ -147,7 +152,7 @@ export function StaplesSection({ household }: { household: Household }) {
                   ))}
                 </select>
               </label>
-              <button type="submit" className={primaryButton}>
+              <button type="submit" disabled={saving} className={primaryButton}>
                 Save staple
               </button>
               <div className="flex gap-2">

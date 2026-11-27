@@ -5,6 +5,7 @@ import { AlwaysHaveSection } from "@/components/household/AlwaysHaveSection";
 import { SignOutButton } from "@/components/household/SignOutButton";
 import { StaplesSection } from "@/components/household/StaplesSection";
 import { StoresSection } from "@/components/household/StoresSection";
+import { personLabel } from "@/lib/domain/flags";
 import { PersonRow } from "@/components/PersonRow";
 import { StorePicker, type StoreChoice } from "@/components/StorePicker";
 import { createBrowserClient } from "@/lib/db/client";
@@ -21,7 +22,7 @@ import type { Person } from "@/lib/domain/types";
 import { focusRing, pillButton, textInput } from "@/lib/ui";
 import { PersonEditor, type PersonDraft } from "./PersonEditor";
 
-const NEW_PERSON: PersonDraft = { name: "", age: 0, diet: "none", appetite: 1, dislikes: [] };
+const NEW_PERSON: PersonDraft = { name: "", age: 0, diet: "none", appetite: 1, dislikes: [], allergies: [] };
 
 const STORES = [
   { label: "Fred Meyer", detail: "Pickup and delivery" },
@@ -158,6 +159,7 @@ export function HouseholdScreen({
                   initial={p}
                   onSave={savePerson}
                   onDelete={() => removePerson(p.id)}
+                  deleteLabel={personLabel(p, people)}
                   onCancel={() => setEditing(null)}
                 />
               )}
@@ -173,6 +175,9 @@ export function HouseholdScreen({
             </li>
           )}
         </ul>
+        <p className="mt-2 text-[13px] text-muted">
+          Tap a person to change what they won’t eat or are allergic to.
+        </p>
       </section>
 
       <section aria-label="Budget" className="mx-5 mt-4">
