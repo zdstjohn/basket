@@ -17,7 +17,7 @@ import type { IngredientLine, Meal, Person, Quantity } from "@/lib/domain/types"
 import { isVague } from "@/lib/domain/units";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
-import { foldItemState } from "@/lib/list/state";
+import { foldItemState, mergeFlags } from "@/lib/list/state";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import {
   enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
@@ -74,7 +74,6 @@ const dueForShelfPrice = (row: PriceRow | undefined): boolean =>
     (row.source === "kroger" && !(Date.now() - Date.parse(row.updatedAt ?? "") < KROGER_PRICE_MAX_AGE_MS)));
 
 const RETRY_OFFLINE_MS = 5000;
-const NO_FLAGS: ItemState = { have_it: false, checked: false, outside_budget: false };
 
 export function buildList(raw: ListInputs) {
   const prices = toPriceMap(raw.prices);
@@ -284,9 +283,8 @@ export function useWeekList(household: Household, weekId: string | null) {
       // Writes go to the food's own key and carry every flag, not just the patch: the food may still
       // have its flags on old food#kind rows, and the food row wins whole once it exists.
       const current = rawRef.current;
-      const folded = current ? foldItemState(current.itemState) : {};
-      const merged: Record<string, ItemState> = {};
-      for (const k of itemKeys) merged[k] = { ...(folded[k] ?? NO_FLAGS), ...patch };
+      // Full-flag writes are last-writer-wins per food across phones.
+      const merged = mergeFlags(current?.itemState ?? {}, itemKeys, patch);
       if (current) {
         const next = { ...current, itemState: { ...current.itemState, ...merged } };
         rawRef.current = next;

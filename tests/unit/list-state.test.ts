@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { foldItemState } from '@/lib/list/state';
+import { foldItemState, mergeFlags } from '@/lib/list/state';
 import { buildList, type ListInputs } from '@/lib/useWeekList';
 import type { ItemState } from '@/lib/db/queries/list';
 
@@ -59,5 +59,28 @@ describe('buildList reads old-key rows', () => {
     expect(built.items.map((i) => i.key)).toEqual(['olive oil']);
     expect(built.checked.has('olive oil')).toBe(true);
     expect(built.items[0].haveIt).toBe(true);
+  });
+});
+
+describe('mergeFlags', () => {
+  it('writes the food key with the old-row flags kept and the patch on top', () => {
+    expect(mergeFlags({ 'milk#volume': flags({ outside_budget: true }) }, ['milk'], { checked: true })).toEqual({
+      milk: flags({ outside_budget: true, checked: true }),
+    });
+  });
+
+  it('Undo keeps the other flags: unticking leaves have-it and outside-budget as they were', () => {
+    const state = {
+      'milk#volume': flags({ have_it: true, outside_budget: true }),
+      'milk#count': flags({ checked: true }),
+    };
+    expect(mergeFlags(state, ['milk'], { checked: false })).toEqual({
+      milk: flags({ have_it: true, outside_budget: true }),
+    });
+  });
+
+  it('a food-keyed row wins whole over old rows, and unknown foods start clear', () => {
+    const out = mergeFlags({ 'rice#mass': flags({ have_it: true }), rice: flags() }, ['rice', 'beans'], { checked: true });
+    expect(out).toEqual({ rice: flags({ checked: true }), beans: flags({ checked: true }) });
   });
 });

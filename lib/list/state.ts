@@ -29,3 +29,20 @@ export function foldItemState(state: Record<string, ItemState>): Record<string, 
   for (const [food, flags] of Object.entries(old)) if (!(food in out)) out[food] = flags;
   return out;
 }
+
+const NO_FLAGS: ItemState = { have_it: false, checked: false, outside_budget: false };
+
+/**
+ * The flags to write for these foods after a tap: each food's folded flags (so flags that still sit on
+ * old food#kind rows are kept) with the patch on top. The result is keyed by the food.
+ */
+export function mergeFlags(
+  state: Record<string, ItemState>,
+  keys: string[],
+  patch: Partial<ItemState>,
+): Record<string, ItemState> {
+  const folded = foldItemState(state);
+  const out: Record<string, ItemState> = {};
+  for (const k of keys) out[k] = { ...(folded[k] ?? NO_FLAGS), ...patch };
+  return out;
+}
