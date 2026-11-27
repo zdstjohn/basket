@@ -1,5 +1,5 @@
 import type { ListItem } from "@/lib/domain/list";
-import { formatQuantity } from "@/lib/domain/units";
+import { formatNeed } from "@/lib/domain/units";
 import { formatPrice, type PriceRow, type PriceSource } from "@/lib/list/prices";
 import { focusRing } from "@/lib/ui";
 
@@ -65,7 +65,7 @@ export function ListRow({
         <span className="min-w-0 flex-1">
           <span className={`block text-sm font-semibold ${checked ? "line-through" : ""}`}>{name}</span>
           <span className="mt-px block text-xs text-muted">
-            {formatQuantity(item.qty)}
+            {formatNeed(item.parts)}
             {item.alwaysHave ? " · always have" : ""}
             {item.outsideBudget && !skipped ? " · outside budget" : ""}
           </span>

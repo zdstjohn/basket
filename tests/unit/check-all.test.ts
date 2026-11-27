@@ -4,7 +4,7 @@ import { enqueuePatches, loadQueue, enqueuePatch } from '@/lib/list/offline';
 import type { ListItem, Store } from '@/lib/domain/list';
 
 const item = (key: string, store: Store, o: Partial<ListItem> = {}): ListItem => ({
-  key, canonical: key, qty: { kind: 'count', amount: 1, base: 'each' }, role: 'pantry', store,
+  key, canonical: key, qty: { kind: 'count', amount: 1, base: 'each' }, parts: [{ kind: 'count', amount: 1, base: 'each' }], role: 'pantry', store,
   estimateCents: null, haveIt: false, alwaysHave: false, outsideBudget: false, sources: [], ...o,
 });
 

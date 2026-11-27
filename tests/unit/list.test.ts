@@ -3,9 +3,9 @@ import { buildShoppingList, listTotals } from '@/lib/domain/list';
 import type { ListItem, Store } from '@/lib/domain/list';
 import type { ScaledLine } from '@/lib/domain/scaling';
 import type { IngredientLine, Quantity, Role } from '@/lib/domain/types';
-import { toQuantity } from '@/lib/domain/units';
+import { formatQuantity, quantityOrCount } from '@/lib/domain/units';
 
-const q = (amount: number, unit: string): Quantity => toQuantity(amount, unit)!;
+const q = (amount: number, unit: string): Quantity => quantityOrCount(amount, unit);
 const sl = (canonical: string, qty: Quantity, source: string, role: Role = 'other'): ScaledLine => ({
   canonical,
   qty,
@@ -34,20 +34,103 @@ describe('buildShoppingList', () => {
     expect(items[0].sources).toEqual(['A', 'B', 'Staples']);
   });
 
-  it('keeps different kinds apart with typed keys', () => {
+  it('puts one food in one row, with a part for each kind of amount', () => {
     const items = buildShoppingList({
       ...base,
       scaled: [sl('onion', q(1, 'each'), 'A'), sl('onion', q(200, 'g'), 'B')],
     });
-    expect(items.map((i) => i.key).sort()).toEqual(['onion#count', 'onion#mass']);
+    expect(items).toHaveLength(1);
+    expect(items[0].key).toBe('onion');
+    expect(items[0].parts.map(formatQuantity)).toEqual(['1', '7.1 oz']);
+    expect(items[0].qty).toMatchObject({ kind: 'count', amount: 1 });
   });
 
-  it('keys count units separately', () => {
+  it('keeps count units as separate parts of the same row', () => {
     const items = buildShoppingList({
       ...base,
       scaled: [sl('black beans', q(0.25, 'can'), 'A'), sl('black beans', q(1, 'each'), 'B')],
     });
-    expect(items.map((i) => i.key).sort()).toEqual(['black beans#count', 'black beans#count:can']);
+    expect(items).toHaveLength(1);
+    expect(items[0].key).toBe('black beans');
+    expect(items[0].parts.map(formatQuantity)).toEqual(['1', '1 can']);
+  });
+
+  it('orders parts: plain counts, named counts, mass, volume, vague last', () => {
+    const items = buildShoppingList({
+      ...base,
+      scaled: [
+        sl('x', q(1, 'to taste'), 'A'),
+        sl('x', q(1, 'cup'), 'A'),
+        sl('x', q(100, 'g'), 'A'),
+        sl('x', q(2, 'jar'), 'A'),
+        sl('x', q(1, 'can'), 'A'),
+        sl('x', q(3, ''), 'A'),
+      ],
+    });
+    expect(items[0].parts.map(formatQuantity)).toEqual(['3', '1 can', '2 jars', '3.5 oz', '1 cup', '1 to taste']);
+  });
+
+  it('joins an amount and a "to taste" from two meals into one row', () => {
+    const items = buildShoppingList({
+      ...base,
+      scaled: [sl('kosher salt', q(2.4, 'tsp'), 'Meal A'), sl('kosher salt', q(1, 'to taste'), 'Meal B')],
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].key).toBe('kosher salt');
+    expect(items[0].parts.map(formatQuantity)).toEqual(['2.4 tsp', '1 to taste']);
+    expect(items[0].qty.kind).toBe('volume');
+    expect(items[0].sources).toEqual(['Meal A', 'Meal B']);
+  });
+
+  it('uses the first part when every part is vague', () => {
+    const items = buildShoppingList({ ...base, scaled: [sl('pepper', q(1, 'to taste'), 'A')] });
+    expect(items[0].qty).toMatchObject({ countUnit: 'to taste' });
+  });
+
+  it('prices a merged row as the sum of its priced parts, or null when none is priced', () => {
+    const priced = buildShoppingList({
+      ...base,
+      scaled: [sl('kosher salt', q(2.4, 'tsp'), 'A'), sl('kosher salt', q(1, 'to taste'), 'B')],
+      estimateFor: (_c, qty) => (qty.kind === 'volume' ? 50 : 299),
+    });
+    expect(priced[0].estimateCents).toBe(349);
+    const none = buildShoppingList({
+      ...base,
+      scaled: [sl('kosher salt', q(2.4, 'tsp'), 'A'), sl('kosher salt', q(1, 'to taste'), 'B')],
+      estimateFor: () => null,
+    });
+    expect(none[0].estimateCents).toBeNull();
+    const one = buildShoppingList({
+      ...base,
+      scaled: [sl('kosher salt', q(2.4, 'tsp'), 'A'), sl('kosher salt', q(1, 'to taste'), 'B')],
+      estimateFor: (_c, qty) => (qty.kind === 'volume' ? 50 : null),
+    });
+    expect(one[0].estimateCents).toBe(50);
+  });
+
+  it('a typed price for the row alone is the whole total; guesses for other parts are not added', () => {
+    const calls: string[] = [];
+    const items = buildShoppingList({
+      ...base,
+      scaled: [sl('onion', q(1, 'each'), 'A'), sl('onion', q(200, 'g'), 'B')],
+      estimateFor: (_c, qty) => (qty.kind === 'count' ? 100 : 250),
+      userCents: (_c, qty) => {
+        calls.push(qty.kind);
+        return qty.kind === 'count' ? 120 : null;
+      },
+    });
+    expect(items[0].estimateCents).toBe(120);
+    expect(calls).toEqual(['count']);
+  });
+
+  it('falls back to the parts when the typed price is for another kind', () => {
+    const items = buildShoppingList({
+      ...base,
+      scaled: [sl('onion', q(1, 'each'), 'A'), sl('onion', q(200, 'g'), 'B')],
+      estimateFor: (_c, qty) => (qty.kind === 'count' ? 100 : 250),
+      userCents: (_c, qty) => (qty.kind === 'mass' ? 999 : null),
+    });
+    expect(items[0].estimateCents).toBe(350);
   });
 
   it('rounds counts up with tolerance, not mass', () => {
@@ -97,17 +180,23 @@ describe('buildShoppingList', () => {
     expect(items[0].alwaysHave).toBe(false);
   });
 
-  it('applies haveIt and outsideBudget by item key', () => {
+  it('applies haveIt and outsideBudget by food', () => {
     const items = buildShoppingList({
       ...base,
-      haveIt: new Set(['onion#count']),
-      outsideBudget: new Set(['onion#mass']),
-      scaled: [sl('onion', q(1, 'each'), 'A'), sl('onion', q(200, 'g'), 'A')],
+      haveIt: new Set(['onion', 'kosher salt']),
+      outsideBudget: new Set(['garlic']),
+      scaled: [
+        sl('onion', q(1, 'each'), 'A'),
+        sl('onion', q(200, 'g'), 'A'),
+        sl('garlic', q(1, 'head'), 'A'),
+        sl('kosher salt', q(2.4, 'tsp'), 'A'),
+        sl('kosher salt', q(1, 'to taste'), 'B'),
+      ],
     });
-    const c = items.find((i) => i.key === 'onion#count')!;
-    const m = items.find((i) => i.key === 'onion#mass')!;
-    expect(c).toMatchObject({ haveIt: true, outsideBudget: false });
-    expect(m).toMatchObject({ haveIt: false, outsideBudget: true });
+    const by = (k: string) => items.find((i) => i.key === k)!;
+    expect(by('onion')).toMatchObject({ haveIt: true, outsideBudget: false });
+    expect(by('garlic')).toMatchObject({ haveIt: false, outsideBudget: true });
+    expect(by('kosher salt').haveIt).toBe(true);
   });
 
   it('keeps unknown-unit staples as counts', () => {
@@ -116,7 +205,7 @@ describe('buildShoppingList', () => {
       scaled: [],
       staples: [{ canonical: 'Thyme', amount: 2, unit: 'Sprigs', role: 'produce' }],
     });
-    expect(items[0].key).toBe('thyme#count:sprigs');
+    expect(items[0].key).toBe('thyme');
     expect(items[0].qty.amount).toBe(2);
     expect(items[0].sources).toEqual(['Staples']);
   });
@@ -156,9 +245,10 @@ describe('buildShoppingList', () => {
 });
 
 const item = (over: Partial<ListItem>): ListItem => ({
-  key: 'x#count',
+  key: 'x',
   canonical: 'x',
   qty: { amount: 1, kind: 'count', base: 'each' },
+  parts: [{ amount: 1, kind: 'count', base: 'each' }],
   role: 'other',
   store: 'fred_meyer',
   estimateCents: 100,

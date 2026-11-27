@@ -1,13 +1,17 @@
 import type { ScaledLine } from './scaling';
 import type { IngredientLine, Quantity, Role } from './types';
-import { addQuantities, quantityOrCount } from './units';
+import { addQuantities, isVague, quantityOrCount } from './units';
 
 export type Store = 'fred_meyer' | 'amazon' | 'costco';
 
 export interface ListItem {
+  /** The food name (`canonical`): one row per food, and the key of its have-it / got-it flags. */
   key: string;
   canonical: string;
+  /** The first part that is not vague, else the first part. */
   qty: Quantity;
+  /** Everything the week needs of this food: plain counts, named counts, mass, volume, then vague notes. */
+  parts: Quantity[];
   role: Role;
   store: Store;
   estimateCents: number | null;
@@ -24,10 +28,19 @@ const ROLES: Role[] = [
 
 const norm = (s: string): string => s.trim().toLowerCase();
 
-const keyFor = (canonical: string, q: Quantity): string =>
-  q.kind === 'count' && q.countUnit
-    ? `${canonical}#count:${q.countUnit}`
-    : `${canonical}#${q.kind}`;
+/** Same-kind amounts add up under one of these. */
+const kindKey = (q: Quantity): string =>
+  q.kind === 'count' ? `count:${q.countUnit ?? ''}` : q.kind;
+
+/** Plain counts, named counts (by name), mass, volume; vague notes last. */
+function partRank(q: Quantity): number {
+  if (isVague(q)) return 4;
+  if (q.kind === 'count') return q.countUnit ? 1 : 0;
+  return q.kind === 'mass' ? 2 : 3;
+}
+
+const comparePart = (a: Quantity, b: Quantity): number =>
+  partRank(a) - partRank(b) || cmp(a.countUnit ?? '', b.countUnit ?? '');
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -39,6 +52,8 @@ export function buildShoppingList(input: {
   outsideBudget: Set<string>;
   storeFor(canonical: string, role: Role): Store;
   estimateFor(canonical: string, qty: Quantity, store: Store): number | null;
+  /** The total you typed for this much of the food (not a guess), or null. */
+  userCents?(canonical: string, qty: Quantity, store: Store): number | null;
 }): ListItem[] {
   const lines: ScaledLine[] = [
     ...input.scaled,
@@ -50,36 +65,54 @@ export function buildShoppingList(input: {
     })),
   ];
 
-  const merged = new Map<string, { canonical: string; qty: Quantity; role: Role; sources: string[] }>();
+  const merged = new Map<
+    string,
+    { canonical: string; parts: Map<string, Quantity>; role: Role; sources: string[] }
+  >();
   for (const line of lines) {
     const canonical = norm(line.canonical);
-    const key = keyFor(canonical, line.qty);
-    const existing = merged.get(key);
+    const existing = merged.get(canonical);
     if (!existing) {
-      merged.set(key, { canonical, qty: line.qty, role: line.role, sources: [...new Set(line.sources)] });
+      merged.set(canonical, {
+        canonical,
+        parts: new Map([[kindKey(line.qty), line.qty]]),
+        role: line.role,
+        sources: [...new Set(line.sources)],
+      });
       continue;
     }
-    // Same key guarantees compatible quantities.
-    existing.qty = addQuantities(existing.qty, line.qty) ?? existing.qty;
+    const k = kindKey(line.qty);
+    const have = existing.parts.get(k);
+    // Same kind key guarantees compatible quantities.
+    existing.parts.set(k, have ? (addQuantities(have, line.qty) ?? have) : line.qty);
     for (const s of line.sources) if (!existing.sources.includes(s)) existing.sources.push(s);
   }
 
   const always = new Set(input.alwaysHave.map(norm));
   const items: ListItem[] = [];
   for (const [key, m] of merged) {
-    const qty: Quantity =
-      m.qty.kind === 'count'
-        ? { ...m.qty, amount: Math.ceil(m.qty.amount - 1e-9) + 0 }
-        : m.qty;
+    const parts = [...m.parts.values()]
+      .map((p): Quantity => (p.kind === 'count' ? { ...p, amount: Math.ceil(p.amount - 1e-9) + 0 } : p))
+      .sort(comparePart);
+    const qty = parts.find((p) => !isVague(p)) ?? parts[0];
     const store = input.storeFor(m.canonical, m.role);
     const isAlways = always.has(m.canonical);
+    // A price you typed is the total for the whole row; otherwise add up the parts that have a price.
+    let estimateCents = input.userCents?.(m.canonical, qty, store) ?? null;
+    if (estimateCents === null) {
+      for (const p of parts) {
+        const c = input.estimateFor(m.canonical, p, store);
+        if (c !== null) estimateCents = (estimateCents ?? 0) + c;
+      }
+    }
     items.push({
       key,
       canonical: m.canonical,
       qty,
+      parts,
       role: m.role,
       store,
-      estimateCents: input.estimateFor(m.canonical, qty, store),
+      estimateCents,
       haveIt: isAlways || input.haveIt.has(key),
       alwaysHave: isAlways,
       outsideBudget: input.outsideBudget.has(key),

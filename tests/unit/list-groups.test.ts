@@ -3,7 +3,7 @@ import { GROUPS, groupFor, groupItems } from "@/lib/list/groups";
 import type { ListItem } from "@/lib/domain/list";
 
 const item = (canonical: string, role: ListItem['role']): ListItem => ({
-  key: `${canonical}#count`, canonical, qty: { amount: 1, kind: 'count', base: 'each' }, role,
+  key: canonical, canonical, qty: { amount: 1, kind: 'count', base: 'each' }, parts: [{ amount: 1, kind: 'count', base: 'each' }], role,
   store: 'fred_meyer', estimateCents: 100, haveIt: false, alwaysHave: false, outsideBudget: false, sources: [],
 });
 

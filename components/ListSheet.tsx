@@ -5,7 +5,7 @@ import { Sheet } from "@/components/Sheet";
 import { displayName } from "@/components/ListRow";
 import type { ListItem, Store } from "@/lib/domain/list";
 import { parseMoneyToCents } from "@/lib/domain/money-input";
-import { formatQuantity } from "@/lib/domain/units";
+import { formatNeed } from "@/lib/domain/units";
 import { STORES, STORE_NAMES } from "@/lib/list/prices";
 import { focusRing, textInput } from "@/lib/ui";
 
@@ -56,7 +56,7 @@ export function ListSheet({
         <div className="px-3.5 pb-2">
           <h2 className="text-lg font-semibold">{name}</h2>
           <p className="text-[13px] text-muted">
-            {formatQuantity(item.qty)} · {STORE_NAMES[item.store]}
+            {formatNeed(item.parts)} · {STORE_NAMES[item.store]}
           </p>
         </div>
 
@@ -96,7 +96,7 @@ export function ListSheet({
                 className={textInput}
               />
             </label>
-            <p className="text-xs text-muted">The total for {formatQuantity(item.qty)}.</p>
+            <p className="text-xs text-muted">The total for {formatNeed(item.parts)}.</p>
             {error && (
               <p role="alert" className="text-[13px] font-medium text-[#A6261B]">
                 {error}

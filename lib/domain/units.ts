@@ -116,3 +116,10 @@ const VAGUE = new Set([
 export function isVague(q: Quantity): boolean {
   return q.kind === 'count' && q.countUnit !== undefined && VAGUE.has(q.countUnit);
 }
+
+/** What a row needs, in kitchen words: "2.4 tsp + to taste", "1 + 7.1 oz". A lone "1 to taste" reads as "to taste". */
+export function formatNeed(parts: Quantity[]): string {
+  return parts
+    .map((p) => (isVague(p) && p.amount === 1 && p.countUnit ? p.countUnit : formatQuantity(p)))
+    .join(' + ');
+}

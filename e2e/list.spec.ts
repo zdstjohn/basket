@@ -184,6 +184,34 @@ test("stores and prices: a move sticks; your own price replaces the estimate", a
   await expect(row(page, "Corn tortillas").getByText("estimate", { exact: true })).toHaveCount(0);
 });
 
+test("list: one food, one row, with the amounts joined; ticks and untick stick", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page); // 1 onion in the dinner
+
+  // A staple of the same food in a different unit joins the dinner's onion instead of making a second row.
+  await page.goto("/household");
+  const staples = page.getByRole("region", { name: "Staples" });
+  await staples.getByRole("button", { name: "+ Add staple" }).click();
+  await staples.getByLabel("Name").fill("Yellow onion");
+  await staples.getByLabel("Amount").fill("200");
+  await staples.getByLabel("Unit").fill("g");
+  await staples.getByLabel("Type").selectOption({ label: "Produce" });
+  await staples.getByRole("button", { name: "Save staple" }).click();
+  await expect(staples.getByTestId("staple-row").filter({ hasText: "Yellow onion" })).toBeVisible();
+  await openListFromHousehold(page);
+
+  await expect(page.getByTestId("list-row").filter({ hasText: "Yellow onion" })).toHaveCount(1);
+  await expect(row(page, "Yellow onion")).toContainText("1 + 7.1 oz");
+
+  await page.getByRole("checkbox", { name: "Got Yellow onion" }).check();
+  await page.reload();
+  await expect(page.getByRole("checkbox", { name: "Got Yellow onion" })).toBeChecked();
+  await page.getByRole("checkbox", { name: "Got Yellow onion" }).uncheck();
+  await page.reload();
+  await expect(page.getByRole("checkbox", { name: "Got Yellow onion" })).not.toBeChecked();
+  await expect(page.getByTestId("list-row").filter({ hasText: "Yellow onion" })).toHaveCount(1);
+});
+
 test("two phones: a staple is checked off live, and the list works offline", async ({ page, browser, context }, testInfo) => {
   const shots = `e2e/screenshots/${testInfo.project.name}`;
   const email = await createHousehold(page);
@@ -235,7 +263,7 @@ test("two phones: a staple is checked off live, and the list works offline", asy
 
   const sb = await clientFor(email);
   await expect
-    .poll(async () => (await sb.from("week_item_state").select("checked").eq("item_key", "milk#volume")).data?.[0]?.checked)
+    .poll(async () => (await sb.from("week_item_state").select("checked").eq("item_key", "milk")).data?.[0]?.checked)
     .toBe(true);
   await expect(b.getByRole("checkbox", { name: "Got Milk" })).toBeChecked({ timeout: 10_000 });
   await otherContext.close();

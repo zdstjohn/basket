@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(146);
+select plan(149);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -352,6 +352,31 @@ reset role;
 -- ---------------------------------------------------------------------------
 select is((select file_size_limit from storage.buckets where id = 'meal-photos'), 5242880::bigint, 'meal-photos is capped at 5 MB');
 select is((select allowed_mime_types from storage.buckets where id = 'meal-photos'), array['image/jpeg'], 'meal-photos accepts only JPEG');
+
+-- Migration 0007: old 'food#kind' flag rows fold into one row per food (the statement is repeated here,
+-- since migrations have already run by now).
+reset role;
+insert into public.week_item_state (household_id, week_id, item_key, have_it) values
+  ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'beans#mass', true);
+insert into public.week_item_state (household_id, week_id, item_key, checked) values
+  ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'beans#count:can', true);
+with old as (
+  delete from public.week_item_state
+  where item_key ~ '#(mass|volume|count(:.*)?)$'
+  returning household_id, week_id,
+            regexp_replace(item_key, '#(mass|volume|count(:.*)?)$', '') as food,
+            have_it, checked, outside_budget
+), folded as (
+  select household_id, week_id, food,
+         bool_or(have_it) as have_it, bool_or(checked) as checked, bool_or(outside_budget) as outside_budget
+  from old group by household_id, week_id, food
+)
+insert into public.week_item_state (household_id, week_id, item_key, have_it, checked, outside_budget)
+select household_id, week_id, food, have_it, checked, outside_budget from folded
+on conflict (week_id, item_key) do nothing;
+select is((select count(*)::int from public.week_item_state where item_key like 'beans%'), 1, '0007 folds the old beans rows into one row');
+select ok((select have_it and checked from public.week_item_state where item_key = 'beans'), '0007 keeps both flags on the folded beans row');
+select is((select count(*)::int from public.week_item_state where item_key like '%#%'), 0, '0007 leaves no row keyed food#kind');
 
 select * from finish();
 rollback;

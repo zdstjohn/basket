@@ -13,15 +13,17 @@ import type { Household } from "@/lib/db/rows";
 import { budgetState, type BudgetState } from "@/lib/domain/budget";
 import { buildShoppingList, listTotals, type ListItem, type Store } from "@/lib/domain/list";
 import { scaleMeal } from "@/lib/domain/scaling";
-import type { IngredientLine, Meal, Person } from "@/lib/domain/types";
+import type { IngredientLine, Meal, Person, Quantity } from "@/lib/domain/types";
+import { isVague } from "@/lib/domain/units";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
+import { foldItemState } from "@/lib/list/state";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import {
   enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
 } from "@/lib/list/offline";
 import {
-  estimateFor, KROGER_PRICE_MAX_AGE_MS, priceKey, storeFor, toPriceMap, userCentsPerBase,
+  estimateFor, KROGER_PRICE_MAX_AGE_MS, priceKey, storeFor, toPriceMap, userCentsFor, userCentsPerBase,
   type PriceRow, type PriceSource,
 } from "@/lib/list/prices";
 import { subscribeHousehold } from "@/lib/realtime";
@@ -78,8 +80,10 @@ export function buildList(raw: ListInputs) {
   const prices = toPriceMap(raw.prices);
   const itemStores = new Map(raw.itemStores);
   const scaled = raw.entries.flatMap((e) => scaleMeal(e.meal, raw.people, e.servings ?? undefined));
+  // Flags are saved per food; rows saved the old way (per kind of amount) are folded in.
+  const state = foldItemState(raw.itemState);
   const flagged = (f: keyof ItemState) =>
-    new Set(Object.entries(raw.itemState).filter(([, s]) => s[f]).map(([k]) => k));
+    new Set(Object.entries(state).filter(([, s]) => s[f]).map(([k]) => k));
   const items = buildShoppingList({
     scaled,
     staples: raw.staples,
@@ -88,6 +92,7 @@ export function buildList(raw: ListInputs) {
     outsideBudget: flagged("outside_budget"),
     storeFor: (c, r) => storeFor(c, r, itemStores, raw.categoryStore),
     estimateFor: (c, q, s) => estimateFor(prices, c, q, s),
+    userCents: (c, q, s) => userCentsFor(prices, c, q, s),
   });
   const priceSource: Record<string, PriceSource> = {};
   const priceDetail: Record<string, PriceRow> = {};
@@ -240,13 +245,22 @@ export function useWeekList(household: Household, weekId: string | null) {
     if (!raw || offline) return;
     const saved = toPriceMap(raw.prices);
     const shelf = !!household.kroger_location_id;
-    const missing = items
-      .filter((i) => {
-        if (i.haveIt || requested.current.has(priceKey(i.canonical, i.store, i.qty.kind))) return false;
-        if (i.estimateCents === null) return true;
-        return shelf && i.store === "fred_meyer" && dueForShelfPrice(saved.get(priceKey(i.canonical, i.store, i.qty.kind)));
-      })
-      .map((i) => ({ canonical: i.canonical, qty: i.qty, store: i.store }));
+    // One question per part: a row can need a volume price and a count price.
+    const missing: { canonical: string; qty: Quantity; store: Store }[] = [];
+    const seen = new Set<string>();
+    for (const i of items) {
+      if (i.haveIt) continue;
+      // A "to taste" note is not worth pricing when the row has a real amount.
+      const asked = i.parts.filter((p) => !isVague(p) || i.parts.every(isVague));
+      for (const p of asked) {
+        const k = priceKey(i.canonical, i.store, p.kind);
+        if (requested.current.has(k) || seen.has(k)) continue;
+        const have = saved.get(k);
+        if (have && !(shelf && i.store === "fred_meyer" && dueForShelfPrice(have))) continue;
+        seen.add(k);
+        missing.push({ canonical: i.canonical, qty: p, store: i.store });
+      }
+    }
     if (missing.length === 0) return;
     for (const m of missing) requested.current.add(priceKey(m.canonical, m.store, m.qty.kind));
     for (const [store, wanted] of groupMissing(missing)) {
@@ -267,15 +281,20 @@ export function useWeekList(household: Household, weekId: string | null) {
     async (itemKeys: string[], patch: ItemPatch) => {
       if (!weekId || itemKeys.length === 0) return;
       // One state update for the whole batch, so 40+ rows render once.
-      setRaw((r) => {
-        if (!r) return r;
-        const itemState = { ...r.itemState };
-        for (const k of itemKeys) itemState[k] = { ...(itemState[k] ?? NO_FLAGS), ...patch };
-        return { ...r, itemState };
-      });
+      // Writes go to the food's own key and carry every flag, not just the patch: the food may still
+      // have its flags on old food#kind rows, and the food row wins whole once it exists.
+      const current = rawRef.current;
+      const folded = current ? foldItemState(current.itemState) : {};
+      const merged: Record<string, ItemState> = {};
+      for (const k of itemKeys) merged[k] = { ...(folded[k] ?? NO_FLAGS), ...patch };
+      if (current) {
+        const next = { ...current, itemState: { ...current.itemState, ...merged } };
+        rawRef.current = next;
+        setRaw(next);
+      }
       latest.current++; // a load already under way would bring back the old value
       // Every change goes through the queue (one entry per item), so an older queued write can never land after a newer one.
-      enqueuePatches(household.id, itemKeys.map((itemKey) => ({ weekId, itemKey, patch })));
+      enqueuePatches(household.id, itemKeys.map((itemKey) => ({ weekId, itemKey, patch: merged[itemKey] })));
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         setOffline(true);
         return;

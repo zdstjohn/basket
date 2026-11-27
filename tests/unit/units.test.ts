@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addQuantities, formatQuantity, isVague, quantityOrCount, toQuantity } from '@/lib/domain/units';
+import { addQuantities, formatNeed, formatQuantity, isVague, quantityOrCount, toQuantity } from '@/lib/domain/units';
 import type { Quantity } from '@/lib/domain/types';
 
 const q = (amount: number, unit: string): Quantity => {
@@ -111,5 +111,15 @@ describe('isVague', () => {
   it('is false for real amounts', () => {
     expect(isVague(toQuantity(1, 'tsp') as Quantity)).toBe(false);
     expect(isVague(quantityOrCount(2, 'cans'))).toBe(false);
+  });
+});
+
+describe('formatNeed', () => {
+  const q = quantityOrCount;
+  it('joins the parts with plus signs and shows a bare vague part as its note', () => {
+    expect(formatNeed([q(2.4, 'tsp'), q(1, 'to taste')])).toBe('2.4 tsp + to taste');
+    expect(formatNeed([q(1, 'to taste')])).toBe('to taste');
+    expect(formatNeed([q(1, ''), q(200, 'g')])).toBe('1 + 7.1 oz');
+    expect(formatNeed([q(2, 'cans')])).toBe('2 cans');
   });
 });

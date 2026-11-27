@@ -57,6 +57,12 @@ export function estimateFor(prices: PriceMap, canonical: string, qty: Quantity, 
   return row ? Math.round(row.centsPerBase * qty.amount) : null;
 }
 
+/** A price you typed for this much of an item, in cents; null when the saved price is a guess or a shelf price. */
+export function userCentsFor(prices: PriceMap, canonical: string, qty: Quantity, store: Store): number | null {
+  const row = prices.get(priceKey(canonical, store, qty.kind));
+  return row?.source === 'user' ? Math.round(row.centsPerBase * qty.amount) : null;
+}
+
 export function priceSourceFor(
   prices: PriceMap,
   canonical: string,
