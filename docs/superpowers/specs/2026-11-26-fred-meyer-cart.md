@@ -128,7 +128,7 @@ No service-role key is used in any approach.
 
 ## 7. Data (migration 0006; 0007 after deploy)
 
-- `kroger_matches` (household, store, food, search words, candidates, fetched time). Members read and write; the fetched time is stamped by the database so the daily cap can't be dodged.
+- `kroger_matches` (household, store, food, search words, candidates, fetched time). Members read and write; the fetched time defaults to now in the database and the server sets it on every save. The daily cap does not depend on it: lookups are counted in a table that members cannot write.
 - `item_product_choice` (household, food, chosen UPC, own search words).
 - `kroger_links` (person, sealed tokens, Fred Meyer profile id). Only that person.
 - `cart_sends` (household, week, person, profile id, pickup/delivery, status, items, total). Members read; only the sender writes.

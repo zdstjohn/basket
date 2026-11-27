@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(96);
+select plan(142);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -49,6 +49,14 @@ begin
     values (h, 'milk', 'costco', 'unit', 0.5);
   insert into public.ai_usage (household_id, kind, model, input_tokens, output_tokens, cost_cents)
     values (h, 'parse', 'test', 10, 10, 1);
+  insert into public.kroger_matches (household_id, location_id, canonical, term)
+    values (h, '70100001', 'milk', 'whole milk');
+  insert into public.item_product_choice (household_id, canonical, upc)
+    values (h, 'milk', '0001111041700');
+  insert into public.price_observations (household_id, location_id, upc, regular_cents)
+    values (h, '70100001', '0001111041700', 399);
+  insert into public.cart_sends (household_id, week_id, user_id, modality)
+    values (h, w, (select user_id from public.members where household_id = h limit 1), 'PICKUP');
   insert into t_kv values ('M_' || key, m::text), ('W_' || key, w::text);
 end $$;
 
@@ -209,6 +217,90 @@ reset role;
 
 select is((select used_by from public.invites where token = (select v from t_kv where k = 'TOKEN_A')), 'cccccccc-0000-4000-8000-00000000000c'::uuid, 'the accepted invite is marked used by C');
 select is((select count(*)::int from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HA')), 2, 'A''s delete attempt left HA ai_usage intact');
+
+-- ---------------------------------------------------------------------------
+-- Fred Meyer products and cart (0006)
+-- ---------------------------------------------------------------------------
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+
+select is((select count(*)::int from public.kroger_matches where household_id = (select v::uuid from t_kv where k = 'HA')), 1, 'A sees the HA kroger_matches row');
+select is((select count(*)::int from public.item_product_choice where household_id = (select v::uuid from t_kv where k = 'HA')), 1, 'A sees the HA item_product_choice row');
+select is((select count(*)::int from public.price_observations where household_id = (select v::uuid from t_kv where k = 'HA')), 1, 'A sees the HA price_observations row');
+select is((select count(*)::int from public.cart_sends where household_id = (select v::uuid from t_kv where k = 'HA')), 1, 'A sees the HA cart_sends row');
+select is((select count(*)::int from public.kroger_matches where household_id = (select v::uuid from t_kv where k = 'HB')), 0, 'A sees no HB kroger_matches');
+select is((select count(*)::int from public.item_product_choice where household_id = (select v::uuid from t_kv where k = 'HB')), 0, 'A sees no HB item_product_choice');
+select is((select count(*)::int from public.price_observations where household_id = (select v::uuid from t_kv where k = 'HB')), 0, 'A sees no HB price_observations');
+select is((select count(*)::int from public.cart_sends where household_id = (select v::uuid from t_kv where k = 'HB')), 0, 'A sees no HB cart_sends');
+
+select throws_ok($q$insert into public.kroger_matches (household_id, location_id, canonical, term) values ((select v::uuid from t_kv where k = 'HB'), '1', 'x', 'x')$q$, '42501', null, 'A cannot insert a kroger_matches row into HB');
+select throws_ok($q$insert into public.item_product_choice (household_id, canonical, upc) values ((select v::uuid from t_kv where k = 'HB'), 'x', '0001111041700')$q$, '42501', null, 'A cannot insert an item_product_choice row into HB');
+select throws_ok($q$insert into public.price_observations (household_id, location_id, upc, regular_cents) values ((select v::uuid from t_kv where k = 'HB'), '1', '0001111041700', 100)$q$, '42501', null, 'A cannot insert a price_observations row into HB');
+select throws_ok($q$insert into public.cart_sends (household_id, week_id, modality) values ((select v::uuid from t_kv where k = 'HB'), (select v::uuid from t_kv where k = 'W_B'), 'PICKUP')$q$, '42501', null, 'A cannot insert a cart_sends row into HB');
+select throws_ok($q$delete from public.kroger_matches$q$, '42501', null, 'A cannot delete kroger_matches');
+select throws_ok($q$delete from public.cart_sends$q$, '42501', null, 'A cannot delete cart_sends');
+
+-- kroger_links: private to the person.
+select lives_ok($q$insert into public.kroger_links (sealed, profile_id) values ('sealed-a', 'prof-a')$q$, 'A can store a kroger link');
+select is((select count(*)::int from public.kroger_links), 1, 'A reads its own kroger link');
+select throws_ok($q$insert into public.kroger_links (user_id, sealed) values ('bbbbbbbb-0000-4000-8000-00000000000b', 'x')$q$, '42501', null, 'A cannot store a link for B');
+
+-- cart_sends: only the sender writes.
+select throws_ok($q$insert into public.cart_sends (household_id, week_id, user_id, modality) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'cccccccc-0000-4000-8000-00000000000c', 'PICKUP')$q$, '42501', null, 'A cannot record a send as C');
+select throws_ok($q$update public.cart_sends set profile_id = 'x'$q$, '42501', null, 'profile_id is not a granted column');
+select lives_ok($q$insert into public.cart_sends (household_id, week_id, modality) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'DELIVERY')$q$, 'A can record its own send');
+select throws_ok($q$insert into public.cart_sends (household_id, week_id, modality) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'DRONE')$q$, '23514', null, 'an unknown modality violates the check');
+select lives_ok($q$update public.cart_sends set status = 'sent', total_cents = 500 where modality = 'DELIVERY'$q$, 'A can update its own send');
+
+-- Spend guard for Kroger calls.
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HA'), 5), 5, 'kroger_spend counts 5');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HA'), 5), 10, 'kroger_spend adds to today''s total');
+select throws_ok($q$select public.kroger_spend((select v::uuid from t_kv where k = 'HB'), 1)$q$, 'P0001', 'not_member', 'kroger_spend refuses another household');
+select throws_ok($q$select public.kroger_spend((select v::uuid from t_kv where k = 'HA'), 61)$q$, 'P0001', 'bad_count', 'kroger_spend refuses more than 60');
+select throws_ok($q$select public.kroger_spend((select v::uuid from t_kv where k = 'HA'), -1)$q$, 'P0001', 'bad_count', 'kroger_spend refuses a negative count');
+select throws_ok($q$insert into public.kroger_calls (household_id, day, calls) values ((select v::uuid from t_kv where k = 'HA'), '2000-01-01', 0)$q$, '42501', null, 'A cannot write kroger_calls');
+select throws_ok($q$update public.kroger_calls set calls = 0$q$, '42501', null, 'A cannot reset kroger_calls');
+select is((select calls from public.kroger_calls where household_id = (select v::uuid from t_kv where k = 'HA') and day = (now() at time zone 'utc')::date), 10, 'A can read its own call count');
+select is(public.kroger_limited(), false, 'the all-households total is under the ceiling');
+
+-- Fulfillment and pack size.
+update public.households set fulfillment = 'DELIVERY' where id = (select v::uuid from t_kv where k = 'HA');
+select is((select fulfillment from public.households), 'DELIVERY', 'a member can set fulfillment');
+select throws_ok($q$update public.households set fulfillment = 'DRONE' where id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'an unknown fulfillment violates the check');
+select throws_ok($q$update public.week_item_state set pack_count = 100$q$, '23514', null, 'pack_count above 99 violates the check');
+select lives_ok($q$update public.week_item_state set pack_count = 3$q$, 'pack_count 3 is accepted');
+
+-- Size limits.
+select throws_ok($q$insert into public.kroger_links (user_id, sealed) values ('aaaaaaaa-0000-4000-8000-00000000000a', repeat('x', 4000)) on conflict (user_id) do update set sealed = excluded.sealed$q$, '23514', null, 'a sealed token of 4000 characters is refused');
+select throws_ok($q$insert into public.kroger_matches (household_id, location_id, canonical, term, candidates) values ((select v::uuid from t_kv where k = 'HA'), '70100001', 'big', 'big', (select jsonb_agg(md5(i::text)) from generate_series(1, 4000) i))$q$, '23514', null, 'oversized candidates are refused');
+
+reset role;
+
+-- The ceiling flips above 8,000 (superuser sets up the total).
+update public.kroger_global_calls set calls = 8001;
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.kroger_limited(), true, 'above 8,000 calls a day the ceiling reports limited');
+reset role;
+
+-- C is in HA: the link is private, the send is not C's to change.
+select pg_temp.act_as('cccccccc-0000-4000-8000-00000000000c');
+select is((select count(*)::int from public.kroger_links), 0, 'C cannot see A''s kroger link');
+update public.kroger_links set sealed = 'x';
+update public.cart_sends set status = 'failed';
+select is((select count(*)::int from public.cart_sends where household_id = (select v::uuid from t_kv where k = 'HA')), 2, 'C sees HA''s sends');
+reset role;
+select is((select sealed from public.kroger_links where user_id = 'aaaaaaaa-0000-4000-8000-00000000000a'), 'sealed-a', 'C''s update left A''s link alone');
+select is((select count(*)::int from public.cart_sends where status = 'failed'), 0, 'C''s update left A''s sends alone');
+
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is((select count(*)::int from public.kroger_links), 0, 'B cannot see A''s kroger link');
+reset role;
+
+select pg_temp.act_as(null);
+select throws_ok($q$select count(*) from public.kroger_links$q$, '42501', null, 'anon cannot read kroger_links');
+select throws_ok($q$select public.kroger_spend(gen_random_uuid(), 1)$q$, '42501', null, 'anon cannot call kroger_spend');
+select throws_ok($q$select public.kroger_limited()$q$, '42501', null, 'anon cannot call kroger_limited');
+reset role;
+
 
 -- ---------------------------------------------------------------------------
 -- As anon: nothing at all

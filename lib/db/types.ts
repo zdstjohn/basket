@@ -84,6 +84,60 @@ export type Database = {
           },
         ]
       }
+      cart_sends: {
+        Row: {
+          created_at: string
+          household_id: string
+          id: string
+          items: Json
+          modality: string
+          profile_id: string | null
+          status: string
+          total_cents: number
+          user_id: string
+          week_id: string
+        }
+        Insert: {
+          created_at?: string
+          household_id: string
+          id?: string
+          items?: Json
+          modality: string
+          profile_id?: string | null
+          status?: string
+          total_cents?: number
+          user_id?: string
+          week_id: string
+        }
+        Update: {
+          created_at?: string
+          household_id?: string
+          id?: string
+          items?: Json
+          modality?: string
+          profile_id?: string | null
+          status?: string
+          total_cents?: number
+          user_id?: string
+          week_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cart_sends_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cart_sends_week_id_household_id_fkey"
+            columns: ["week_id", "household_id"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["id", "household_id"]
+          },
+        ]
+      }
       households: {
         Row: {
           ai_cap_cents: number
@@ -91,6 +145,7 @@ export type Database = {
           category_store: Json
           created_at: string
           cushion_cents: number
+          fulfillment: string
           id: string
           kroger_location_id: string | null
           kroger_location_name: string | null
@@ -106,6 +161,7 @@ export type Database = {
           category_store?: Json
           created_at?: string
           cushion_cents?: number
+          fulfillment?: string
           id?: string
           kroger_location_id?: string | null
           kroger_location_name?: string | null
@@ -121,6 +177,7 @@ export type Database = {
           category_store?: Json
           created_at?: string
           cushion_cents?: number
+          fulfillment?: string
           id?: string
           kroger_location_id?: string | null
           kroger_location_name?: string | null
@@ -170,6 +227,44 @@ export type Database = {
           },
         ]
       }
+      item_product_choice: {
+        Row: {
+          canonical: string
+          created_at: string
+          household_id: string
+          id: string
+          search_term: string | null
+          upc: string | null
+          updated_at: string
+        }
+        Insert: {
+          canonical: string
+          created_at?: string
+          household_id: string
+          id?: string
+          search_term?: string | null
+          upc?: string | null
+          updated_at?: string
+        }
+        Update: {
+          canonical?: string
+          created_at?: string
+          household_id?: string
+          id?: string
+          search_term?: string | null
+          upc?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "item_product_choice_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       item_store: {
         Row: {
           canonical: string
@@ -195,6 +290,109 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "item_store_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kroger_calls: {
+        Row: {
+          calls: number
+          day: string
+          household_id: string
+        }
+        Insert: {
+          calls?: number
+          day: string
+          household_id: string
+        }
+        Update: {
+          calls?: number
+          day?: string
+          household_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kroger_calls_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kroger_global_calls: {
+        Row: {
+          calls: number
+          day: string
+        }
+        Insert: {
+          calls?: number
+          day: string
+        }
+        Update: {
+          calls?: number
+          day?: string
+        }
+        Relationships: []
+      }
+      kroger_links: {
+        Row: {
+          profile_id: string | null
+          sealed: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          profile_id?: string | null
+          sealed: string
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          profile_id?: string | null
+          sealed?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      kroger_matches: {
+        Row: {
+          candidates: Json
+          canonical: string
+          created_at: string
+          fetched_at: string
+          household_id: string
+          id: string
+          location_id: string
+          term: string
+        }
+        Insert: {
+          candidates?: Json
+          canonical: string
+          created_at?: string
+          fetched_at?: string
+          household_id: string
+          id?: string
+          location_id: string
+          term: string
+        }
+        Update: {
+          candidates?: Json
+          canonical?: string
+          created_at?: string
+          fetched_at?: string
+          household_id?: string
+          id?: string
+          location_id?: string
+          term?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kroger_matches_household_id_fkey"
             columns: ["household_id"]
             isOneToOne: false
             referencedRelation: "households"
@@ -393,6 +591,47 @@ export type Database = {
           },
         ]
       }
+      price_observations: {
+        Row: {
+          created_at: string
+          household_id: string
+          id: string
+          location_id: string
+          promo_cents: number | null
+          regular_cents: number
+          seen_on: string
+          upc: string
+        }
+        Insert: {
+          created_at?: string
+          household_id: string
+          id?: string
+          location_id: string
+          promo_cents?: number | null
+          regular_cents: number
+          seen_on?: string
+          upc: string
+        }
+        Update: {
+          created_at?: string
+          household_id?: string
+          id?: string
+          location_id?: string
+          promo_cents?: number | null
+          regular_cents?: number
+          seen_on?: string
+          upc?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_observations_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staples: {
         Row: {
           active: boolean
@@ -443,6 +682,7 @@ export type Database = {
           id: string
           item_key: string
           outside_budget: boolean
+          pack_count: number | null
           updated_by: string | null
           week_id: string
         }
@@ -454,6 +694,7 @@ export type Database = {
           id?: string
           item_key: string
           outside_budget?: boolean
+          pack_count?: number | null
           updated_by?: string | null
           week_id: string
         }
@@ -465,6 +706,7 @@ export type Database = {
           id?: string
           item_key?: string
           outside_budget?: boolean
+          pack_count?: number | null
           updated_by?: string | null
           week_id?: string
         }
@@ -587,6 +829,8 @@ export type Database = {
         Returns: boolean
       }
       is_owner: { Args: { h: string }; Returns: boolean }
+      kroger_limited: { Args: never; Returns: boolean }
+      kroger_spend: { Args: { h: string; n: number }; Returns: number }
     }
     Enums: {
       [_ in never]: never
