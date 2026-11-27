@@ -25,7 +25,7 @@ async function listFoods(page: Page) {
 }
 
 async function searchFor(page: Page, query: string) {
-  await page.getByLabel("What's for dinner?").fill(query);
+  await page.getByLabel("What’s for dinner?").fill(query);
   await page.getByRole("button", { name: "Search" }).click();
 }
 
@@ -96,7 +96,7 @@ test("flags on soup cards, results survive a tab switch, and a Favorites + opens
 
   // Away to Favorites and back: the same cards, and no second search.
   await page.getByRole("tab", { name: "Favorites" }).click();
-  await expect(page.getByLabel("What's for dinner?")).toBeHidden();
+  await expect(page.getByLabel("What’s for dinner?")).toBeHidden();
   await page.getByRole("tab", { name: "Search" }).click();
   await expect(soup).toBeVisible();
   await expect(pilaf).toBeVisible();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftAsMeal, draftFlags } from '@/components/add-meal/DraftPreview';
+import { draftAsMeal, draftFlags } from '@/components/add-meal/RecipePage';
 import { boxState, doneCopy, ideaNote } from '@/components/flags/DislikeBox';
 import { allergyHits, inWords } from '@/components/flags/swap-notes';
 import { findFlags, ingredientNames } from '@/lib/domain/flags';

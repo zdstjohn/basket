@@ -7,13 +7,22 @@ import { clientFor } from "./db";
 
 // Stream A owns the week, add-a-meal and favorites screens. Specs of other streams drive those screens only through these helpers.
 
+/** Opens the "Where to look" sheet from "Looking on: …" and picks a source; choosing closes the sheet. */
+export async function chooseSource(page: Page, source: "Big sites" | "Spoonacular"): Promise<void> {
+  await page.getByRole("button", { name: /Looking on/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Where to look" });
+  await sheet.getByRole("radio", { name: source }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("button", { name: `Looking on: ${source}` })).toBeVisible();
+}
+
 /** Plans a dinner: search, pick the card with this name, add it to the day. Lands back on /week. */
 export async function addFromSearch(
   page: Page,
   { day, query, pick, source }: { day: Day; query: string; pick: string; source?: "Big sites" | "Spoonacular" },
 ): Promise<void> {
   await page.goto(`/week/add?day=${day}&slot=dinner`);
-  if (source) await page.getByRole("radio", { name: source }).click();
+  if (source) await chooseSource(page, source);
   await page.getByLabel(/What.s for dinner\?/).fill(query);
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("button", { name: pick }).click();

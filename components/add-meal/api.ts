@@ -74,11 +74,11 @@ export const draftFromText = (value: string) => post<RecipeDraft>("/api/meals/dr
 
 export const MESSAGES: Record<Failure, string> = {
   unauthorized: "Signing you in again…",
-  cap: "This month's recipe help is used up. You can still type the ingredients in.",
-  source_limit: "Spoonacular's daily limit is used up. Big sites still works.",
+  cap: "This month’s recipe help is used up. You can still type the ingredients in.",
+  source_limit: "Spoonacular’s daily limit is used up. Big sites still works.",
   slow: "Too many tries just now. Wait a minute and try again.",
   busy: "Lots of people are searching right now. Try again in an hour.",
-  unreadable: "We couldn't read that recipe. Try another one, or paste the ingredients.",
+  unreadable: "We couldn’t read that recipe. Try another one, or paste the ingredients.",
   other: "Something went wrong. Try again.",
 };
 
@@ -86,7 +86,7 @@ export const MESSAGES: Record<Failure, string> = {
 export function messageFor(e: unknown, pastedLink = false): string {
   const kind = e instanceof ApiFailure ? e.kind : "other";
   if (kind === "unreadable" && pastedLink) {
-    return "We couldn't read that page. Try pasting the recipe text instead.";
+    return "We couldn’t read that page. Try pasting the recipe text instead.";
   }
   return MESSAGES[kind];
 }

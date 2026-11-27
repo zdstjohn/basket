@@ -31,15 +31,15 @@ test("find my dish: photo to recipe cards, then use my photo for the meal", asyn
   await expect(page.getByText("Looks like: Chicken tacos")).toBeVisible();
   await expect(page.getByAltText("Your dish photo")).toBeVisible();
   await expect(page.getByTestId("result-card").first()).toBeVisible();
-  await expect(page.getByLabel("What's for dinner?")).toHaveValue("chicken tacos");
+  await expect(page.getByLabel("What’s for dinner?")).toHaveValue("chicken tacos");
   await page.screenshot({ path: `${shots}/find-my-dish.png`, fullPage: true });
 
   // Editing the guess and searching again gives new results.
-  await page.getByLabel("What's for dinner?").fill("beef stew");
+  await page.getByLabel("What’s for dinner?").fill("beef stew");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByRole("button", { name: "Beef stew · Budget Bytes" })).toBeVisible();
 
-  await page.getByLabel("What's for dinner?").fill("chicken tacos");
+  await page.getByLabel("What’s for dinner?").fill("chicken tacos");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
   const draft = page.getByRole("region", { name: "Draft recipe" });
@@ -82,7 +82,7 @@ test("find my dish: not a dish, a low-confidence guess, and the monthly limit", 
 
   await page.route("**/api/recipes/identify", answer({ isFood: false, dish: "", searchQuery: "", keyIngredients: [], confidence: "low" }));
   await choosePhoto(page);
-  await expect(page.getByText("That doesn't look like a dish. Try another photo.")).toBeVisible();
+  await expect(page.getByText("That doesn’t look like a dish. Try another photo.")).toBeVisible();
   await expect(page.getByTestId("result-card")).toHaveCount(0);
 
   await page.unroute("**/api/recipes/identify");
@@ -96,9 +96,9 @@ test("find my dish: not a dish, a low-confidence guess, and the monthly limit", 
   );
   await choosePhoto(page);
   await expect(
-    page.getByText("This month's recipe help is used up. You can still type the ingredients in."),
+    page.getByText("This month’s recipe help is used up. You can still type the ingredients in."),
   ).toBeVisible();
-  await expect(page.getByLabel("What's for dinner?")).toBeVisible();
+  await expect(page.getByLabel("What’s for dinner?")).toBeVisible();
 });
 
 test("find my dish: the labelled button fits a 360 px screen", async ({ page }) => {

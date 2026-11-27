@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AllergyBox } from '@/components/flags/AllergyBox';
 import { cardFlagText, cardLines, FlagLines } from '@/components/flags/FlagLines';
-import { allergyLabel, draftFlags } from '@/components/add-meal/DraftPreview';
+import { allergyLabel, draftFlags } from '@/components/add-meal/RecipePage';
 import { findFlags, ingredientNames } from '@/lib/domain/flags';
 import type { Person } from '@/lib/domain/types';
 import { familyOfFive } from '@/lib/fixtures/household';

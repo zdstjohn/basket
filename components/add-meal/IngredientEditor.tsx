@@ -1,20 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { X } from "lucide-react";
+import { Button, IconButton } from "@/components/ui/Button";
+import { SelectField, TextField } from "@/components/ui/Field";
 import type { IngredientLine, Role } from "@/lib/domain/types";
-import { focusRing, pillButton } from "@/lib/ui";
-
-const ROLES: { id: Role; label: string }[] = [
-  { id: "meat", label: "Meat" },
-  { id: "fish", label: "Fish" },
-  { id: "veg_protein", label: "Beans, tofu" },
-  { id: "produce", label: "Produce" },
-  { id: "dairy", label: "Dairy" },
-  { id: "bakery", label: "Bakery" },
-  { id: "frozen", label: "Frozen" },
-  { id: "pantry", label: "Pantry" },
-  { id: "other", label: "Other" },
-];
+import { ROLE_LABELS, ROLES } from "@/lib/list/groups";
+import { servingsText } from "@/lib/text/typography";
+import { quietLink } from "@/lib/ui";
 
 interface Row {
   key: number;
@@ -24,8 +17,6 @@ interface Row {
   role: Role;
   note?: string;
 }
-
-const field = `h-11 rounded-lg border border-[#D5DBD5] bg-white px-2.5 text-base ${focusRing}`;
 
 /** Edit the recipe's ingredients as written (for its own serving count): change, remove or add lines. */
 export function IngredientEditor({
@@ -68,30 +59,36 @@ export function IngredientEditor({
 
   return (
     <div>
-      <p className="mt-2 text-xs text-muted">As written in the recipe, for {servings} servings</p>
-      <ul className="mt-2 flex flex-col gap-3">
+      <p className="text-small text-ink-soft">As written in the recipe, for {servingsText(servings)}</p>
+      <ul className="mt-2 flex flex-col divide-y divide-line">
         {rows.map((r, i) => (
-          <li key={r.key} role="group" aria-label={`Ingredient ${i + 1}`} className="flex flex-wrap gap-2 border-t border-[#F0F2EF] pt-3">
-            <input aria-label="Name" value={r.canonical} onChange={(e) => patch(r.key, { canonical: e.target.value })} className={`${field} w-full`} />
-            <input aria-label="Amount" inputMode="decimal" value={r.amount} onChange={(e) => patch(r.key, { amount: e.target.value })} className={`${field} w-20`} />
-            <input aria-label="Unit" value={r.unit} onChange={(e) => patch(r.key, { unit: e.target.value })} className={`${field} w-24`} />
-            <select aria-label="Type" value={r.role} onChange={(e) => patch(r.key, { role: e.target.value as Role })} className={`${field} min-w-0 flex-1`}>
-              {ROLES.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              aria-label={`Remove ${r.canonical || `ingredient ${i + 1}`}`}
-              onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}
-              className={`flex size-11 items-center justify-center rounded-lg text-[#A6261B] ${focusRing}`}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" />
-              </svg>
-            </button>
+          <li key={r.key} role="group" aria-label={`Ingredient ${i + 1}`} className="flex flex-col gap-2 py-3">
+            <TextField label="Name" value={r.canonical} onChange={(e) => patch(r.key, { canonical: e.target.value })} />
+            <div className="flex items-end gap-2">
+              <TextField
+                label="Amount"
+                inputMode="decimal"
+                value={r.amount}
+                onChange={(e) => patch(r.key, { amount: e.target.value })}
+                className="w-24 shrink-0"
+              />
+              <TextField label="Unit" value={r.unit} onChange={(e) => patch(r.key, { unit: e.target.value })} className="min-w-0 flex-1" />
+            </div>
+            <div className="flex items-end gap-2">
+              <SelectField label="Type" value={r.role} onChange={(e) => patch(r.key, { role: e.target.value as Role })} className="min-w-0 flex-1">
+                {ROLES.map((id) => (
+                  <option key={id} value={id}>
+                    {ROLE_LABELS[id]}
+                  </option>
+                ))}
+              </SelectField>
+              <IconButton
+                icon={X}
+                size={18}
+                label={`Remove ${r.canonical || `ingredient ${i + 1}`}`}
+                onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}
+              />
+            </div>
           </li>
         ))}
       </ul>
@@ -101,22 +98,22 @@ export function IngredientEditor({
           setRows((rs) => [...rs, { key: next, canonical: "", amount: "1", unit: "each", role: "other" }]);
           setNext(next + 1);
         }}
-        className={`mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-green ${focusRing}`}
+        className={quietLink}
       >
         + Add ingredient
       </button>
       {error && (
-        <p role="alert" className="text-sm font-medium text-[#A6261B]">
+        <p role="alert" className="mt-2 text-small text-error">
           {error}
         </p>
       )}
-      <div className="mt-2 flex gap-2">
-        <button type="button" onClick={done} className={`inline-flex h-11 flex-1 items-center justify-center rounded-full bg-green text-[15px] font-semibold text-white ${focusRing}`}>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Button variant="ghost" onClick={done}>
           Done
-        </button>
-        <button type="button" onClick={onCancel} className={`${pillButton} flex-1`}>
+        </Button>
+        <Button variant="ghost" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );

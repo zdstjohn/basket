@@ -1,22 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MealThumb } from "@/components/MealThumb";
+import { ChevronRight, Info, Search } from "lucide-react";
+import { Sheet, useSheetClose } from "@/components/Sheet";
+import { Banner } from "@/components/ui/Banner";
+import { TextField } from "@/components/ui/Field";
+import { Icon } from "@/components/ui/Icon";
+import { Photo } from "@/components/ui/Photo";
+import { RadioRows } from "@/components/ui/RadioRows";
+import { EmptyState, ErrorBanner, Loading, SkeletonLines, SkeletonTile } from "@/components/ui/states";
 import { cardFlagText, cardLines, FlagLines, flagsOf } from "@/components/flags/FlagLines";
 import type { Flag } from "@/lib/domain/flags";
 import type { Person } from "@/lib/domain/types";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 import { isMostLoved, ratingLine } from "@/lib/recipes/search/loved";
 import { sharesLine, sortByOverlap } from "@/lib/recipes/search/overlap";
-import { focusRing } from "@/lib/ui";
+import { ghostButton, quietLink } from "@/lib/ui";
 import { formatMinutes } from "@/lib/week/format";
-import { messageFor, searchRecipes, type SearchResult } from "./api";
+import { ApiFailure, messageFor, searchRecipes, type SearchResult } from "./api";
 import { loadSort, saveSort, SortControl, type SortMode } from "./SortControl";
 import { DishCard, FindMyDishButton, lookUpDish, type DishState } from "./FindMyDish";
 
-const SOURCES: { id: RecipeSource; label: string }[] = [
-  { id: "sites", label: "Big sites" },
-  { id: "spoonacular", label: "Spoonacular" },
+const SOURCES: { id: RecipeSource; label: string; detail: string }[] = [
+  { id: "sites", label: "Big sites", detail: "Recipe sites we trust" },
+  { id: "spoonacular", label: "Spoonacular", detail: "A recipe database" },
 ];
 
 function metaParts(o: RecipeOption, first: boolean) {
@@ -28,10 +35,41 @@ function metaParts(o: RecipeOption, first: boolean) {
 function MetaLine({ loved, line, shares }: { loved: boolean; line: string; shares: string | null }) {
   return (
     <>
-      {loved && <span data-testid="result-loved" className="mt-0.5 block text-[13px] font-semibold text-[#1F7A4D]">Most loved</span>}
-      {line && <span data-testid="result-meta" className="mt-0.5 block truncate text-[13px] text-[#4A544F]">{line}</span>}
-      {shares && <span data-testid="result-shares" className="mt-0.5 block break-words text-[13px] font-medium text-[#1F7A4D]">{shares}</span>}
+      {loved && (
+        <span data-testid="result-loved" className="mt-0.5 block text-label font-semibold text-ink">
+          Most loved
+        </span>
+      )}
+      {line && (
+        <span data-testid="result-meta" className="mt-0.5 block break-words text-label text-ink-soft">
+          {line}
+        </span>
+      )}
+      {shares && (
+        <span data-testid="result-shares" className="mt-0.5 block break-words text-label text-ink">
+          {shares}
+        </span>
+      )}
     </>
+  );
+}
+
+/** The two sources as rows; choosing one closes the sheet. */
+function SourceChoice({ source, onChoose }: { source: RecipeSource; onChoose: (s: RecipeSource) => void }) {
+  const close = useSheetClose();
+  return (
+    <div className="bk-gutter pb-4">
+      <RadioRows
+        label="Where to look"
+        name="recipe-source"
+        options={SOURCES.map((s) => ({ value: s.id, label: s.label, detail: s.detail }))}
+        value={source}
+        onChange={(next) => {
+          onChoose(next);
+          close();
+        }}
+      />
+    </div>
   );
 }
 
@@ -62,14 +100,15 @@ export function SearchTab({
   /** Called when "Fits this week" is chosen, so the week is only read when it is wanted. */
   onNeedWeek: () => void;
   picking: boolean;
-  onPick: (o: RecipeOption) => void;
+  onPick: (o: RecipeOption, img: HTMLImageElement | null) => void;
   onSearchStart: () => void;
   /** The browser-sized photo behind a found dish, or null when there is none. */
   onDishPhoto: (photo: Blob | null) => void;
 }) {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; guard: boolean } | null>(null);
+  const [choosing, setChoosing] = useState(false);
   const [dish, setDish] = useState<DishState | null>(null);
   const [sort, setSort] = useState<SortMode>(loadSort);
   const thumbUrl = useRef<string | null>(null);
@@ -126,7 +165,8 @@ export function SearchTab({
       setResult(await searchRecipes(q.trim(), src));
     } catch (e) {
       setResult(null);
-      setError(messageFor(e));
+      // The spend guard's answers are notices, not faults: no retry beside them.
+      setError({ message: messageFor(e), guard: e instanceof ApiFailure && (e.kind === "cap" || e.kind === "slow" || e.kind === "busy" || e.kind === "source_limit") });
     } finally {
       setLoading(false);
     }
@@ -148,57 +188,53 @@ export function SearchTab({
   );
   const showsSpoonacular = options.some((o) => o.source === "spoonacular");
 
+  const sourceLabel = SOURCES.find((x) => x.id === source)?.label ?? "Big sites";
+  const searched = result?.source === "spoonacular" ? "Spoonacular" : "our sites";
+
   return (
     <div>
       <form
-        className="mx-5 mt-3.5"
+        className="bk-gutter mt-3 flex flex-col gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           void run(query, source);
         }}
       >
-        <label htmlFor="meal" className="mb-1.5 block text-[13px] font-semibold text-[#4A544F]">
-          What&apos;s for dinner?
-        </label>
-        <div className="flex gap-2">
-          <input
-            id="meal"
-            value={query}
-            onChange={(e) => onQuery(e.target.value)}
-            enterKeyHint="search"
-            autoComplete="off"
-            className={`h-12 min-w-0 flex-1 rounded-xl border-[1.5px] border-green bg-white px-3.5 text-base ${focusRing}`}
-          />
-          <button
-            type="submit"
-            disabled={loading || !query.trim()}
-            className={`inline-flex h-12 shrink-0 items-center rounded-full bg-green px-5 text-[15px] font-semibold text-white disabled:opacity-60 ${focusRing}`}
-          >
+        <TextField
+          id="meal"
+          label="What’s for dinner?"
+          icon={Search}
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          enterKeyHint="search"
+          autoComplete="off"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <button type="submit" disabled={loading || !query.trim()} className={ghostButton}>
             Search
           </button>
+          <FindMyDishButton busy={loading} onFile={(f) => void findDish(f)} />
         </div>
-        <FindMyDishButton busy={loading} onFile={(f) => void findDish(f)} />
-        <div role="radiogroup" aria-label="Where to look" className="mt-2.5 grid grid-cols-2 gap-1 rounded-[14px] bg-[#EAEEE9] p-1">
-          {SOURCES.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              role="radio"
-              aria-checked={source === s.id}
-              onClick={() => {
-                if (source === s.id) return;
-                onSource(s.id);
-                if (query.trim() && (result || error)) void run(query, s.id);
-              }}
-              className={`h-11 rounded-[10px] text-sm ${focusRing} ${
-                source === s.id ? "bg-white font-semibold text-ink shadow-sm" : "font-medium text-[#4A544F]"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
+        <div>
+          <button type="button" aria-haspopup="dialog" onClick={() => setChoosing(true)} className={quietLink}>
+            Looking on: {sourceLabel}
+            <Icon icon={ChevronRight} size={18} />
+          </button>
         </div>
       </form>
+
+      {choosing && (
+        <Sheet label="Where to look" title="Where to look" onClose={() => setChoosing(false)}>
+          <SourceChoice
+            source={source}
+            onChoose={(next) => {
+              if (source === next) return;
+              onSource(next);
+              if (query.trim() && (result || error)) void run(query, next);
+            }}
+          />
+        </Sheet>
+      )}
 
       {!hideResults && dish && (
         <DishCard
@@ -212,91 +248,109 @@ export function SearchTab({
       )}
 
       {!hideResults && (
-        <div className="mx-5 mt-3.5" aria-live="polite">
+        <div className="bk-gutter mt-3" aria-live="polite">
           {loading && dish?.phase !== "looking" && (
-            <ul aria-label="Searching" className="flex flex-col gap-2">
-              {[0, 1, 2].map((i) => (
-                <li key={i} className="flex h-[88px] animate-pulse gap-3 rounded-2xl border border-line bg-white p-2.5">
-                  <div className="size-[68px] rounded-[10px] bg-[#EDF0EC]" />
-                  <div className="flex-1 space-y-2 pt-1.5">
-                    <div className="h-3.5 w-3/4 rounded bg-[#EDF0EC]" />
-                    <div className="h-3 w-1/2 rounded bg-[#EDF0EC]" />
+            <ul aria-label="Searching" className="grid grid-cols-2 items-start gap-2">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <li key={i} className="rounded-md bg-surface">
+                  <SkeletonTile crop="tile" />
+                  <div className="px-2.5 py-2">
+                    <SkeletonLines lines={2} size="small" />
                   </div>
                 </li>
               ))}
+              <li className="sr-only">
+                <Loading label="Searching for recipes" />
+              </li>
             </ul>
           )}
-          {!loading && error && (
-            <p role="alert" className="text-[15px] font-medium text-[#A6261B]">
-              {error}
-            </p>
+          {!loading && error &&
+            (error.guard ? (
+              <Banner role="alert" icon={Info}>
+                {error.message}
+              </Banner>
+            ) : (
+              <ErrorBanner message={error.message} actionLabel="Try again" onAction={() => void run(query, source)} />
+            ))}
+          {!loading && !result && !error && !dish && !query.trim() && (
+            <EmptyState sentence="Search for a dinner, paste a recipe, or pick a favorite." />
           )}
           {!loading && result && (
             <>
-              {result.fellBack && <p className="mb-2 text-sm text-muted">Nothing on the big sites, so here&apos;s Spoonacular.</p>}
+              {result.fellBack && <p className="mb-2 text-small text-ink-soft">Nothing on the big sites, so here’s Spoonacular.</p>}
               {result.toppedUp && (
-                <p className="mb-2 text-sm text-muted">Only a few on the big sites, so here are some from Spoonacular too.</p>
+                <p className="mb-2 text-small text-ink-soft">Only a few on the big sites, so here are some from Spoonacular too.</p>
               )}
               {options.length === 0 ? (
-                <p className="text-[15px] text-muted">No recipes found on our sites. Try other words, or paste a recipe.</p>
+                <p className="text-body text-ink">No recipes found on {searched}. Try other words, or paste a recipe.</p>
               ) : (
                 <>
-                <SortControl
-                  value={sort}
-                  onChange={(m) => {
-                    setSort(m);
-                    saveSort(m);
-                  }}
-                />
-                {sort === "fits" && week !== null && foods.length === 0 && (
-                  <p data-testid="fits-empty" className="mb-2.5 text-sm text-muted">
-                    {week.otherMeals === 0 ? "Add another dinner first to see what fits" : "Nothing on this week's list to match yet"}
-                  </p>
-                )}
-                <ul className="flex flex-col gap-2">
-                  {shown.map(({ option: o, shared }) => {
-                    // The badge stays with the most-loved pick, wherever the sort puts it.
-                    const m = metaParts(o, o === found[0]);
-                    const flags = flagsByOption.get(o) ?? [];
-                    const lines = cardLines({
-                      shares: !!sharesLine(shared),
-                      made: false,
-                      allergy: flags.some((f) => f.kind === "allergy"),
-                      dislike: flags.some((f) => f.kind === "dislike"),
-                    });
-                    const shares = lines.includes("shares") ? sharesLine(shared) : null;
-                    return (
-                    <li key={o.url}>
-                      <button
-                        type="button"
-                        data-testid="result-card"
-                        aria-label={`${o.title} · ${o.site}${m.loved ? ", Most loved" : ""}${m.line ? `, ${m.line}` : ""}${shares ? `, ${shares}` : ""}${people ? cardFlagText(o, people) : ""}`}
-                        disabled={picking}
-                        onClick={() => onPick(o)}
-                        className={`flex min-h-[88px] w-full items-center gap-3 rounded-2xl border border-line bg-white p-2.5 text-left disabled:opacity-60 ${focusRing}`}
-                      >
-                        <MealThumb src={o.image} className="size-[68px] rounded-[10px]" />
-                        <span className="min-w-0 flex-1">
-                          <span data-testid="result-title" className="block text-[15px] font-semibold leading-snug">
-                            {o.title}
-                          </span>
-                          <span data-testid="result-site" className="mt-0.5 block text-[13px] text-muted">
-                            {o.site}
-                          </span>
-                          <MetaLine loved={m.loved} line={m.line} shares={shares} />
-                          {people && <FlagLines flags={flags} people={people} />}
-                        </span>
-                      </button>
-                    </li>
-                    );
-                  })}
-                </ul>
+                  <SortControl
+                    value={sort}
+                    onChange={(m) => {
+                      setSort(m);
+                      saveSort(m);
+                    }}
+                  />
+                  {sort === "fits" && week !== null && foods.length === 0 && (
+                    <p data-testid="fits-empty" className="mt-2 text-small text-ink-soft">
+                      {week.otherMeals === 0 ? "Add another dinner first to see what fits." : "Nothing on this week’s list to match yet."}
+                    </p>
+                  )}
+                  <ul className="mt-3 grid grid-cols-2 items-start gap-2">
+                    {shown.map(({ option: o, shared }) => {
+                      // The badge stays with the most-loved pick, wherever the sort puts it.
+                      const m = metaParts(o, o === found[0]);
+                      const flags = flagsByOption.get(o) ?? [];
+                      const lines = cardLines({
+                        shares: !!sharesLine(shared),
+                        made: false,
+                        allergy: flags.some((f) => f.kind === "allergy"),
+                        dislike: flags.some((f) => f.kind === "dislike"),
+                      });
+                      const shares = lines.includes("shares") ? sharesLine(shared) : null;
+                      return (
+                        <li key={o.url}>
+                          <button
+                            type="button"
+                            data-testid="result-card"
+                            aria-label={`${o.title} · ${o.site}${m.loved ? ", Most loved" : ""}${m.line ? `, ${m.line}` : ""}${shares ? `, ${shares}` : ""}${people ? cardFlagText(o, people) : ""}`}
+                            disabled={picking}
+                            onClick={(e) => onPick(o, e.currentTarget.querySelector("img"))}
+                            className="block w-full rounded-md bg-surface text-left text-ink bk-press"
+                          >
+                            <Photo
+                              src={o.image}
+                              name={o.title}
+                              crop="tile"
+                              hint={false}
+                              className="rounded-t-md"
+                              imgRef={(img) => {
+                                if (img) img.dataset.optionUrl = o.url;
+                              }}
+                            />
+                            <span className="block px-2.5 py-2">
+                              <span data-testid="result-title" className="line-clamp-2 break-words text-small font-semibold">
+                                {o.title}
+                              </span>
+                              <span data-testid="result-site" className="mt-0.5 block break-words text-label text-ink-soft">
+                                {o.site}
+                              </span>
+                              <MetaLine loved={m.loved} line={m.line} shares={shares} />
+                              {people && <FlagLines flags={flags} people={people} />}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </>
               )}
               {showsSpoonacular && (
-                <p className="mt-3 text-[13px]">
-                  <a href="https://spoonacular.com" target="_blank" rel="noopener noreferrer" className={`inline-flex min-h-11 items-center font-semibold text-green ${focusRing}`}>
+                <p className="mt-3">
+                  <a href="https://spoonacular.com" target="_blank" rel="noopener noreferrer" className={quietLink}>
                     Recipes from Spoonacular
+                    <Icon icon={ChevronRight} size={18} />
                   </a>
                 </p>
               )}

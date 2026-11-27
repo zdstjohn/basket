@@ -19,7 +19,7 @@ const WITH_LISTS: PersonInput[] = FAMILY.map((p) =>
 );
 
 async function searchFor(page: Page, query: string) {
-  await page.getByLabel("What's for dinner?").fill(query);
+  await page.getByLabel("What’s for dinner?").fill(query);
   await page.getByRole("button", { name: "Search" }).click();
 }
 
@@ -334,6 +334,30 @@ for (const look of ["light", "dark"] as const) {
     await expectUnclipped(swap.getByTestId("allergy-box"));
   });
 
+  test(`a card with an allergy shows the whole warning at 360 px (${look})`, async ({ page }) => {
+    await setLook(page, look);
+    await createHousehold(page, `family-flags-card-${look}`, WITH_LISTS);
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto("/week/add?day=thu&slot=dinner");
+    await expect(page.locator("html")).toHaveAttribute("data-look", look);
+    await searchFor(page, "soup");
+    const card = page.getByRole("button", { name: PILAF });
+    const line = card.getByTestId("result-flag");
+    await expect(line).toBeVisible();
+    // The whole warning: the allergy, whose it is, what lists it, and the reminder, with its icon.
+    await expect(line).toContainText("Tree nut allergy: Daughter (4)");
+    await expect(line).toContainText("Lists almonds. Check labels.");
+    await expect(line.locator("svg.lucide-triangle-alert")).toHaveCount(1);
+    await expectUnclipped(line);
+    // Inside the card, all of it, and the card does not cut it off.
+    const [c, l] = [(await card.boundingBox())!, (await line.boundingBox())!];
+    expect(l.x).toBeGreaterThanOrEqual(c.x);
+    expect(l.x + l.width).toBeLessThanOrEqual(c.x + c.width + 0.5);
+    expect(l.y + l.height).toBeLessThanOrEqual(c.y + c.height + 0.5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+    expect(await card.innerText()).not.toMatch(SAFE_WORDS);
+  });
+
   test(`the allergy box has an edge and an icon in both looks (${look})`, async ({ page }) => {
     await setLook(page, look);
     await createHousehold(page, `family-flags-edge-${look}`, WITH_LISTS);
@@ -411,4 +435,59 @@ test("a dinner added despite an allergy keeps its warning on the tile and on the
   await expect(hero.locator("svg.lucide-triangle-alert")).toHaveCount(1);
   await expectUnclipped(hero.getByText(/Tree nut allergy: Daughter \(4\)/));
   expect(await hero.innerText()).not.toMatch(SAFE_WORDS);
+});
+
+/** Whether this element's fill is the accent color, read through a probe so any color syntax compares the same. */
+async function fillIsAccent(button: Locator): Promise<boolean> {
+  return button.evaluate((el) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--bk-accent)";
+    document.body.appendChild(probe);
+    const accent = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return getComputedStyle(el).backgroundColor === accent;
+  });
+}
+
+for (const look of ["light", "dark"] as const) {
+  test(`with an allergy the filled button is Pick a different dinner, in both looks (${look})`, async ({ page }) => {
+    await setLook(page, look);
+    await createHousehold(page, `family-flags-main-${look}`, WITH_LISTS);
+    await page.goto("/week/add?day=thu&slot=dinner");
+    await searchFor(page, "soup");
+    await page.getByRole("button", { name: PILAF }).click();
+    await expect(page.getByTestId("allergy-box")).toBeVisible();
+
+    const different = page.getByRole("button", { name: "Pick a different dinner" });
+    const anyway = page.getByRole("button", { name: "Add to Thursday anyway" });
+    await expect(different).toBeVisible();
+    await expect(anyway).toBeEnabled();
+    expect(await fillIsAccent(different)).toBe(true);
+    expect(await fillIsAccent(anyway)).toBe(false);
+    // The allergy line in the list carries the warning icon and the family, beside the amount.
+    await expect(page.getByRole("region", { name: "Draft recipe" }).getByText(/· tree nut/).first()).toBeVisible();
+  });
+}
+
+test("the gate holds while people are still loading", async ({ page }) => {
+  await createHousehold(page, "family-flags-gate", WITH_LISTS);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/rest/v1/people*", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await searchFor(page, "soup");
+  await page.getByRole("button", { name: PILAF }).click();
+
+  // The recipe is on the page, but without the household nothing can be added.
+  const draft = page.getByRole("region", { name: "Draft recipe" });
+  await expect(draft.getByRole("button", { name: "Edit ingredients" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add to Thursday" })).toBeDisabled();
+
+  release();
+  await expect(page.getByTestId("allergy-box")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pick a different dinner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add to Thursday anyway" })).toBeEnabled();
 });

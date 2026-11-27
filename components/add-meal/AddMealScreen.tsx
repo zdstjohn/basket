@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { flushSync } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DraftPreview, draftFlags } from "@/components/add-meal/DraftPreview";
+import { RecipePage, draftFlags } from "@/components/add-meal/RecipePage";
 import { PasteTab } from "@/components/add-meal/PasteTab";
 import { SearchTab } from "@/components/add-meal/SearchTab";
 import { draftFromOption, messageFor } from "@/components/add-meal/api";
@@ -22,11 +22,16 @@ import { markSettle } from "@/lib/motion/settle";
 import { watchPeople } from "@/lib/people-watch";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts";
 import { matchedWords, parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
+import { morph } from "@/lib/motion/view-transition";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
 import { subscribeHousehold } from "@/lib/realtime";
 import { weekFoods } from "@/lib/recipes/search/overlap";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
-import { bigGreenLink, focusRing, pillButton, stickyBottom } from "@/lib/ui";
+import { Button } from "@/components/ui/Button";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { ErrorBanner } from "@/components/ui/states";
+import { Tabs } from "@/components/ui/Tabs";
+import { barBottom } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
 
 type Tab = AddMealTab;
@@ -68,6 +73,11 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   // What is kept beside the draft: only the words that matched someone's list. Until people load, keep what came back.
   const matched = useMemo(() => (people ? matchedWords(checkNames, people) : restoredWords), [checkNames, people, restoredWords]);
   const savedMealId = useRef<string | null>(null);
+  // The tapped result: its photo and title show at once while the recipe is read, and it is the way back to its card.
+  const [pending, setPending] = useState<RecipeOption | null>(null);
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  // Bumped whenever a read is abandoned, so a late answer cannot bring the page back.
+  const readToken = useRef(0);
 
   const key = weekStart ? `add-meal:${weekStart}:${day}:${slot}` : null;
   const label = dayName(day);
@@ -180,6 +190,9 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   }
 
   function startOver() {
+    readToken.current += 1;
+    setPending(null);
+    setPicking(false);
     setDraft(null);
     setOptionNames([]);
     setRestoredWords([]);
@@ -188,20 +201,55 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     savedMealId.current = null;
   }
 
-  async function pick(option: RecipeOption) {
+  async function pick(option: RecipeOption, img: HTMLImageElement | null) {
+    if (picking) return;
+    const token = ++readToken.current;
     setPicking(true);
     setError(null);
+    // The recipe page opens at once; its photo grows from the card's.
+    void morph({
+      from: img,
+      to: () => heroRef.current,
+      update: () => {
+        if (readToken.current !== token) return;
+        flushSync(() => setPending(option));
+        window.scrollTo(0, 0);
+      },
+    }).catch(() => {});
     try {
-      setDraft(await draftFromOption(option));
+      const next = await draftFromOption(option);
+      if (readToken.current !== token) return;
+      setDraft(next);
       setOptionNames(ingredientNames(option));
       setRestoredWords([]);
       setCustom(null);
       savedMealId.current = null;
+      setPending((p) => p ?? option);
     } catch (e) {
+      if (readToken.current !== token) return;
+      setPending(null);
       setError(messageFor(e));
-    } finally {
       setPicking(false);
+      // A page still on its way in must not open after the failure.
+      readToken.current += 1;
+    } finally {
+      if (readToken.current === token) setPicking(false);
     }
+  }
+
+  /** Back to the results; the photo shrinks into its card when the card can be found again. */
+  function dismiss() {
+    const url = pending?.url;
+    const from = heroRef.current;
+    if (!url || !from) {
+      startOver();
+      return;
+    }
+    void morph({
+      from,
+      to: () => document.querySelector<HTMLElement>(`[data-option-url="${CSS.escape(url)}"]`),
+      update: () => flushSync(startOver),
+    }).catch(() => {});
   }
 
   async function putOnDay(mealId: string) {
@@ -231,7 +279,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       }
       await putOnDay(savedMealId.current);
     } catch {
-      setError("We couldn't add that. Try again.");
+      setError("We couldn’t add that. Try again.");
       setAdding(false);
     }
   }
@@ -241,7 +289,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     try {
       await putOnDay(meal.id);
     } catch {
-      setError("We couldn't add that. Try again.");
+      setError("We couldn’t add that. Try again.");
     }
   }
 
@@ -250,132 +298,103 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       const blob = await resizeForUpload(file);
       setCustom({ blob, url: URL.createObjectURL(blob) });
     } catch {
-      setError("We couldn't use that photo. Try another one.");
+      setError("We couldn’t use that photo. Try another one.");
     }
   }
 
-  const showPreview = draft && tab !== "favorites";
+  const showPage = (!!draft || !!pending) && tab !== "favorites";
   const hasAllergy = useMemo(
     () => !!draft && !!people && draftFlags(draft, people, checkNames).some((f) => f.kind === "allergy"),
     [draft, people, checkNames],
   );
-  const cantAdd = adding || !weekStart || people === null;
+  // Nothing can be added until the recipe and the household (for the allergy check) have both arrived.
+  const cantAdd = !draft || !weekStart || people === null;
 
   return (
-    <section className={`flex flex-1 flex-col ${showPreview ? "" : "mb-[var(--bk-safe-bottom)]"}`}>
-      <header className="flex items-center gap-2 px-5 pb-2.5 pt-4">
-        <Link href="/week" aria-label="Close" className={`-ml-2.5 flex size-11 items-center justify-center rounded-full text-ink ${focusRing}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </Link>
-        <h1 className="text-2xl font-bold">{label} dinner</h1>
-      </header>
+    <section className={`flex flex-1 flex-col ${showPage ? "" : "mb-[var(--bk-safe-bottom)]"}`}>
+      <ScreenHeader title={`${label} dinner`} back={{ href: "/week", label: "Close", icon: "close" }} />
 
-      <div role="tablist" aria-label="How to add" className="mx-5 grid grid-cols-3 gap-1 rounded-[14px] bg-[#EAEEE9] p-1">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => changeTab(t.id)}
-            className={`h-11 rounded-[10px] text-sm ${focusRing} ${
-              tab === t.id ? "bg-white font-semibold text-ink shadow-sm" : "font-medium text-[#4A544F]"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div hidden={tab !== "search"}>
-        <SearchTab
-          query={query}
-          onQuery={setQuery}
-          source={source}
-          onSource={changeSource}
-          hideResults={!!draft}
-          week={week}
-          people={people}
-          onNeedWeek={wantWeek}
-          picking={picking}
-          onPick={(o) => void pick(o)}
-          onSearchStart={startOver}
-          onDishPhoto={foundWithPhoto}
-        />
-      </div>
-      {tab === "paste" && (
-        <PasteTab value={paste} onChange={setPaste} onDraft={setDraft} onStart={startOver} />
-      )}
-      {tab === "favorites" && (
-        <div className="mt-3.5">
-          <FavoritesBrowser
-            household={household}
-            showChips={false}
-            addLabel={(m) => `Add ${m.name} to ${label}`}
-            anywayLabel={`Add to ${label} anyway`}
-            onAdd={addFavorite}
-          />
+      {!showPage && (
+        <div className="bk-gutter">
+          <Tabs label="How to add" items={TABS} active={tab} onChange={changeTab} panelId="add-panel" />
         </div>
       )}
 
-      {picking && (
-        <p role="status" className="mx-5 mt-3.5 text-[15px] text-muted">
-          Reading the recipe…
-        </p>
-      )}
-      {showPreview && (
-        <>
-          <DraftPreview draft={draft} people={people ?? []} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} onChanges={(personChanges) => setDraft({ ...draft, personChanges })} optionNames={checkNames} />
-          <label className="mx-5 mt-3 flex min-h-11 items-center gap-2.5 text-[15px] font-medium">
-            <input
-              type="checkbox"
-              checked={saveFavorite}
-              onChange={(e) => setSaveFavorite(e.target.checked)}
-              className="size-5 accent-green"
+      <div role="tabpanel" id="add-panel" aria-labelledby={`add-panel-tab-${tab}`} hidden={showPage}>
+        <div hidden={tab !== "search"}>
+          <SearchTab
+            query={query}
+            onQuery={setQuery}
+            source={source}
+            onSource={changeSource}
+            hideResults={!!draft || !!pending}
+            week={week}
+            people={people}
+            onNeedWeek={wantWeek}
+            picking={picking}
+            onPick={(o, img) => void pick(o, img)}
+            onSearchStart={startOver}
+            onDishPhoto={foundWithPhoto}
+          />
+        </div>
+        {tab === "paste" && <PasteTab value={paste} onChange={setPaste} onDraft={setDraft} onStart={startOver} />}
+        {tab === "favorites" && (
+          <div className="mt-3">
+            <FavoritesBrowser
+              household={household}
+              showChips={false}
+              addLabel={(m) => `Add ${m.name} to ${label}`}
+              anywayLabel={`Add to ${label} anyway`}
+              onAdd={addFavorite}
             />
-            Save as a favorite
-          </label>
-        </>
+          </div>
+        )}
+      </div>
+
+      {showPage && (
+        <RecipePage
+          draft={draft}
+          pending={pending}
+          people={people ?? []}
+          photoSrc={mine?.url ?? null}
+          onPhoto={(f) => void pickPhoto(f)}
+          dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null}
+          onDismiss={dismiss}
+          onIngredients={(ingredients) => draft && setDraft({ ...draft, ingredients })}
+          onChanges={(personChanges) => draft && setDraft({ ...draft, personChanges })}
+          optionNames={checkNames}
+          saveFavorite={saveFavorite}
+          onSaveFavorite={setSaveFavorite}
+          heroRef={heroRef}
+        />
       )}
       {peopleFailed && (
-        <div className="mx-5 mt-3 flex flex-wrap items-center gap-3">
-          <p role="alert" className="text-[15px] font-medium text-[#A6261B]">Couldn’t check allergies. Try again.</p>
-          <button type="button" onClick={loadPeople} className={pillButton}>
-            Retry
-          </button>
+        <div className="bk-gutter mt-3">
+          <ErrorBanner message="Couldn’t check allergies. Try again." actionLabel="Retry" onAction={loadPeople} />
         </div>
       )}
       {error && (
-        <p role="alert" className="mx-5 mt-3 text-[15px] font-medium text-[#A6261B]">
-          {error}
-        </p>
+        <div className="bk-gutter mt-3">
+          <ErrorBanner message={error} />
+        </div>
       )}
 
       <div className="mt-auto" />
-      {showPreview && (
-        <div className={stickyBottom}>
+      {showPage && (
+        <div className={barBottom}>
           {hasAllergy ? (
             <div className="grid gap-2">
-              <button type="button" onClick={startOver} className={`${pillButton} h-[52px] w-full text-base`}>
+              <Button variant="main" onClick={dismiss}>
                 Pick a different dinner
-              </button>
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  disabled={cantAdd}
-                  onClick={() => void addDraft()}
-                  className={`inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-[15px] font-semibold text-ink disabled:opacity-60 ${focusRing}`}
-                >
-                  Add to {label} anyway
-                </button>
-              </div>
+              </Button>
+              <Button variant="ghost" disabled={cantAdd} busy={adding} busyLabel="Adding…" onClick={() => void addDraft()}>
+                Add to {label} anyway
+              </Button>
             </div>
           ) : (
-            <button type="button" disabled={cantAdd} onClick={() => void addDraft()} className={bigGreenLink}>
+            <Button variant="main" disabled={cantAdd} busy={adding} busyLabel="Adding…" onClick={() => void addDraft()}>
               Add to {label}
-            </button>
+            </Button>
           )}
         </div>
       )}

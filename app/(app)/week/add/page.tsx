@@ -4,6 +4,8 @@ import { getMyHouseholdOnce } from "@/lib/db/queries/household-server";
 import type { Day } from "@/lib/domain/weeks";
 import { isDay } from "@/lib/week/format";
 
+export const metadata = { title: "Add a dinner" };
+
 export default async function Page(props: PageProps<"/week/add">) {
   const { day, slot } = await props.searchParams;
   const household = await getMyHouseholdOnce();

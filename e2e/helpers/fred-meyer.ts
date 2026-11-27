@@ -15,7 +15,7 @@ export async function chooseStore(page: Page): Promise<void> {
 /** Puts chicken tacos on Thursday's dinner. */
 export async function planTacos(page: Page): Promise<void> {
   await page.goto("/week/add?day=thu&slot=dinner");
-  await page.getByLabel("What's for dinner?").fill("tacos");
+  await page.getByLabel("What’s for dinner?").fill("tacos");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
   await page.getByRole("button", { name: "Add to Thursday" }).click();
