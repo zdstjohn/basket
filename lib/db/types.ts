@@ -153,6 +153,7 @@ export type Database = {
           recipe_source: string
           slots: string[]
           time_zone: string
+          trusted: boolean
           week_start: string
         }
         Insert: {
@@ -169,6 +170,7 @@ export type Database = {
           recipe_source?: string
           slots?: string[]
           time_zone?: string
+          trusted?: boolean
           week_start?: string
         }
         Update: {
@@ -185,6 +187,7 @@ export type Database = {
           recipe_source?: string
           slots?: string[]
           time_zone?: string
+          trusted?: boolean
           week_start?: string
         }
         Relationships: []
@@ -327,14 +330,17 @@ export type Database = {
         Row: {
           calls: number
           day: string
+          untrusted_calls: number
         }
         Insert: {
           calls?: number
           day: string
+          untrusted_calls?: number
         }
         Update: {
           calls?: number
           day?: string
+          untrusted_calls?: number
         }
         Relationships: []
       }
@@ -632,6 +638,30 @@ export type Database = {
           },
         ]
       }
+      spend_limits: {
+        Row: {
+          only_row: boolean
+          per_day: number
+          per_minute: number
+          untrusted_day_cents: number
+          untrusted_kroger_day: number
+        }
+        Insert: {
+          only_row?: boolean
+          per_day?: number
+          per_minute?: number
+          untrusted_day_cents?: number
+          untrusted_kroger_day?: number
+        }
+        Update: {
+          only_row?: boolean
+          per_day?: number
+          per_minute?: number
+          untrusted_day_cents?: number
+          untrusted_kroger_day?: number
+        }
+        Relationships: []
+      }
       staples: {
         Row: {
           active: boolean
@@ -820,6 +850,7 @@ export type Database = {
     }
     Functions: {
       accept_invite: { Args: { p_token: string }; Returns: string }
+      ai_gate: { Args: { h: string; hold_cents: number }; Returns: string }
       ai_spend_since: { Args: { h: string; since: string }; Returns: number }
       create_household: { Args: { p_name: string }; Returns: string }
       create_invite: { Args: never; Returns: string }

@@ -8,7 +8,8 @@ import { getMatches } from '@/lib/kroger/matches';
 import { isKrogerConfigured, KrogerNotConfigured } from '@/lib/kroger/token';
 import { KROGER_PRICE_MAX_AGE_MS } from '@/lib/list/prices';
 import type { MatchRow } from '@/lib/list/matches';
-import { generateStructured } from './provider';
+import { generateStructured, type UsageReport } from './provider';
+import type { GateResult } from './usage';
 import { EstimateResultSchema } from './schemas';
 
 export interface EstimateContext {
@@ -16,9 +17,12 @@ export interface EstimateContext {
   householdId: string;
   /** The household's chosen Fred Meyer store; with it, Fred Meyer items are priced from Kroger first. */
   krogerLocationId?: string | null;
-  /** False when the household is over its AI cap: Kroger prices still come, the model is not asked. */
-  aiAllowed?: boolean;
-  onUsage?: (e: { model: string; inputTokens: number; outputTokens: number }) => void;
+  /**
+   * The spend guard, taken once and only when the model is about to be asked (never for cached or Kroger
+   * prices). Anything but 'ok' means the model is not asked; Kroger and cached prices still come.
+   */
+  gate: () => Promise<GateResult>;
+  onUsage?: (e: UsageReport) => void;
 }
 
 /** What the list shows beside a Kroger-priced item. */
@@ -33,8 +37,10 @@ export interface EstimateResult {
   prices: Record<string, number>;
   /** Product details for the prices that came from Kroger, by canonical name. */
   kroger: Record<string, KrogerDetail>;
-  /** True when some items were left unpriced because the AI cap is reached. */
+  /** True when some items were left unpriced because the spend guard refused the model call. */
   aiSkipped: boolean;
+  /** Why the guard refused, when aiSkipped. */
+  aiSkipReason?: Exclude<GateResult, 'ok'>;
 }
 
 const STORE_NAMES: Record<Store, string> = {
@@ -137,8 +143,10 @@ export async function estimatePrices(
     }
   }
 
-  if (missing.length > 0 && ctx.aiAllowed === false) {
+  const gated = missing.length > 0 ? await ctx.gate() : 'ok';
+  if (gated !== 'ok') {
     out.aiSkipped = true;
+    out.aiSkipReason = gated;
   } else if (missing.length > 0) {
     const r = await generateStructured({
       task: 'estimate',

@@ -7,8 +7,14 @@ export interface SearchHit {
   title: string;
 }
 
+/** Counts the paid Brave requests a search sent. Routes bill it in `finally`, so a failure after Brave answered still costs. */
+export interface SearchMeter {
+  braveCalls: number;
+}
+
 export interface WebSearchProvider {
-  search(query: string, count: number): Promise<SearchHit[]>;
+  /** `meter`, when given, counts each request sent (also one that then failed: it was still billed). */
+  search(query: string, count: number, meter?: SearchMeter): Promise<SearchHit[]>;
 }
 
 export interface RecipeOption {

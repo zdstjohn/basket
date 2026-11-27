@@ -3,14 +3,15 @@ import type { Quantity } from '@/lib/domain/types';
 
 const getUser = vi.fn();
 const getMyHousehold = vi.fn();
-const checkCap = vi.fn();
+const aiGate = vi.fn();
 const recordUsage = vi.fn();
 let sbRef: unknown;
 
 vi.mock('@/lib/db/server', () => ({ createServerClient: async () => sbRef }));
 vi.mock('@/lib/db/queries/household', () => ({ getMyHousehold: (...a: unknown[]) => getMyHousehold(...a) }));
-vi.mock('@/lib/ai/usage', () => ({
-  checkCap: (...a: unknown[]) => checkCap(...a),
+vi.mock('@/lib/ai/usage', async (orig) => ({
+  ...(await orig<typeof import('@/lib/ai/usage')>()),
+  aiGate: (...a: unknown[]) => aiGate(...a),
   recordUsage: (...a: unknown[]) => recordUsage(...a),
 }));
 vi.mock('@/lib/ai/provider', async (orig) => {
@@ -19,9 +20,10 @@ vi.mock('@/lib/ai/provider', async (orig) => {
 });
 
 import { POST } from '@/app/api/estimates/route';
-import { estimateCents } from '@/lib/ai/estimate';
+import { estimateCents, estimatePrices } from '@/lib/ai/estimate';
 import { generateStructured } from '@/lib/ai/provider';
 
+const allow = async () => 'ok' as const;
 const mass: Quantity = { amount: 500, kind: 'mass', base: 'g' };
 const count: Quantity = { amount: 3, kind: 'count', base: 'each', countUnit: 'each' };
 
@@ -48,13 +50,13 @@ beforeEach(() => {
   process.env.AI_FAKE = '1';
   getUser.mockResolvedValue({ data: { user: { id: 'u' } } });
   getMyHousehold.mockResolvedValue({ id: 'h1' });
-  checkCap.mockResolvedValue({ ok: true, spentCents: 0, capCents: 300 });
+  aiGate.mockResolvedValue('ok');
 });
 
 describe('estimateCents', () => {
   it('serves cache hits without calling the model', async () => {
     const { sb, upserts } = mockSb([{ canonical: 'rice', kind: 'mass', cents_per_base: 0.4 }]);
-    const out = await estimateCents([{ canonical: 'rice', qty: mass }], 'costco', { sb: sb as never, householdId: 'h1' });
+    const out = await estimateCents([{ canonical: 'rice', qty: mass }], 'costco', { sb: sb as never, householdId: 'h1', gate: allow });
     expect(out).toEqual({ rice: 0.4 });
     expect(generateStructured).not.toHaveBeenCalled();
     expect(upserts).toHaveLength(0);
@@ -65,7 +67,7 @@ describe('estimateCents', () => {
     const onUsage = vi.fn();
     const out = await estimateCents(
       [{ canonical: 'rice', qty: mass }, { canonical: 'eggs', qty: count }], 'fred_meyer',
-      { sb: sb as never, householdId: 'h1', onUsage },
+      { sb: sb as never, householdId: 'h1', gate: allow, onUsage },
     );
     expect(out).toEqual({ rice: 0.4, eggs: 50 });
     expect(generateStructured).toHaveBeenCalledTimes(1);
@@ -89,13 +91,33 @@ describe('estimateCents', () => {
         { canonical: 'eggs', qty: count },
       ],
       'fred_meyer',
-      { sb: sb as never, householdId: 'h1' },
+      { sb: sb as never, householdId: 'h1', gate: allow },
     );
     expect(out).toEqual({ chicken: 1, milk: 0.1, eggs: 50 });
   });
 
+  it('takes the gate once, just before the model call, and not at all when nothing needs the model', async () => {
+    const gate = vi.fn(async () => 'ok' as const);
+    await estimateCents([{ canonical: 'rice', qty: mass }], 'costco', {
+      sb: mockSb([{ canonical: 'rice', kind: 'mass', cents_per_base: 0.4 }]).sb as never, householdId: 'h1', gate,
+    });
+    expect(gate).not.toHaveBeenCalled();
+    await estimateCents([{ canonical: 'eggs', qty: count }], 'costco', { sb: mockSb([]).sb as never, householdId: 'h1', gate });
+    expect(gate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['cap', 'slow', 'busy'] as const)('a refused gate (%s) skips the model and says why', async (why) => {
+    const { sb, upserts } = mockSb([]);
+    const r = await estimatePrices([{ canonical: 'eggs', qty: count }], 'costco', {
+      sb: sb as never, householdId: 'h1', gate: async () => why,
+    });
+    expect(generateStructured).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ prices: {}, aiSkipped: true, aiSkipReason: why });
+    expect(upserts).toHaveLength(0);
+  });
+
   it('returns {} for no items without any query', async () => {
-    expect(await estimateCents([], 'costco', { sb: {} as never, householdId: 'h1' })).toEqual({});
+    expect(await estimateCents([], 'costco', { sb: {} as never, householdId: 'h1', gate: allow })).toEqual({});
   });
 });
 
@@ -111,11 +133,36 @@ describe('POST /api/estimates', () => {
 
   it('402 at the cap without calling the model', async () => {
     sbRef = mockSb([]).sb;
-    checkCap.mockResolvedValue({ ok: false, spentCents: 300, capCents: 300 });
+    aiGate.mockResolvedValue('cap');
     const res = await POST(req(body));
     expect(res.status).toBe(402);
     expect(await res.json()).toEqual({ error: 'cap_reached' });
     expect(generateStructured).not.toHaveBeenCalled();
+  });
+
+  it('429 when the gate says slow or busy, without calling the model', async () => {
+    sbRef = mockSb([]).sb;
+    for (const [why, error] of [['slow', 'slow_down'], ['busy', 'busy']] as const) {
+      aiGate.mockResolvedValue(why);
+      const res = await POST(req(body));
+      expect(res.status).toBe(429);
+      expect(await res.json()).toEqual({ error });
+    }
+    expect(generateStructured).not.toHaveBeenCalled();
+  });
+
+  it('takes no gate when every price is cached', async () => {
+    sbRef = mockSb([{ canonical: 'eggs', kind: 'count', cents_per_base: 50 }]).sb;
+    const res = await POST(req(body));
+    expect(res.status).toBe(200);
+    expect(aiGate).not.toHaveBeenCalled();
+  });
+
+  it('takes the gate for this household once, with the estimate hold, when the model is needed', async () => {
+    sbRef = mockSb([]).sb;
+    await POST(req(body));
+    expect(aiGate).toHaveBeenCalledTimes(1);
+    expect(aiGate).toHaveBeenCalledWith(expect.anything(), 'h1', expect.any(Number));
   });
 
   it('200 with prices, and records estimate usage', async () => {
