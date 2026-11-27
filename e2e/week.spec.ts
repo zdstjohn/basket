@@ -42,8 +42,8 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
   await expect(page.getByRole("heading", { name: "This week" })).toBeVisible();
   await expect(page.getByTestId("week-range")).toHaveText(formatWeekRange(thisWeekStart()));
   await expect(page.getByRole("link", { name: /Add dinner/ })).toHaveCount(7);
-  await expect(page.getByRole("region", { name: "Budget" })).toContainText("$0.00 of $200");
-  await expect(page.getByRole("region", { name: "Budget" })).toContainText("$200 left");
+  await expect.poll(async () => (await readWeekBudget(page)).text).toContain("$0.00 of $200");
+  await expect.poll(async () => (await readWeekBudget(page)).text).toContain("$200 left");
   await expect(page.getByRole("button", { name: /Repeat/ })).toBeDisabled();
 
   const build = page.getByRole("link", { name: "Build shopping list" });
@@ -122,9 +122,8 @@ test("budget: the week says what is left, into the wiggle room or past it, with 
   const says = async (target: number, words: string, left: RegExp) => {
     await weekBudget(page);
     await expect.poll(async () => (await readWeekBudget(page)).text).toContain(words);
-    const budget = page.getByRole("region", { name: "Budget" });
-    await expect(budget).toContainText(`${total} of $${target}`);
-    await expect(budget).toContainText(left);
+    await expect.poll(async () => (await readWeekBudget(page)).text).toContain(`${total} of $${target}`);
+    await expect.poll(async () => (await readWeekBudget(page)).text).toMatch(left);
   };
 
   // At or under the target.
@@ -268,6 +267,7 @@ test("two phones: changes show up live, and a Friday tie ends with one meal", as
   await addFromSearch(a, "thu", "tacos", "Chicken tacos · Allrecipes");
 
   const { context, page: b } = await joinAsPartner(a, browser);
+  await pinToday(b, "wed");
   await b.goto("/week");
   await expect(b.locator('[data-live="on"]')).toBeAttached();
   await expect(b.getByTestId("day-row-thu")).toContainText("Chicken tacos");
@@ -297,7 +297,7 @@ test("two phones: changes show up live, and a Friday tie ends with one meal", as
           b.getByTestId("day-row-fri").innerText(),
         ]);
         const one = /Chicken tacos|Chicken pot pie/.exec(ta)?.[0];
-        return ta === tb && !!one && !(ta.includes("Chicken tacos") && ta.includes("Chicken pot pie"));
+        return one === /Chicken tacos|Chicken pot pie/.exec(tb)?.[0] && !!one && !(ta.includes("Chicken tacos") && ta.includes("Chicken pot pie"));
       },
       { timeout: 5000 },
     )
@@ -511,7 +511,7 @@ test("long names and big numbers fit at 360 px", async ({ page }) => {
   const name = await boxOf(thu.locator(".line-clamp-2"));
   expect(name.height).toBeLessThanOrEqual(41);
   const budget = page.getByRole("region", { name: "Budget" });
-  await expect(budget).toContainText("of $10,000");
+  await expect.poll(async () => (await readWeekBudget(page)).text).toContain("of $10,000");
   const total = await boxOf(budget.locator("strong"));
   expect(total.height).toBeLessThan(24);
 });

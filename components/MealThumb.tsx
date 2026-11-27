@@ -6,10 +6,10 @@ import { useState } from "react";
 export function MealThumb({
   src,
   className,
-  tileText = "text-[9px] leading-[10px]",
+  tileText = "text-label",
 }: {
   src: string | null;
-  /** Size and rounding, e.g. "size-12 rounded-[10px]". */
+  /** Size and rounding, e.g. "size-12 rounded-sm". */
   className: string;
   tileText?: string;
 }) {
@@ -17,7 +17,7 @@ export function MealThumb({
   if (!src || failedSrc === src) {
     return (
       <span
-        className={`flex shrink-0 items-center justify-center bg-green-tint p-1 text-center font-semibold text-[#134D31] ${tileText} ${className}`}
+        className={`flex shrink-0 items-center justify-center bg-sunk p-0.5 text-center font-semibold text-ink-soft ${tileText} ${className}`}
       >
         Add a photo
       </span>

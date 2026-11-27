@@ -28,7 +28,13 @@ export async function readWeekBudget(page: Page): Promise<{ totalCents: number; 
   const budget = page.getByRole("region", { name: "Budget" });
   await expect(budget).toBeVisible();
   const total = (await budget.getByTestId("week-total").textContent()) ?? "";
-  return { totalCents: Math.round(Number(total.replace(/[$,]/g, "")) * 100), text: await budget.innerText() };
+  // The rolling digits are aria-hidden copies of the total; the words are what a reader hears.
+  const text = await budget.evaluate((el) => {
+    const copy = el.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll('[aria-hidden="true"]').forEach((n) => n.remove());
+    return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+  });
+  return { totalCents: Math.round(Number(total.replace(/[$,]/g, "")) * 100), text };
 }
 
 /** Opens the week from the tab bar and reads its budget. */

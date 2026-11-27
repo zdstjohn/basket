@@ -63,8 +63,8 @@ export function MealTile({
         )}
       </span>
       <span className="block px-2.5 py-2">
-        <span className="block line-clamp-2 break-words text-small font-semibold">{name}</span>
-        {note && <span className="block line-clamp-1 text-label text-ink-soft">{note}</span>}
+        <span className="line-clamp-2 break-words text-small font-semibold">{name}</span>
+        {note && <span className="line-clamp-1 text-label text-ink-soft">{note}</span>}
         {lines}
         {favorite && (
           <span className="mt-1 block text-ink">

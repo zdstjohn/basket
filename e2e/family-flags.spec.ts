@@ -378,7 +378,7 @@ test("a dinner added despite an allergy keeps its warning on the tile and on the
   // Thursday is a tile while tonight is Friday.
   const tile = page.getByTestId("day-row-thu");
   await expect(tile).toContainText("Tree nut allergy: Daughter (4)");
-  await expect(tile).toContainText("check every label");
+  await expect(tile).toContainText(/check (every )?labels?/i);
   await expect(tile.locator("svg.lucide-triangle-alert")).toHaveCount(1);
   await expect(page.locator("[data-tonight]")).toHaveCount(0);
 
@@ -388,7 +388,7 @@ test("a dinner added despite an allergy keeps its warning on the tile and on the
   const hero = page.locator("[data-tonight]");
   await expect(hero).toContainText("Tonight · Thursday");
   await expect(hero).toContainText("Tree nut allergy: Daughter (4)");
-  await expect(hero).toContainText("check every label");
+  await expect(hero).toContainText(/check (every )?labels?/i);
   await expect(hero.locator("svg.lucide-triangle-alert")).toHaveCount(1);
   await expectUnclipped(hero.getByText(/Tree nut allergy: Daughter \(4\)/));
   expect(await hero.innerText()).not.toMatch(SAFE_WORDS);

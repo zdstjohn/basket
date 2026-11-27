@@ -11,7 +11,7 @@ const SCRIM = "linear-gradient(rgb(var(--bk-scrim) / 0), rgb(var(--bk-scrim) / 0
 
 /**
  * Tonight's dinner, full bleed and 2:1, with its words over a scrim. Only for a photo already known to be wide enough.
- * The photo and the scrim share one grid cell, so a long allergy line grows the hero instead of spilling out of it.
+ * The box is 2:1 and grows when the words need more room, so a long allergy line is never cut off or pushed out of it.
  */
 export function TonightHero({
   day,
@@ -42,29 +42,31 @@ export function TonightHero({
 }) {
   return (
     <div data-testid={`day-row-${day}`} data-tonight>
-      <button type="button" onClick={onOpen} className="relative grid w-full grid-cols-1 text-left text-on-photo">
-        <Photo
-          src={photo}
-          name={name}
-          crop="hero"
-          preview={preview}
-          width={width}
-          priority
-          hint={false}
-          onDemote={onDemote}
-          imgRef={imgRef}
-          className="col-start-1 row-start-1 self-stretch"
-        />
-        <span data-on-photo style={{ backgroundImage: SCRIM }} className="relative col-start-1 row-start-1 block self-end px-4 pb-3 pt-12">
-          <span className="block text-label bk-caps text-on-photo-accent">Tonight · {dayName(day)}</span>
-          <span className="mt-0.5 block line-clamp-2 break-words font-display text-title text-on-photo">{name}</span>
-          {lines}
-          {(note || credit) && (
-            <span className="mt-0.5 flex justify-between gap-2 text-label text-on-photo">
-              <span className="min-w-0">{note}</span>
-              {credit && <span className="shrink-0">Photo: {credit}</span>}
-            </span>
-          )}
+      <button type="button" onClick={onOpen} className="relative block w-full text-left text-on-photo">
+        <span className="relative flex aspect-hero flex-col justify-end">
+          <Photo
+            src={photo}
+            name={name}
+            crop="hero"
+            preview={preview}
+            width={width}
+            priority
+            hint={false}
+            onDemote={onDemote}
+            imgRef={imgRef}
+            className="absolute! inset-0 aspect-auto!"
+          />
+          <span data-on-photo style={{ backgroundImage: SCRIM }} className="relative block px-4 pb-3 pt-12">
+            <span className="block text-label bk-caps text-on-photo-accent">Tonight · {dayName(day)}</span>
+            <span className="mt-0.5 line-clamp-2 break-words font-display text-title text-on-photo">{name}</span>
+            {lines}
+            {(note || credit) && (
+              <span className="mt-0.5 flex justify-between gap-2 text-label text-on-photo">
+                <span className="min-w-0">{note}</span>
+                {credit && <span className="shrink-0">Photo: {credit}</span>}
+              </span>
+            )}
+          </span>
         </span>
         {favorite && (
           <span data-on-photo className="absolute right-4 top-3 text-on-photo">
