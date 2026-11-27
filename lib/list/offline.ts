@@ -43,7 +43,8 @@ let counter = 0;
 export const newEntryId = (): string => `${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
 const REFUSAL_STATUS = new Set([400, 403, 404, 406, 409, 413, 422]);
-const RETRYABLE_STATUS = new Set([0, 401, 408, 429, 502, 503, 504]);
+// 520-530: Cloudflare and edge errors during a provider incident; never a refusal.
+const RETRYABLE_STATUS = new Set([0, 401, 408, 429, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530]);
 
 /**
  * True only when the server clearly refused the change, so sending it again can never work:

@@ -274,6 +274,9 @@ describe('flushQueue', () => {
       ['502', { status: 502 }],
       ['503', { status: 503 }],
       ['504', { status: 504 }],
+      ['520 (edge)', { status: 520 }],
+      ['524 (edge timeout)', { status: 524 }],
+      ['530 (edge)', { status: 530 }],
     ])('never counts %s, even 50 times over 11 minutes', async (_n, extra) => {
       saveQueue('h1', [e('a', { checked: true })]);
       const dropped = vi.fn();
