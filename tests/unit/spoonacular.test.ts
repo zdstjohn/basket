@@ -15,6 +15,7 @@ vi.mock('@/lib/recipes/search/provider', async (orig) => ({
 import { RecipeOptionSchema } from '@/lib/ai/schemas';
 import { searchSpoonacular } from '@/lib/recipes/search/spoonacular';
 import { searchRecipes } from '@/lib/recipes/search';
+import { sharedFoods, sharesLine } from '@/lib/recipes/search/overlap';
 import { SourceLimitError } from '@/lib/recipes/search/provider';
 import { draftFromOption } from '@/lib/ai/recipes';
 import { familyOfFive } from '@/lib/fixtures/household';
@@ -76,6 +77,16 @@ describe('searchSpoonacular', () => {
     expect(options[1].likes).toBeNull();
     expect(options[1]).toMatchObject({ site: 'Spoonacular', url: 'https://spoonacular.com/spoon-only-3' });
     expect(options[1].structured?.[0].role).toBe('dairy');
+  });
+
+  it('carries ingredient lines from the existing payload, so overlap needs no extra request or points', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(fixture, { status: 200 }));
+    const options = await searchSpoonacular('chicken tacos');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const shared = sharedFoods(options[0], ['bell peppers', 'chicken thigh', 'lime']);
+    expect(shared).toEqual(['bell peppers', 'chicken thigh']);
+    expect(sharesLine(shared)).toBe('Shares 2 with this week: bell peppers, chicken thigh');
+    expect(sharedFoods(options[1], ['cheddar'])).toEqual(['cheddar']);
   });
 
   it('sends the key in a header or query but never throws it into errors', async () => {
