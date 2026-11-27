@@ -270,7 +270,7 @@ export function SearchTab({
                 {error.message}
               </Banner>
             ) : (
-              <ErrorBanner message={error.message} actionLabel="Search again" onAction={() => void run(query, source)} />
+              <ErrorBanner message={error.message} actionLabel="Try again" onAction={() => void run(query, source)} />
             ))}
           {!loading && !result && !error && !dish && !query.trim() && (
             <EmptyState sentence="Search for a dinner, paste a recipe, or pick a favorite." />
