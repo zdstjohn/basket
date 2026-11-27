@@ -1,44 +1,31 @@
-import type { Store } from "@/lib/domain/list";
-import { formatDollars } from "@/lib/domain/money-input";
-import { STORES, STORE_NAMES } from "@/lib/list/prices";
-import { focusRing } from "@/lib/ui";
+"use client";
 
-/** Fred Meyer, Amazon and Costco: each shows what you'd spend there and how many things to get. */
+import { Tabs } from "@/components/ui/Tabs";
+import type { Store } from "@/lib/domain/list";
+import { formatMoney } from "@/lib/domain/money-input";
+import { STORES, STORE_NAMES } from "@/lib/list/prices";
+
+/** Fred Meyer, Amazon and Costco: each shows what you'd spend there and how many things to get. The rows below are its tab panel (id `panelId`). */
 export function StoreTabs({
   active,
   onChange,
   byStore,
+  panelId,
 }: {
   active: Store;
   onChange: (s: Store) => void;
   byStore: Record<Store, { cents: number; count: number }>;
+  panelId: string;
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label="Stores"
-      className="mx-5 grid grid-cols-3 gap-1 rounded-[14px] bg-[#EAEEE9] p-1"
-    >
-      {STORES.map((s) => {
-        const on = s === active;
-        return (
-          <button
-            key={s}
-            type="button"
-            role="tab"
-            aria-selected={on}
-            onClick={() => onChange(s)}
-            className={`flex h-12 flex-col items-center justify-center gap-px rounded-[10px] ${focusRing} ${
-              on ? "bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "bg-transparent"
-            }`}
-          >
-            <span className={`text-[13px] text-ink ${on ? "font-semibold" : "font-medium"}`}>{STORE_NAMES[s]}</span>
-            <span className="text-xs text-[#4A544F]">
-              {formatDollars(byStore[s].cents)} · {byStore[s].count}
-            </span>
-          </button>
-        );
-      })}
+    <div className="bk-gutter">
+      <Tabs
+        label="Stores"
+        items={STORES.map((s) => ({ id: s, label: STORE_NAMES[s], detail: `${formatMoney(byStore[s].cents)} · ${byStore[s].count}` }))}
+        active={active}
+        onChange={onChange}
+        panelId={panelId}
+      />
     </div>
   );
 }

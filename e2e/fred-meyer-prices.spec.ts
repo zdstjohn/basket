@@ -29,7 +29,8 @@ test("Fred Meyer prices: choose a store, then the list shows real shelf prices",
   await expect(chicken.getByTestId("row-total")).toHaveText("about $3.99");
   await expect(chicken.getByTestId("row-count")).toHaveText("1 lb");
   // The photo may not load where www.kroger.com is blocked, so check it is on the row rather than painted.
-  const photo = chicken.locator("img");
+  // It sits on its own packshot tile.
+  const photo = chicken.locator(".bk-packshot img");
   await expect(photo).toBeAttached();
   await expect(photo).toHaveAttribute("src", /^https:\/\/www\.kroger\.com\/product\/images\/small\/front\//);
   await expect(photo).toHaveAttribute("alt", "Heritage Farm Boneless Skinless Chicken Thighs");
@@ -46,7 +47,9 @@ test("Fred Meyer prices: choose a store, then the list shows real shelf prices",
   await expect(row(page, "Corn tortillas").getByTestId("row-total")).toHaveText("—");
   await expect(page.getByTestId("list-row").getByText("estimate")).toHaveCount(0);
   await expect(page.getByText("Choose your Fred Meyer")).toHaveCount(0);
-  await expect(page.getByText("This week's total")).toBeVisible();
+  await expect(page.getByTestId("list-bar").getByText("This week’s total")).toBeVisible();
+  // Real products make the total exact: the estimate caveat is gone.
+  await expect(page.getByText("Estimated total, for the amounts you’ll use")).toHaveCount(0);
 
   // The total is the sum of the package prices on every tab.
   const dollars = (t: string | null): number => {

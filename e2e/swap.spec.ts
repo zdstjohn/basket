@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHousehold, joinAsPartner } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
 import { addFromSearch } from "./helpers/flows-a";
-import { chooseStore, openList } from "./helpers/flows-b";
+import { chooseStore, openItemSheet, openList } from "./helpers/flows-b";
 
 // Runs against the Kroger fixtures (KROGER_FAKE=1): no call ever leaves the machine.
 test.beforeEach(async ({ page }) => {
@@ -23,8 +23,10 @@ async function addTacos(page: Page) {
   await openList(page);
 }
 
+/** Opens the row's sheet, then its first action, Swap. The item sheet closes before the swap sheet opens. */
 async function openSwap(page: Page): Promise<Locator> {
-  await row(page, "Black beans").getByRole("button", { name: "Swap Black beans product" }).click();
+  const item = await openItemSheet(page, "Black beans");
+  await item.getByRole("button", { name: "Swap Black beans product" }).click();
   const sheet = page.getByRole("dialog", { name: "Swap black beans" });
   await expect(sheet).toBeVisible();
   return sheet;
@@ -45,20 +47,26 @@ test("swap: pick another product, keep it, go back, search with your own words",
   await expect(b.locator('[data-live="on"]')).toBeAttached();
   await expect(row(b, "Black beans").getByTestId("row-count")).toBeVisible();
 
-  // The row holds together on a small phone: no sideways scroll, and Swap is a full-size target.
+  // The row holds together on a small phone: no sideways scroll. Swap is not on the row; it is the first action in the item sheet, a full-size target.
   const wide = page.viewportSize() ?? { width: 402, height: 874 };
   await page.setViewportSize({ width: 360, height: 800 });
-  const swap = beans.getByRole("button", { name: "Swap Black beans product" });
+  await expect(beans.getByRole("button", { name: "Swap Black beans product" })).toHaveCount(0);
+  const itemSheet = await openItemSheet(page, "Black beans");
+  const swap = itemSheet.getByRole("button", { name: "Swap Black beans product" });
   expect((await swap.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await itemSheet.locator('button:not([aria-label="Close"])').first().getAttribute("aria-label")).toBe("Swap Black beans product"); // the first action
+  await itemSheet.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("tab", { name: /^Fred Meyer/ }).click();
-  await expect(row(page, "Corn tortillas").getByRole("button", { name: "Find a product for Corn tortillas" })).toBeVisible();
+  const find = row(page, "Corn tortillas").getByRole("button", { name: "Find a product for Corn tortillas" });
+  await expect(find).toBeVisible();
+  expect((await find.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: `${shots}/swap-row-360.png` });
   await page.setViewportSize(wide);
 
   // The sheet lists the products found, with the cheapest tagged.
-  const firstName = (await beans.locator(".line-clamp-2").last().innerText()).split(" · ")[0];
+  const firstName = (await beans.locator(".line-clamp-1").innerText()).split(" · ")[0];
   const before = cents(await total(page).innerText());
   const beansBefore = cents(await beans.getByTestId("row-total").innerText());
   let sheet = await openSwap(page);

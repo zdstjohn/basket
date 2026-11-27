@@ -6,7 +6,6 @@ export const SCREENS_B: Screen[] = [
   {
     name: "list",
     path: "/list",
-    contrastPending: true,
     setup: async (page) => {
       await expect(page.getByTestId("list-row").first()).toBeVisible();
     },

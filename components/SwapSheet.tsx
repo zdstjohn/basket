@@ -69,9 +69,8 @@ export function SwapSheet({
   }
 
   return (
-    <Sheet label={`Swap ${food}`} onClose={onClose}>
+    <Sheet label={`Swap ${food}`} title={`Swap ${food}`} onClose={onClose}>
       <div className="flex flex-col gap-2 p-4 pb-6">
-        <h2 className="px-1 text-lg font-semibold">Swap {food}</h2>
 
         {rec.options.length === 0 ? (
           <p className="px-1 text-[15px] text-muted">Nothing matched at your Fred Meyer. Try other words.</p>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GROUPS, groupFor, groupItems } from "@/lib/list/groups";
+import { GROUPS, groupFor, groupItems, splitGotIt } from "@/lib/list/groups";
 import type { ListItem } from "@/lib/domain/list";
 
 const item = (canonical: string, role: ListItem['role']): ListItem => ({
@@ -27,5 +27,22 @@ describe('groups', () => {
   it('shows every item with no truncation', () => {
     const many = Array.from({ length: 40 }, (_, i) => item(`veg ${i}`, 'produce'));
     expect(groupItems(many)[0].items).toHaveLength(40);
+  });
+});
+
+describe('splitGotIt', () => {
+  it('moves ticked items out of their aisles into one Got it list, in shopping order', () => {
+    const items = [item('salmon', 'fish'), item('onion', 'produce'), item('chicken', 'meat'), item('beans', 'veg_protein')];
+    const out = splitGotIt(items, new Set(['onion', 'salmon']));
+    expect(out.toBuy.map((g) => g.title)).toEqual(['Meat and seafood', 'Beans and tofu']);
+    expect(out.toBuy[0].items.map((i) => i.canonical)).toEqual(['chicken']);
+    expect(out.gotIt.map((i) => i.canonical)).toEqual(['salmon', 'onion']);
+  });
+  it('leaves nothing in Got it when nothing is ticked, and nothing to buy when all are', () => {
+    const items = [item('onion', 'produce')];
+    expect(splitGotIt(items, new Set()).gotIt).toEqual([]);
+    const all = splitGotIt(items, new Set(['onion']));
+    expect(all.toBuy).toEqual([]);
+    expect(all.gotIt).toHaveLength(1);
   });
 });
