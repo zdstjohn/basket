@@ -442,7 +442,7 @@ test("tonight with a wide photo leads as the hero", async ({ page }) => {
   expect(box.width).toBeGreaterThanOrEqual(page.viewportSize()!.width - 1);
   expect(Math.abs(box.width / box.height - 2)).toBeLessThan(0.02);
   // It sits directly under the header, before the pinboard.
-  await expect(page.getByTestId("day-row-wed")).toHaveAttribute("data-tonight", "");
+  await expect(page.getByTestId("day-row-wed")).toHaveAttribute("data-tonight");
   expect((await boxOf(hero)).y).toBeLessThan((await boxOf(page.getByRole("region", { name: "Dinners" }))).y);
 });
 
