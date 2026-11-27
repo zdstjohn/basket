@@ -42,6 +42,9 @@ for (const variant of VARIANTS) {
       await page.goto(screen.path);
       await page.waitForLoadState("networkidle");
       await screen.setup?.(page);
+      // The week's open reveal moves each tile 8 px for 240 ms; measure where they rest (after any setup that landed on the week).
+      if (screen.path === "/week") await page.locator('[data-testid^="day-row-"]').first().waitFor();
+      await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a instanceof CSSAnimation && a.effect?.getComputedTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))));
       const where = `${screen.path}`;
 
       for (const p of await audit(page)) found.push(`${where}: ${p.what}: ${p.detail}`);
@@ -112,4 +115,12 @@ test("review screen: no sideways scroll at 360, 402 and 412, and the send button
     const nav = await page.getByRole("navigation", { name: "Main" }).boundingBox();
     expect(send && nav && send.y + send.height <= nav.y + 0.5, `send button above the nav at ${width}`).toBe(true);
   }
+});
+
+test("the audit still fails a control that is off screen inside a vertical scroller", async ({ page }) => {
+  await page.setContent(
+    `<div style="height:200px;overflow-y:auto"><button style="margin-left:2000px;min-width:44px;min-height:44px">Out</button></div>`,
+  );
+  const problems = await audit(page);
+  expect(problems.map((p) => p.what)).toContain("target off screen sideways");
 });

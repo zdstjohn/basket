@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef } from "react";
-import { focusRing } from "@/lib/ui";
+import { Segmented } from "@/components/ui/Segmented";
 
 export type SortMode = "loved" | "fits";
 
@@ -30,45 +29,7 @@ export function saveSort(mode: SortMode): void {
   }
 }
 
-/** Two choices in a radio group: arrow keys move between them, and only the chosen one is a tab stop. */
+/** Two choices in a radio group (arrow keys move between them, and only the chosen one is a tab stop). */
 export function SortControl({ value, onChange }: { value: SortMode; onChange: (m: SortMode) => void }) {
-  const refs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  function move(from: number, step: number) {
-    const next = (from + step + SORTS.length) % SORTS.length;
-    onChange(SORTS[next].id);
-    refs.current[next]?.focus();
-  }
-
-  return (
-    <div role="radiogroup" aria-label="Order results by" className="mb-2.5 grid grid-cols-2 gap-1 rounded-[14px] bg-[#EAEEE9] p-1">
-      {SORTS.map((s, i) => (
-        <button
-          key={s.id}
-          ref={(el) => {
-            refs.current[i] = el;
-          }}
-          type="button"
-          role="radio"
-          aria-checked={value === s.id}
-          tabIndex={value === s.id ? 0 : -1}
-          onClick={() => onChange(s.id)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-              e.preventDefault();
-              move(i, 1);
-            } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-              e.preventDefault();
-              move(i, -1);
-            }
-          }}
-          className={`h-11 rounded-[10px] text-sm ${focusRing} ${
-            value === s.id ? "bg-white font-semibold text-ink shadow-sm" : "font-medium text-[#4A544F]"
-          }`}
-        >
-          {s.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <Segmented label="Order results by" options={SORTS} value={value} onChange={onChange} />;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode, Ref } from "react";
+import type { AnimationEvent, CSSProperties, ReactNode, Ref } from "react";
 import { Bookmark } from "lucide-react";
 import { Icon } from "@/components/ui/Icon";
 import { Photo } from "@/components/ui/Photo";
@@ -27,6 +27,7 @@ export function TonightHero({
   onOpen,
   onDemote,
   imgRef,
+  reveal,
 }: {
   day: Day;
   name: string;
@@ -40,6 +41,8 @@ export function TonightHero({
   onOpen: () => void;
   onDemote: () => void;
   imgRef?: Ref<HTMLImageElement>;
+  /** The open reveal, on the words only: the photo never fades or moves, so the largest paint is not held back. */
+  reveal?: { className: string; style?: CSSProperties; onAnimationEnd?: (e: AnimationEvent<HTMLElement>) => void };
 }) {
   return (
     <div data-testid={`day-row-${day}`} data-tonight>
@@ -58,7 +61,12 @@ export function TonightHero({
             imgRef={imgRef}
             className="absolute! inset-0 aspect-auto!"
           />
-          <span data-on-photo style={{ backgroundImage: SCRIM }} className="relative block px-4 pb-3 pt-12">
+          <span
+            data-on-photo
+            style={{ backgroundImage: SCRIM, ...reveal?.style }}
+            onAnimationEnd={reveal?.onAnimationEnd}
+            className={`relative block px-4 pb-3 pt-12 ${reveal?.className ?? ""}`}
+          >
             <span className="block text-label bk-caps text-on-photo-accent">Tonight · {dayName(day)}</span>
             <span className="mt-0.5 line-clamp-2 break-words font-display text-title text-on-photo">{name}</span>
             {lines}

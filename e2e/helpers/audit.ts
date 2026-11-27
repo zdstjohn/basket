@@ -35,7 +35,17 @@ export async function audit(page: Page): Promise<Problem[]> {
       if (box.width < 44 || box.height < 44) {
         problems.push({ what: "target under 44px", detail: `${describe(el)} ${Math.round(box.width)}x${Math.round(box.height)}` });
       }
-      if (box.right > window.innerWidth + 0.5 || box.left < -0.5) {
+      // Only a row that opts in with data-scroll-x (the Favorites filters) excuses a control: it must really scroll
+      // sideways, sit inside the screen, and the control must lie within its scroll extent.
+      const scroller = el.closest<HTMLElement>("[data-scroll-x]");
+      let inScroller = false;
+      if (scroller && scroller.scrollWidth > scroller.clientWidth) {
+        const sr = scroller.getBoundingClientRect();
+        const left = box.left - sr.left + scroller.scrollLeft;
+        inScroller =
+          sr.left >= -0.5 && sr.right <= window.innerWidth + 0.5 && left >= -0.5 && left + box.width <= scroller.scrollWidth + 0.5;
+      }
+      if (!inScroller && (box.right > window.innerWidth + 0.5 || box.left < -0.5)) {
         problems.push({ what: "target off screen sideways", detail: describe(el) });
       }
     }

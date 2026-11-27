@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Bookmark, ChevronRight, X } from "lucide-react";
 import { AllergyBox } from "@/components/flags/AllergyBox";
 import { DislikeBox } from "@/components/flags/DislikeBox";
-import { MealThumb } from "@/components/MealThumb";
-import { Sheet } from "@/components/Sheet";
+import { Sheet, useSheetClose } from "@/components/Sheet";
+import { Button, IconButton } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { Photo } from "@/components/ui/Photo";
+import { Qty } from "@/components/ui/Qty";
+import { Stepper } from "@/components/ui/Stepper";
+import { ErrorBanner } from "@/components/ui/states";
 import { VerdictSheet } from "@/components/verdicts/VerdictSheet";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { setMealPhoto, setPersonChanges, toMeal, updateMeal } from "@/lib/db/queries/meals";
@@ -14,11 +20,14 @@ import type { MealRow, WeekMeal } from "@/lib/db/rows";
 import type { Database } from "@/lib/db/types";
 import { findFlags, flagAmount, ingredientNames } from "@/lib/domain/flags";
 import { householdServings } from "@/lib/domain/portions";
+import { scaleMeal } from "@/lib/domain/scaling";
 import type { Person, PersonChange } from "@/lib/domain/types";
 import { latestAnswer, verdictWords, type Verdict, type Vote } from "@/lib/domain/verdicts";
 import type { Day } from "@/lib/domain/weeks";
+import { photoVerdict } from "@/lib/photos/verdict";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
-import { focusRing, pillButton } from "@/lib/ui";
+import { servingsText } from "@/lib/text/typography";
+import { ghostButton, quietLink } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
 import { dayNote } from "@/lib/week/note";
 
@@ -33,6 +42,8 @@ export function MealSheet({
   people,
   onClose,
   onChanged,
+  enter = "slide",
+  onGrownClose,
 }: {
   sb: SupabaseClient<Database>;
   householdId: string;
@@ -43,9 +54,15 @@ export function MealSheet({
   people: Person[];
   onClose: () => void;
   onChanged: () => Promise<void>;
+  /** "none" when the photo grew into the sheet (a view transition), so the sheet does not also slide. */
+  enter?: "slide" | "none";
+  /** Set when the photo grew in: Close then shrinks it back into its tile instead of sliding the sheet down. */
+  onGrownClose?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; retry: () => void } | null>(null);
+  // A photo too small to be a hero is shown as a tile in the gutter; a width we already know decides it before any request.
+  const [demoted, setDemoted] = useState(false);
   // How the family answered the last time they ate this (all dates). A failed read just leaves the line out.
   const [last, setLast] = useState<Verdict | null>(null);
   const [changing, setChanging] = useState(false);
@@ -72,6 +89,9 @@ export function MealSheet({
   const extra = override === null ? 0 : Math.max(0, Math.round((override - base) * 10) / 10);
   const domainMeal = toMeal(meal);
   const flags = people.length === 0 ? [] : findFlags(ingredientNames(domainMeal), people);
+  const asTile = demoted || photoVerdict("hero", meal.photo_width) === "demote";
+  const target = override ?? base;
+  const scaled = people.length === 0 ? [] : scaleMeal(domainMeal, people, override ?? undefined);
   const credit = !meal.photo_path && meal.photo_url ? meal.photo_credit : null;
 
   async function run(action: () => Promise<void>, failure: string) {
@@ -81,7 +101,7 @@ export function MealSheet({
       await action();
       await onChanged();
     } catch {
-      setError(failure);
+      setError({ message: failure, retry: () => void run(action, failure) });
     } finally {
       setBusy(false);
     }
@@ -106,42 +126,30 @@ export function MealSheet({
     run(async () => void (await setPersonChanges(sb, meal.id, next)), "We couldn't change that. Try again.");
 
   return (
-    <Sheet label={meal.name} onClose={onClose}>
-      <div className="flex flex-col gap-3 p-5 pb-6">
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-[22px] font-bold leading-tight">{meal.name}</h2>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className={`-mr-2 -mt-1 flex size-11 shrink-0 items-center justify-center rounded-full ${focusRing}`}
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
+    <Sheet label={meal.name} enter={enter} onClose={onClose}>
+      <div className="relative">
+        <div data-sheet-photo className={asTile ? "mx-4 mt-2 overflow-hidden rounded-lg" : "overflow-hidden rounded-t-lg"}>
+          <Photo
+            src={photo}
+            name={meal.name}
+            crop={asTile ? "tile" : "hero"}
+            preview={meal.photo_preview}
+            width={meal.photo_width}
+            priority
+            onDemote={() => setDemoted(true)}
+            className={asTile ? "rounded-lg" : ""}
+          />
+        </div>
+        <CloseButton onGrownClose={onGrownClose} className={asTile ? "right-6 top-4" : "right-2 top-2"} />
+      </div>
+
+      <div className="flex flex-col gap-3 px-4 pb-6 pt-3">
+        <div>
+          <h2 className="break-words font-display text-title text-ink">{meal.name}</h2>
+          {credit && <p className="text-label text-ink-soft">Photo: {credit}</p>}
         </div>
 
-        <MealThumb src={photo} className="h-40 w-full rounded-2xl" tileText="text-sm" />
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted">{credit ? `Photo: ${credit}` : ""}</p>
-          <label className={`${pillButton} cursor-pointer focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-green`}>
-            Change photo
-            <input
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              aria-label="Change photo"
-              disabled={busy}
-              onChange={(e) => {
-                void changePhoto(e.target.files?.[0]);
-                e.target.value = "";
-              }}
-            />
-          </label>
-        </div>
-
-        <p className="text-sm text-muted">{dayNote(domainMeal, people, override)}</p>
+        <p className="text-small text-ink">{dayNote(domainMeal, people, override)}</p>
         <AllergyBox flags={flags} people={people} className="" />
         {flags.filter((f) => f.kind === "dislike").map((f) => (
           <DislikeBox
@@ -158,49 +166,79 @@ export function MealSheet({
         ))}
         {last && lastWords && (
           <div className="flex items-center justify-between gap-3">
-            <p data-testid="last-time" className="min-w-0 text-sm text-muted">
+            <p data-testid="last-time" className="min-w-0 text-small text-ink-soft">
               Last time: {lastWords}
             </p>
-            <button type="button" onClick={() => setChanging(true)} className={`${pillButton} shrink-0`}>
+            <Button variant="ghost" className="shrink-0" onClick={() => setChanging(true)}>
               Change
-            </button>
+            </Button>
           </div>
         )}
         {meal.source_url && (
-          <a
-            href={meal.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`inline-flex min-h-11 items-center text-sm font-semibold text-green ${focusRing}`}
-          >
+          <a href={meal.source_url} target="_blank" rel="noopener noreferrer" className={`${quietLink} self-start`}>
             Open the full recipe
+            <Icon icon={ChevronRight} size={18} />
           </a>
         )}
 
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2">
-          <p className="text-sm font-medium">Leftovers: +{extra} servings</p>
-          <div className="flex gap-2">
-            <button type="button" aria-label="Fewer leftovers" disabled={busy || extra <= 0} onClick={() => void setLeftovers(extra - 1)} className={`${pillButton} w-11 px-0 text-lg`}>
-              −
-            </button>
-            <button type="button" aria-label="More leftovers" disabled={busy} onClick={() => void setLeftovers(extra + 1)} className={`${pillButton} w-11 px-0 text-lg`}>
-              +
-            </button>
-          </div>
+        {scaled.length > 0 && (
+          <section aria-label="Ingredients" className="flex flex-col gap-1">
+            <h3 className="text-heading text-ink">Ingredients</h3>
+            <p className="text-small text-ink-soft">Scaled to {servingsText(target)}</p>
+            <ul className="divide-y divide-line">
+              {scaled.map((line, i) => (
+                <li key={`${line.canonical}|${i}`} className="flex min-h-11 items-center justify-between gap-3 py-2">
+                  <span className="min-w-0 break-words text-body text-ink">{line.canonical}</span>
+                  <span className="bk-price shrink-0 text-body text-ink">
+                    <Qty q={line.qty} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <div className="flex items-center justify-between gap-3 border-y border-line py-2">
+          <p className="text-small font-semibold">Leftovers: +{extra} servings</p>
+          <Stepper
+            value={extra}
+            min={0}
+            max={12}
+            fewerLabel="Fewer leftovers"
+            moreLabel="More leftovers"
+            onChange={(n) => {
+              if (!busy) void setLeftovers(n);
+            }}
+          />
         </div>
 
-        <button
-          type="button"
+        <label className={`${ghostButton} cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent`}>
+          Change photo
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            aria-label="Change photo"
+            disabled={busy}
+            onChange={(e) => {
+              void changePhoto(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <Button
+          variant="ghost"
           disabled={busy}
           onClick={() =>
             void run(async () => void (await updateMeal(sb, meal.id, { is_favorite: !meal.is_favorite })), "We couldn't change that. Try again.")
           }
-          className={`${pillButton} w-full`}
         >
+          <Icon icon={Bookmark} size={18} />
           {meal.is_favorite ? "Remove from favorites" : "Save as a favorite"}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="ghost"
+          className="text-error!"
           disabled={busy}
           onClick={() =>
             void run(async () => {
@@ -208,19 +246,27 @@ export function MealSheet({
               onClose();
             }, "We couldn't take that off. Try again.")
           }
-          className={`${pillButton} w-full text-[#A6261B]`}
         >
           Take off {dayName(day)}
-        </button>
-        {error && (
-          <p role="alert" className="text-sm font-medium text-[#A6261B]">
-            {error}
-          </p>
-        )}
+        </Button>
+        {error && <ErrorBanner message={error.message} actionLabel="Try again" onAction={error.retry} />}
       </div>
       {changing && last && (
         <VerdictSheet mealName={meal.name} people={people} initial={last.votes} onSave={changeAnswer} onClose={() => setChanging(false)} />
       )}
     </Sheet>
+  );
+}
+
+/** The Close button over the photo's top-right corner. It lives inside the Sheet so it can use the sheet's own exit. */
+function CloseButton({ onGrownClose, className }: { onGrownClose?: () => void; className: string }) {
+  const close = useSheetClose();
+  return (
+    <IconButton
+      icon={X}
+      label="Close"
+      onClick={onGrownClose ?? close}
+      className={`absolute bg-[rgb(var(--bk-scrim)/0.6)] text-on-photo ${className}`}
+    />
   );
 }

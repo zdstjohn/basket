@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHousehold, joinAsPartner } from "./helpers/household";
 import { FOOD_JPG, routeFoodImages } from "./helpers/fixtures";
 import { clientFor } from "./helpers/db";
-import { addFavoriteToDay, addFromSearch as plan, readWeekBudget, seedDinnerOnDay, weekBudget } from "./helpers/flows-a";
+import { addFavoriteToDay, addFromSearch as plan, chooseSource, readWeekBudget, seedDinnerOnDay, weekBudget } from "./helpers/flows-a";
 import { pinToday } from "./helpers/clock";
 import { openItemSheet, openList, setBudget } from "./helpers/flows-b";
 import { getOrCreateWeek, setWeekMeal } from "../lib/db/queries/weeks";
@@ -28,7 +28,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function searchFor(page: Page, query: string) {
-  await page.getByLabel("What's for dinner?").fill(query);
+  await page.getByLabel("What’s for dinner?").fill(query);
   await page.getByRole("button", { name: "Search" }).click();
 }
 
@@ -57,7 +57,7 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
   await expect(page).toHaveURL(/\/week\/add\?day=thu&slot=dinner$/);
   await expect(page.getByRole("heading", { name: "Thursday dinner" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Search" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("radio", { name: "Big sites" })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Looking on: Big sites" })).toBeVisible();
 
   await searchFor(page, "tacos");
   const cards = page.getByTestId("result-card");
@@ -87,7 +87,7 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
   await expect(link).toHaveAttribute("rel", "noopener noreferrer");
   await expect(link).toHaveAttribute("target", "_blank");
   await expect(draft).toContainText("Scaled to 3.8 servings");
-  await expect(page.getByText("Mom's portion: black beans")).toBeVisible();
+  await expect(page.getByText("Mom’s portion: black beans")).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Save as a favorite" })).toBeChecked();
   await page.screenshot({ path: `${shots}/add-meal.png`, fullPage: true });
 
@@ -141,8 +141,7 @@ test("sources: the toggle, the Spoonacular footer, the fallback note and the lim
   await createHousehold(page);
   await page.goto("/week/add?day=mon&slot=dinner");
 
-  await page.getByRole("radio", { name: "Spoonacular" }).click();
-  await expect(page.getByRole("radio", { name: "Spoonacular" })).toBeChecked();
+  await chooseSource(page, "Spoonacular");
   await searchFor(page, "tacos");
   await expect(page.getByTestId("result-card").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Recipes from Spoonacular" })).toHaveAttribute(
@@ -151,25 +150,26 @@ test("sources: the toggle, the Spoonacular footer, the fallback note and the lim
   );
 
   await page.reload();
-  await expect(page.getByRole("radio", { name: "Spoonacular" })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Looking on: Spoonacular" })).toBeVisible();
 
-  await page.getByRole("radio", { name: "Big sites" }).click();
+  await chooseSource(page, "Big sites");
   await searchFor(page, "lasagna");
-  await expect(page.getByText("Nothing on the big sites, so here's Spoonacular.")).toBeVisible();
+  await expect(page.getByText("Nothing on the big sites, so here’s Spoonacular.")).toBeVisible();
   await expect(page.getByTestId("result-card").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Recipes from Spoonacular" })).toBeVisible();
 
+  // The big sites have nothing, so Spoonacular is tried too; the empty answer names the source that was last searched.
   await searchFor(page, "zzzz nothing");
   await expect(
-    page.getByText("No recipes found on our sites. Try other words, or paste a recipe."),
+    page.getByText("No recipes found on Spoonacular. Try other words, or paste a recipe."),
   ).toBeVisible();
 
   await page.route("**/api/recipes/search", (route) =>
     route.fulfill({ status: 429, contentType: "application/json", body: '{"error":"source_limit"}' }),
   );
-  await page.getByRole("radio", { name: "Spoonacular" }).click();
+  await chooseSource(page, "Spoonacular");
   await searchFor(page, "tacos");
-  await expect(page.getByText("Spoonacular's daily limit is used up. Big sites still works.")).toBeVisible();
+  await expect(page.getByText("Spoonacular’s daily limit is used up. Big sites still works.")).toBeVisible();
 
   await page.unroute("**/api/recipes/search");
   await page.route("**/api/recipes/search", (route) =>
@@ -177,7 +177,7 @@ test("sources: the toggle, the Spoonacular footer, the fallback note and the lim
   );
   await searchFor(page, "tacos");
   await expect(
-    page.getByText("This month's recipe help is used up. You can still type the ingredients in."),
+    page.getByText("This month’s recipe help is used up. You can still type the ingredients in."),
   ).toBeVisible();
 });
 
@@ -244,9 +244,11 @@ test("interruption: a half-finished meal comes back after a reload, and is clear
   await page.getByRole("button", { name: /Chicken pot pie/ }).click();
   const draft = page.getByRole("region", { name: "Draft recipe" });
   await expect(draft).toBeVisible();
+  // The page opens at once; the draft is kept once the recipe has been read.
+  await expect(draft.getByRole("button", { name: "Edit ingredients" })).toBeVisible();
 
   await page.reload();
-  await expect(page.getByLabel("What's for dinner?")).toHaveValue("Chicken pot pie");
+  await expect(page.getByLabel("What’s for dinner?")).toHaveValue("Chicken pot pie");
   await expect(page.getByRole("region", { name: "Draft recipe" })).toBeVisible();
   await expect(page.getByText("Photo: Taste of Home")).toBeVisible();
 
@@ -256,7 +258,7 @@ test("interruption: a half-finished meal comes back after a reload, and is clear
   expect(keys).toEqual([]);
 
   await page.goto("/week/add?day=thu&slot=dinner");
-  await expect(page.getByLabel("What's for dinner?")).toHaveValue("");
+  await expect(page.getByLabel("What’s for dinner?")).toHaveValue("");
   await expect(page.getByRole("region", { name: "Draft recipe" })).toHaveCount(0);
 });
 
@@ -308,6 +310,31 @@ test("two phones: changes show up live, and a Friday tie ends with one meal", as
   await a.getByRole("dialog").getByRole("button", { name: "Take off Monday" }).click();
   await expect(b.getByTestId("day-row-mon")).toContainText("Add dinner", { timeout: 5000 });
   await context.close();
+});
+
+test("favorites are photo tiles; an empty list offers Find a dinner", async ({ page }) => {
+  await createHousehold(page);
+  await page.goto("/favorites");
+  await expect(page.getByText("Nothing saved yet. Meals you keep will wait here.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Find a dinner" })).toHaveAttribute("href", "/week");
+
+  await addFromSearch(page, "thu", "tacos", "Chicken tacos · Allrecipes");
+  await page.goto("/favorites");
+  const row = page.getByTestId("favorite-row");
+  await expect(row).toHaveCount(1);
+  // A tile: a photo crop with the name, the made line and the tag under it, and a "+" that is its own button.
+  await expect(row.first().locator("img")).toBeVisible();
+  await expect(row.first()).toContainText("Made");
+  await expect(row.first().getByRole("button", { name: "Add Chicken tacos to this week" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Find a dinner" })).toHaveCount(0);
+});
+
+test("the Favorites tab inside Add a meal has no Find a dinner link", async ({ page }) => {
+  await createHousehold(page);
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await page.getByRole("tab", { name: "Favorites" }).click();
+  await expect(page.getByText("Nothing saved yet. Meals you keep will wait here.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Find a dinner" })).toHaveCount(0);
 });
 
 test("favorites: listed with a photo and tag, searchable, adds to the first empty day; repeat copies last week", async ({
@@ -417,11 +444,51 @@ test("ratings: nothing is clipped on a 360 px screen", async ({ page }) => {
   await expect(first.getByTestId("result-loved")).toHaveText("Most loved");
   const meta = first.getByTestId("result-meta");
   await expect(meta).toHaveText("★ 4.7 · 1,203 ratings · 30 min");
-  expect(await meta.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  // In a half-width tile the line may wrap, but it never truncates, never scrolls inside itself and stays in its card.
+  expect(await meta.evaluate((el) => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+  expect(await meta.evaluate((el) => getComputedStyle(el).textOverflow)).not.toBe("ellipsis");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
   const box = (await meta.boundingBox())!;
+  const card = (await first.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(card.x);
+  expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(card.y + card.height);
   expect(box.x + box.width).toBeLessThanOrEqual(360);
-  expect(box.height).toBeLessThan(24);
+});
+
+test("results are photo tiles in two columns", async ({ page }) => {
+  await createHousehold(page);
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await searchFor(page, "tacos");
+  const cards = page.getByTestId("result-card");
+  await expect(cards.nth(1)).toBeVisible();
+  const [a, b] = [await boxOf(cards.nth(0)), await boxOf(cards.nth(1))];
+  expect(Math.abs(a.y - b.y)).toBeLessThanOrEqual(1);
+  expect(b.x).toBeGreaterThan(a.x + a.width - 1);
+  for (let i = 0; i < Math.min(await cards.count(), 4); i++) {
+    const photo = await boxOf(cards.nth(i).locator("[data-photo-state]"));
+    expect(Math.abs(photo.width / photo.height - 1.6)).toBeLessThanOrEqual(0.02);
+  }
+  // The card's image names the option it belongs to.
+  await expect(cards.first().locator("img")).toHaveAttribute("data-option-url", /^https?:\/\//);
+});
+
+test("one tab row, one sort control", async ({ page }) => {
+  await createHousehold(page);
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await searchFor(page, "tacos");
+  await expect(page.getByTestId("result-card").first()).toBeVisible();
+  await expect(page.getByRole("tablist")).toHaveCount(1);
+  const groups = page.getByRole("radiogroup");
+  await expect(groups).toHaveCount(1);
+  await expect(groups.first()).toHaveAccessibleName("Order results by");
+
+  // The source choice lives in a sheet, and reads on the screen as one line.
+  await page.getByRole("button", { name: /Looking on/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Where to look" });
+  await expect(sheet.getByRole("radiogroup", { name: "Where to look" })).toBeVisible();
+  await expect(sheet.getByText("Recipe sites we trust")).toBeVisible();
+  await expect(sheet.getByText("A recipe database")).toBeVisible();
 });
 
 /** Where an element is on the page, as a plain box. */

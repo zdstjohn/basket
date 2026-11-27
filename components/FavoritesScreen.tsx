@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { FavoritesBrowser } from "@/components/FavoritesBrowser";
+import { Toast } from "@/components/ui/Toast";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { createBrowserClient } from "@/lib/db/client";
 import { getOrCreateWeek, listWeekMeals, setWeekMeal } from "@/lib/db/queries/weeks";
 import type { Household, MealRow } from "@/lib/db/rows";
 import { daysOfWeek, weekStartFor, type Day } from "@/lib/domain/weeks";
+import { markSettle } from "@/lib/motion/settle";
 import { dayName } from "@/lib/week/format";
 
 export function FavoritesScreen({ household }: { household: Household }) {
@@ -24,30 +27,27 @@ export function FavoritesScreen({ household }: { household: Household }) {
         (d) => !planned.some((p) => p.day === d && p.slot === slot),
       );
       if (!day) {
-        setMessage({ text: "This week's dinners are all planned.", bad: true });
+        setMessage({ text: "This week’s dinners are all planned.", bad: true });
         return;
       }
       await setWeekMeal(sb, week.id, day, slot, meal.id);
+      markSettle(day);
       setMessage({ text: `Added ${meal.name} to ${dayName(day)}.`, bad: false });
     } catch {
-      setMessage({ text: "We couldn't add that. Try again.", bad: true });
+      setMessage({ text: "We couldn’t add that. Try again.", bad: true });
     }
   }
 
   return (
     <section className="pb-6">
-      <h1 className="px-5 pb-2.5 pt-5 text-[30px] font-bold tracking-tight">Favorites</h1>
-      <p
-        role="status"
-        className={`mx-5 mb-2 min-h-5 text-sm font-medium ${message?.bad ? "text-[#A6261B]" : "text-green"}`}
-      >
-        {message?.text ?? ""}
-      </p>
+      <ScreenHeader title="Favorites" />
+      {message && <Toast message={message.text} tone={message.bad ? "bad" : "ok"} onDone={() => setMessage(null)} />}
       <FavoritesBrowser
         household={household}
         showChips
         addLabel={(m) => `Add ${m.name} to this week`}
         onAdd={addToWeek}
+        emptyAction={{ label: "Find a dinner", href: "/week" }}
       />
     </section>
   );

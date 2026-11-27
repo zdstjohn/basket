@@ -61,7 +61,7 @@ describe("api failures", () => {
   });
   it("words an unreadable pasted link", () => {
     expect(messageFor(new ApiFailure("unreadable"), true)).toBe(
-      "We couldn't read that page. Try pasting the recipe text instead.",
+      "We couldn’t read that page. Try pasting the recipe text instead.",
     );
   });
 });

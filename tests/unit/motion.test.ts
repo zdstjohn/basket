@@ -173,6 +173,83 @@ describe("morph", () => {
     await expect(morph({ from, to: () => dest, update: boom, doc })).rejects.toThrow("boom");
     expect(from.style.viewTransitionName).toBe("");
   });
+  it("runs update once when the callback fires, and the safety timer then does nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      const { from, dest } = els();
+      const update = vi.fn();
+      const doc = {
+        startViewTransition(cb: () => void) {
+          cb();
+          return { finished: new Promise<void>((r) => setTimeout(r, 400)) };
+        },
+      } as unknown as Document;
+      const done = morph({ from, to: () => dest, update, doc });
+      await vi.advanceTimersByTimeAsync(1000);
+      await done;
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(from.style.viewTransitionName).toBe("");
+      expect(dest.style.viewTransitionName).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("runs update once from the safety timer when the callback never fires, and clears the names", async () => {
+    vi.useFakeTimers();
+    try {
+      const { from, dest } = els();
+      const update = vi.fn();
+      const doc = { startViewTransition: () => ({ finished: new Promise<void>(() => {}) }) } as unknown as Document;
+      const done = morph({ from, to: () => dest, update, doc });
+      await vi.advanceTimersByTimeAsync(249);
+      expect(update).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(update).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(3000);
+      await done;
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(from.style.viewTransitionName).toBe("");
+      expect(dest.style.viewTransitionName).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("a late callback after the timer does not run update twice", async () => {
+    vi.useFakeTimers();
+    try {
+      const { from, dest } = els();
+      const update = vi.fn();
+      let late: () => void = () => {};
+      const doc = {
+        startViewTransition(cb: () => void) {
+          late = cb;
+          return { finished: new Promise<void>((r) => setTimeout(r, 600)) };
+        },
+      } as unknown as Document;
+      const done = morph({ from, to: () => dest, update, doc });
+      await vi.advanceTimersByTimeAsync(300);
+      late();
+      await vi.advanceTimersByTimeAsync(1000);
+      await done;
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(dest.style.viewTransitionName).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("when startViewTransition throws, a plain update runs once and nothing stays named", async () => {
+    const { from, dest } = els();
+    const update = vi.fn();
+    const doc = {
+      startViewTransition() {
+        throw new Error("not now");
+      },
+    } as unknown as Document;
+    await expect(morph({ from, to: () => dest, update, doc })).resolves.toBeUndefined();
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(from.style.viewTransitionName).toBe("");
+    expect(dest.style.viewTransitionName).toBe("");
+  });
   it("with from: null just calls update", async () => {
     const update = vi.fn();
     const start = vi.fn();

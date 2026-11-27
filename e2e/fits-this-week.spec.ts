@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function searchFor(page: Page, query: string) {
-  await page.getByLabel("What's for dinner?").fill(query);
+  await page.getByLabel("What’s for dinner?").fill(query);
   await page.getByRole("button", { name: "Search" }).click();
 }
 
@@ -91,7 +91,7 @@ test("fits this week: with no other dinners it says so and keeps the most-loved 
   await expect(page.getByTestId("result-card").first()).toBeVisible();
   const before = await titles(page);
   await page.getByRole("radio", { name: "Fits this week" }).click();
-  await expect(page.getByText("Add another dinner first to see what fits")).toBeVisible();
+  await expect(page.getByText("Add another dinner first to see what fits.")).toBeVisible();
   await expect.poll(() => titles(page)).toEqual(before);
   await expect(page.getByTestId("result-shares")).toHaveCount(0);
 });

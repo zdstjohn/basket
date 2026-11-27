@@ -22,8 +22,20 @@ async function searchSoup(page: Page, day: string): Promise<void> {
 /** Stream A: the week, adding a meal and favorites. */
 export const SCREENS_A: Screen[] = [
   { name: "week", path: "/week" },
-  { name: "add-meal", path: "/week/add?day=thu&slot=dinner", contrastPending: true },
-  { name: "favorites", path: "/favorites", contrastPending: true },
+  { name: "add-meal", path: "/week/add?day=thu&slot=dinner" },
+  { name: "favorites", path: "/favorites" },
+  {
+    // The recipe page: a picked result with its ingredients, the household's portions and the pinned bar.
+    name: "recipe-page",
+    // Saturday, so the half-finished draft it leaves does not hide the search on the Thursday screens after it.
+    path: "/week/add?day=sat&slot=dinner",
+    setup: async (page) => {
+      await page.getByLabel(/What.s for dinner\?/).fill("tacos");
+      await page.getByRole("button", { name: "Search" }).click();
+      await page.getByRole("button", { name: /^Chicken tacos · Allrecipes/ }).click();
+      await expect(page.getByRole("region", { name: "Draft recipe" }).getByRole("button", { name: "Edit ingredients" })).toBeVisible();
+    },
+  },
   {
     // A household with an allergy and the soup with almonds planned anyway: the week tile shows the allergy line.
     name: "week-allergy",
@@ -41,7 +53,6 @@ export const SCREENS_A: Screen[] = [
     // Search cards carrying an allergy line and a won't-eat line.
     name: "search-flags",
     path: "/week/add?day=thu&slot=dinner",
-    contrastPending: true,
     setup: async (page) => {
       await withAllergy(page);
       await searchSoup(page, "thu");
