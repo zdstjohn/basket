@@ -36,6 +36,7 @@ export function Photo({
   hint,
   className,
   onDemote,
+  onFallback,
   imgRef,
 }: {
   src: string | null;
@@ -47,6 +48,8 @@ export function Photo({
   hint?: boolean;
   className?: string;
   onDemote?: () => void;
+  /** Called when the picture fails to load or is judged too small: the caller can stop reserving a hero for it. */
+  onFallback?: () => void;
   imgRef?: Ref<HTMLImageElement>;
 }) {
   const [state, setState] = useState<PhotoState>("loading");
@@ -59,8 +62,10 @@ export function Photo({
 
   const el = useRef<HTMLImageElement | null>(null);
   const demote = useRef(onDemote);
+  const fellBack = useRef(onFallback);
   useEffect(() => {
     demote.current = onDemote;
+    fellBack.current = onFallback;
   });
   const judged = useRef<string | null>(null);
 
@@ -81,6 +86,7 @@ export function Photo({
     const verdict = photoVerdict(crop, width || img.naturalWidth);
     if (verdict === "fallback") {
       setState("fallback");
+      fellBack.current?.();
       return;
     }
     setState("ready");
@@ -90,6 +96,7 @@ export function Photo({
   const handleError = useCallback(() => {
     judged.current = null;
     setState("fallback");
+    fellBack.current?.();
   }, []);
 
   // A cached photo can finish before React listens, so look once on mount and when the link changes.

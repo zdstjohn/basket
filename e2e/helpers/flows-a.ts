@@ -1,6 +1,9 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { dayName } from "../../lib/week/format";
-import type { Day } from "../../lib/domain/weeks";
+import { weekStartFor, type Day } from "../../lib/domain/weeks";
+import { getMyHousehold } from "../../lib/db/queries/household";
+import { getOrCreateWeek, setWeekMeal } from "../../lib/db/queries/weeks";
+import { clientFor } from "./db";
 
 // Stream A owns the week, add-a-meal and favorites screens. Specs of other streams drive those screens only through these helpers.
 
@@ -20,13 +23,18 @@ export async function addFromSearch(
   await expect(page).toHaveURL(/\/week$/);
 }
 
-/** The budget as it reads on the page you are on (the week screen): the meter's value in cents and the whole section's words. */
+/** The budget as it reads on the page you are on (the week screen): the total in cents and the whole section's words. */
 export async function readWeekBudget(page: Page): Promise<{ totalCents: number; text: string }> {
   const budget = page.getByRole("region", { name: "Budget" });
   await expect(budget).toBeVisible();
-  const meter = page.getByRole("meter", { name: "Weekly budget" });
-  const now = await meter.getAttribute("aria-valuenow");
-  return { totalCents: Number(now), text: await budget.innerText() };
+  const total = (await budget.getByTestId("week-total").textContent()) ?? "";
+  // The rolling digits are aria-hidden copies of the total; the words are what a reader hears.
+  const text = await budget.evaluate((el) => {
+    const copy = el.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll('[aria-hidden="true"]').forEach((n) => n.remove());
+    return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+  });
+  return { totalCents: Math.round(Number(total.replace(/[$,]/g, "")) * 100), text };
 }
 
 /** Opens the week from the tab bar and reads its budget. */
@@ -49,4 +57,33 @@ export async function favoritesKept(page: Page, filter: string): Promise<Locator
   await page.goto("/favorites");
   await page.getByRole("button", { name: filter }).click();
   return page.getByTestId("favorite-row");
+}
+
+/**
+ * Puts a dinner on a day of this week straight in the database (no search), with a photo link, its known width
+ * (null while unknown) and a credit. Reload the week to see it.
+ */
+export async function seedDinnerOnDay(
+  email: string,
+  day: Day,
+  meal: { name: string; photoUrl?: string | null; width?: number | null; credit?: string | null },
+) {
+  const sb = await clientFor(email);
+  const household = (await getMyHousehold(sb))!;
+  const { data, error } = await sb
+    .from("meals")
+    .insert({
+      household_id: household.id,
+      name: meal.name,
+      base_servings: 4,
+      photo_url: meal.photoUrl ?? null,
+      photo_width: meal.width ?? null,
+      photo_credit: meal.credit ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  const week = await getOrCreateWeek(sb, household.id, weekStartFor(new Date(), household.week_start as Day, household.time_zone));
+  await setWeekMeal(sb, week.id, day, "dinner", data.id);
+  return { sb, household, mealId: data.id };
 }

@@ -1,23 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { BudgetMeter } from "@/components/BudgetMeter";
-import { DayRow } from "@/components/DayRow";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight, History } from "lucide-react";
+import { BudgetSentence } from "@/components/BudgetSentence";
+import { FlagLines } from "@/components/flags/FlagLines";
 import { MealSheet } from "@/components/MealSheet";
+import { MealTile } from "@/components/MealTile";
 import { Sheet } from "@/components/Sheet";
+import { Button, ButtonLink } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { ErrorBanner, Loading, SkeletonTile } from "@/components/ui/states";
+import { OpenDay } from "@/components/week/OpenDay";
+import { TonightHero } from "@/components/week/TonightHero";
 import { useWeekData } from "@/components/useWeekData";
 import { VerdictCard } from "@/components/verdicts/VerdictCard";
 import { useDinnerToAsk, useOffline, type Ask } from "@/components/verdicts/useDinnerToAsk";
 import { useWeekList } from "@/lib/useWeekList";
 import { copyWeek } from "@/lib/db/queries/weeks";
-import { toMeal } from "@/lib/db/queries/meals";
-import type { Household } from "@/lib/db/rows";
-import { allergyCopy, findFlags, ingredientNames } from "@/lib/domain/flags";
+import { toMeal, updateMeal } from "@/lib/db/queries/meals";
+import type { Household, MealRow } from "@/lib/db/rows";
+import { findFlags, ingredientNames } from "@/lib/domain/flags";
 import { householdServings } from "@/lib/domain/portions";
-import { daysOfWeek, type Day } from "@/lib/domain/weeks";
-import { bigGreenLink, focusRing, pillButton, stickyAboveNav } from "@/lib/ui";
-import { formatWeekRange } from "@/lib/week/format";
+import { dinnerDate, daysOfWeek, todayIn, type Day } from "@/lib/domain/weeks";
+import { useFlipList } from "@/lib/motion/flip";
+import { photoVerdict } from "@/lib/photos/verdict";
+import { barAboveNav, quietLink } from "@/lib/ui";
+import { dayShort, formatWeekRange } from "@/lib/week/format";
 import { dayNote } from "@/lib/week/note";
 
 const weekdayOf = (ymd: string): string =>
@@ -37,12 +47,122 @@ export function WeekScreen({ household }: { household: Household }) {
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState(false);
 
+  // Meals whose photo turned out too small for a hero this session, and the widths already written back.
+  const [demoted, setDemoted] = useState<ReadonlySet<string>>(new Set());
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [store] = useState(() => ({
+    wrote: new Set<string>(),
+    meals: new Map<string, MealRow>(),
+    refs: new Map<string, (img: HTMLImageElement | null) => void>(),
+    loaded: new Map<string, { img: HTMLImageElement; onLoad: () => void }>(),
+  }));
+  const meals = data?.meals;
+  useEffect(() => {
+    store.meals.clear();
+    meals?.forEach((m, id) => store.meals.set(id, m));
+  }, [meals, store]);
+
+  /** A ref for a meal's photo that writes the photo's width back once, so the next load knows it and nothing jumps. */
+  const widthRef = useCallback(
+    (mealId: string) => {
+      let ref = store.refs.get(mealId);
+      if (!ref) {
+        ref = (img) => {
+          const old = store.loaded.get(mealId);
+          if (old) {
+            old.img.removeEventListener("load", old.onLoad);
+            store.loaded.delete(mealId);
+          }
+          if (!img) return;
+          const report = () => {
+            const w = img.naturalWidth;
+            const meal = store.meals.get(mealId);
+            // One write per meal and picture: a changed photo is a new key, so its width is written again.
+            const key = `${mealId}|${meal?.photo_path ?? meal?.photo_url ?? ""}`;
+            if (w <= 0 || store.wrote.has(key)) return;
+            const known = meal?.photo_width;
+            if (known !== null && known !== undefined) return;
+            store.wrote.add(key);
+            updateMeal(sb, mealId, { photo_width: w }).catch(() => store.wrote.delete(key));
+          };
+          img.addEventListener("load", report);
+          store.loaded.set(mealId, { img, onLoad: report });
+          if (img.complete) report();
+        };
+        store.refs.set(mealId, ref);
+      }
+      return ref;
+    },
+    [sb, store],
+  );
+
   const slot = household.slots[0] ?? "dinner";
   const days = daysOfWeek(household.week_start as Day);
   const servings = data ? householdServings(data.people) : null;
   const forDay = (d: Day) => data?.weekMeals.find((m) => m.day === d && m.slot === slot) ?? null;
   const open = openDay && data ? forDay(openDay) : null;
   const openMeal = open && data ? (data.meals.get(open.meal_id) ?? null) : null;
+
+  const today = todayIn(household.time_zone);
+  const tonight = data ? (days.find((d) => dinnerDate(data.week.week_start, d) === today) ?? null) : null;
+
+  /** What a day shows: its meal, the allergy lines to keep in view, the note and the photo. */
+  const dayInfo = (d: Day) => {
+    const wm = forDay(d);
+    const meal = wm && data ? data.meals.get(wm.meal_id) : null;
+    if (!wm || !meal || !data) return null;
+    const domain = toMeal(meal);
+    const flags = data.people.length > 0 ? findFlags(ingredientNames(domain), data.people).filter((f) => f.kind === "allergy") : [];
+    return {
+      meal,
+      photo: data.photos[meal.id] ?? null,
+      note: dayNote(domain, data.people, wm.servings_override === null ? null : Number(wm.servings_override)),
+      // A tile keeps what is different about the night (leftovers, a person's change), not the "everyone" default.
+      tileNote: dayNote(domain, data.people, wm.servings_override === null ? null : Number(wm.servings_override))
+        .split(" · ")
+        .filter((part) => part !== "Everyone vegetarian" && part !== "Everyone eats this")
+        .join(" · "),
+      lines: flags.length > 0 ? <FlagLines flags={flags} people={data.people} onPhoto={false} /> : null,
+      flags,
+    };
+  };
+  const tonightInfo = tonight ? dayInfo(tonight) : null;
+  // A hero needs a photo whose width is known and big enough: with an unknown width the dinner starts as a tile.
+  const heroOk =
+    !!tonightInfo &&
+    !!tonightInfo.photo &&
+    tonightInfo.meal.photo_width !== null &&
+    tonightInfo.meal.photo_width > 0 &&
+    photoVerdict("hero", tonightInfo.meal.photo_width) === "ok" &&
+    !demoted.has(tonightInfo.meal.id);
+  const heroDay = heroOk ? tonight : null;
+  const cells = data ? [...(tonight && !heroDay ? [tonight] : []), ...days.filter((d) => d !== tonight)] : [];
+  const flipKey = data ? `${heroDay ?? "-"}|${cells.map((d) => `${d}${forDay(d)?.meal_id ?? ""}`).join(",")}` : "";
+  useFlipList(boardRef, flipKey);
+
+  const demote = (id: string) => setDemoted((prev) => new Set(prev).add(id));
+
+  const tile = (d: Day) => {
+    const info = dayInfo(d);
+    if (!info || !data) return <OpenDay day={d} slot={slot} tonight={d === tonight} wide={d === tonight} />;
+    const { meal } = info;
+    const isTonight = d === tonight;
+    return (
+      <MealTile
+        name={meal.name}
+        photo={info.photo}
+        preview={meal.photo_preview}
+        width={meal.photo_width}
+        stamp={isTonight ? "Tonight" : dayShort(d)}
+        stampTone={isTonight ? "tonight" : "day"}
+        note={info.tileNote}
+        lines={info.lines}
+        favorite={meal.is_favorite}
+        onOpen={() => setOpenDay(d)}
+        imgRef={widthRef(meal.id)}
+      />
+    );
+  };
 
   async function repeat() {
     if (!data?.lastWeek) return;
@@ -61,99 +181,96 @@ export function WeekScreen({ household }: { household: Household }) {
 
   return (
     <section data-live={live ? "on" : undefined} className="flex flex-1 flex-col">
-      <header className="flex items-end justify-between px-5 pb-3 pt-5">
-        <div>
-          <p data-testid="week-range" className="min-h-[19px] text-[13px] font-medium text-muted">
-            {data ? formatWeekRange(data.week.week_start) : ""}
+      <ScreenHeader
+        title="This week"
+        action={
+          <Button variant="ghost" className="disabled:opacity-60" aria-label="Repeat last week" disabled={!data?.lastWeek || data.lastWeek.count === 0} onClick={() => setConfirming(true)}>
+            <Icon icon={History} size={18} />
+            Repeat
+          </Button>
+        }
+      />
+
+      <div>
+        {data && heroDay && tonightInfo && (
+          <TonightHero
+            day={heroDay}
+            name={tonightInfo.meal.name}
+            photo={tonightInfo.photo}
+            preview={tonightInfo.meal.photo_preview}
+            width={tonightInfo.meal.photo_width}
+            credit={tonightInfo.meal.photo_credit}
+            note={tonightInfo.note}
+            lines={tonightInfo.flags.length > 0 ? <FlagLines flags={tonightInfo.flags} people={data.people} onPhoto /> : null}
+            favorite={tonightInfo.meal.is_favorite}
+            onOpen={() => setOpenDay(heroDay)}
+            onDemote={() => demote(tonightInfo.meal.id)}
+            imgRef={widthRef(tonightInfo.meal.id)}
+          />
+        )}
+        {!data && !error && <SkeletonTile crop="hero" />}
+
+        <div className="bk-gutter flex items-center justify-between gap-2 text-small">
+          <p className="min-h-5 min-w-0">
+            <span data-testid="week-range">{data ? formatWeekRange(data.week.week_start) : ""}</span>
+            {servings !== null && <span className="text-ink-soft"> · feeds about {servings}</span>}
           </p>
-          <h1 className="mt-0.5 text-[30px] font-bold tracking-tight">This week</h1>
-        </div>
-        <button
-          type="button"
-          aria-label="Repeat a past week"
-          disabled={!data?.lastWeek || data.lastWeek.count === 0}
-          onClick={() => setConfirming(true)}
-          className={`${pillButton} gap-1.5 text-sm`}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M3 12a9 9 0 1 0 3-6.7" />
-            <path d="M3 4v5h5" />
-          </svg>
-          Repeat
-        </button>
-      </header>
-
-      <BudgetMeter totalCents={list.totals.totalCents} targetCents={household.budget_cents} cushionCents={household.cushion_cents} />
-
-      {data && card && data.people.length > 0 && (
-        <VerdictCard
-          key={`${card.dinner.mealId}|${card.dinner.date}`}
-          ask={card}
-          dayName={weekdayOf(card.dinner.date)}
-          people={data.people}
-          offline={offline}
-          sb={sb}
-          householdId={household.id}
-          onHold={setHeld}
-          onDone={reloadAsk}
-        />
-      )}
-
-      <section aria-label="Dinners" className="mx-5 mt-3.5 flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold">
-            Dinners{servings !== null ? ` · ${servings} servings each` : ""}
-          </h2>
-          <Link href="/household" className={`inline-flex min-h-11 items-center text-[13px] font-semibold text-green no-underline ${focusRing}`}>
-            Who&apos;s eating
+          <Link href="/household" className={`${quietLink} -mr-1 shrink-0`}>
+            Who’s eating
+            <Icon icon={ChevronRight} size={18} />
           </Link>
         </div>
 
-        {error && !data ? (
-          <div role="alert" className="rounded-[14px] border border-line bg-white p-4 text-[15px]">
-            <p>We couldn&apos;t load this week.</p>
-            <button type="button" onClick={() => void reload()} className={`${pillButton} mt-2`}>
-              Try again
-            </button>
-          </div>
-        ) : !data ? (
-          days.map((d) => <div key={d} aria-hidden="true" className="h-[52px] animate-pulse rounded-[14px] bg-[#EDF0EC]" />)
-        ) : (
-          days.map((d) => {
-            const wm = forDay(d);
-            const meal = wm ? data.meals.get(wm.meal_id) : null;
-            const domainMeal = meal ? toMeal(meal) : null;
-            const allergy = domainMeal && data.people.length > 0
-              ? allergyCopy(findFlags(ingredientNames(domainMeal), data.people).filter((f) => f.kind === "allergy"), data.people)
-              : null;
-            return (
-              <DayRow
-                key={d}
-                day={d}
-                slot={slot}
-                onOpen={() => setOpenDay(d)}
-                filled={
-                  wm && meal && domainMeal
-                    ? {
-                        name: meal.name,
-                        allergy: allergy?.head ?? null,
-                        note: dayNote(domainMeal, data.people, wm.servings_override === null ? null : Number(wm.servings_override)),
-                        photo: data.photos[meal.id] ?? null,
-                        favorite: meal.is_favorite,
-                      }
-                    : null
-                }
-              />
-            );
-          })
+        {data && card && data.people.length > 0 && (
+          <VerdictCard
+            key={`${card.dinner.mealId}|${card.dinner.date}`}
+            ask={card}
+            dayName={weekdayOf(card.dinner.date)}
+            people={data.people}
+            offline={offline}
+            sb={sb}
+            householdId={household.id}
+            onHold={setHeld}
+            onDone={reloadAsk}
+          />
         )}
-      </section>
+
+        <section aria-label="Dinners" className="bk-gutter mt-2">
+          {error && !data ? (
+            <ErrorBanner message="Couldn’t load this week." actionLabel="Try again" onAction={() => void reload()} />
+          ) : !data ? (
+            <div className="grid grid-cols-2 items-start gap-2">
+              {[0, 1, 2, 3].map((i) => (
+                <SkeletonTile key={i} crop="tile" />
+              ))}
+              <Loading label="Loading this week" />
+            </div>
+          ) : (
+            // A two-column grid in week order, row by row (tonight first when it is a tile or an open row). Cells
+            // stretch to the tallest in their row, so a short tile or an Add row never leaves a hole beside a tall one.
+            <div ref={boardRef} className="grid grid-cols-2 items-stretch gap-2">
+              {cells.map((d) => (
+                <div key={d} data-testid={`day-row-${d}`} data-flip-key={d} className={`flex ${d === tonight && !forDay(d) ? "col-span-2" : ""}`}>
+                  {tile(d)}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
 
       <div className="mt-auto" />
-      <div className={stickyAboveNav}>
-        <Link href="/list" className={bigGreenLink}>
+      <div className={`${barAboveNav} flex flex-col gap-2`}>
+        <BudgetSentence
+          totalCents={list.totals.totalCents}
+          targetCents={household.budget_cents}
+          cushionCents={household.cushion_cents}
+          exact={!!household.kroger_location_id}
+          totalTestId="week-total"
+        />
+        <ButtonLink variant="main" href="/list">
           Build shopping list
-        </Link>
+        </ButtonLink>
       </div>
 
       {data && openDay && open && openMeal && (
@@ -171,20 +288,20 @@ export function WeekScreen({ household }: { household: Household }) {
       )}
 
       {confirming && (
-        <Sheet label="Repeat last week" onClose={() => setConfirming(false)}>
-          <div className="flex flex-col gap-3 p-5 pb-6">
-            <p className="text-base font-semibold">Copy last week&apos;s dinners into this week? This replaces what&apos;s planned.</p>
+        <Sheet label="Repeat last week" title="Repeat last week" onClose={() => setConfirming(false)}>
+          <div className="flex flex-col gap-3 px-4 pb-4">
+            <p className="text-body font-semibold">Copy last week’s dinners into this week? This replaces what’s planned.</p>
             {copyError && (
-              <p role="alert" className="text-sm font-medium text-[#A6261B]">
-                We couldn&apos;t copy last week. Try again.
+              <p role="alert" className="text-small font-semibold text-error">
+                We couldn’t copy last week. Try again.
               </p>
             )}
-            <button type="button" disabled={copying} onClick={() => void repeat()} className={`inline-flex h-12 items-center justify-center rounded-full bg-green text-[15px] font-semibold text-white disabled:opacity-60 ${focusRing}`}>
+            <Button variant="main" busy={copying} busyLabel="Copying…" onClick={() => void repeat()}>
               Copy dinners
-            </button>
-            <button type="button" onClick={() => setConfirming(false)} className={`${pillButton} h-12`}>
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirming(false)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </Sheet>
       )}

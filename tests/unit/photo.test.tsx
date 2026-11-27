@@ -191,6 +191,27 @@ describe("<Photo>", () => {
     expect(state()).toBe("fallback");
   });
 
+  it("onFallback fires once when the picture fails to load, and when it loads too small", () => {
+    const onFallback = vi.fn();
+    render(<Photo src="/gone.jpg" name="Tacos" crop="hero" onFallback={onFallback} />);
+    fail(q<HTMLImageElement>("img"));
+    expect(state()).toBe("fallback");
+    expect(onFallback).toHaveBeenCalledTimes(1);
+
+    const small = vi.fn();
+    render(<Photo src="/small.jpg" name="Tacos" crop="tile" onFallback={small} />);
+    load(q<HTMLImageElement>("img"), 120);
+    expect(state()).toBe("fallback");
+    expect(small).toHaveBeenCalledTimes(1);
+  });
+
+  it("onFallback stays quiet for a photo that loads fine", () => {
+    const onFallback = vi.fn();
+    render(<Photo src="/ok.jpg" name="Tacos" crop="hero" onFallback={onFallback} />);
+    load(q<HTMLImageElement>("img"), 900);
+    expect(onFallback).not.toHaveBeenCalled();
+  });
+
   it("a re-signed link for a shown photo does not drop back to loading", () => {
     render(<Photo src="/a.jpg?sig=1" name="Tacos" crop="tile" />);
     load(q<HTMLImageElement>("img"));
