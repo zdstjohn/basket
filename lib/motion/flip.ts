@@ -119,15 +119,27 @@ export function useFlipList(ref: React.RefObject<HTMLElement | null>, signature:
     }
   });
 
+  // The root may appear after the first mount (a grid that renders once its data is in), so look after every commit
+  // and observe whichever element is there now.
+  const observed = useRef<{ el: HTMLElement; ro: ResizeObserver } | null>(null);
   useLayoutEffect(() => {
     const root = ref.current;
-    if (!root || typeof ResizeObserver === "undefined") return;
+    if (observed.current && observed.current.el !== root) {
+      observed.current.ro.disconnect();
+      observed.current = null;
+    }
+    if (!root || observed.current || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => remeasure());
     ro.observe(root);
-    return () => {
-      ro.disconnect();
+    observed.current = { el: root, ro };
+  });
+  useLayoutEffect(
+    () => () => {
+      observed.current?.ro.disconnect();
+      observed.current = null;
       if (settleTimer.current) clearTimeout(settleTimer.current);
       settleTimer.current = null;
-    };
-  }, [ref, remeasure]);
+    },
+    [],
+  );
 }

@@ -15,6 +15,7 @@ export function Toast({
   ms = 4000,
   onDone,
   testId,
+  focusAction,
 }: {
   message: string;
   tone: "ok" | "bad";
@@ -22,6 +23,8 @@ export function Toast({
   ms?: number;
   onDone: () => void;
   testId?: string;
+  /** Move focus to the action when the toast appears: for a toast that answers a button that has just left the screen. */
+  focusAction?: boolean;
 }) {
   const done = useRef(onDone);
   useEffect(() => {
@@ -34,6 +37,9 @@ export function Toast({
 
   // A screen's pinned main-action bar (barAboveNav / barBottom) is never covered: lift above it.
   const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusAction) wrap.current?.querySelector("button")?.focus();
+  }, [focusAction]);
   useEffect(() => {
     const el = wrap.current;
     const bar = document.querySelector<HTMLElement>(`.${BAR_CLASS}`);

@@ -471,11 +471,12 @@ export function ReviewScreen({
                       </a>
                     </span>
                   </Banner>
-                  {outcome.rejected.length > 0 && <ErrorBanner message={`Fred Meyer wouldn’t take: ${outcome.rejected.join(", ")}.`} />}
+                  {outcome.rejected.length > 0 && <ErrorBanner role={null} message={`Fred Meyer wouldn’t take: ${outcome.rejected.join(", ")}.`} />}
                 </>
               )}
               {outcome.kind === "unsure" && (
                 <ErrorBanner
+                  role={null}
                   message={
                     outcome.rejected.length > 0
                       ? `${SENT_CHECK_ADVICE} Not added: ${outcome.rejected.map((r) => r.name).join(", ")}.`
@@ -487,13 +488,13 @@ export function ReviewScreen({
                 <Banner role={null}>A send for this list is already in progress. Wait a moment, then check the Fred Meyer app.</Banner>
               )}
               {outcome.kind === "already_sent" && <Banner role={null}>Everything here is already in your cart.</Banner>}
-              {outcome.kind === "not_connected" && <ErrorBanner message="Connect Fred Meyer again." actionLabel="Connect Fred Meyer" onAction={connectAgain} />}
-              {outcome.kind === "rejected" && <ErrorBanner message="Fred Meyer wouldn’t take these items. Try swapping them." />}
-              {outcome.kind === "too_many" && <ErrorBanner message="You’ve sent this list a lot today. Try again tomorrow." />}
-              {outcome.kind === "busy" && <ErrorBanner message="Fred Meyer is busy. Try again in a minute." />}
-              {outcome.kind === "allowance_spent" && <ErrorBanner message="Basket has looked up a lot of Fred Meyer prices today. Try again tomorrow." />}
-              {outcome.kind === "no_answer" && <ErrorBanner message={SENT_CHECK_ADVICE} />}
-              {outcome.kind === "failed" && <ErrorBanner message="That didn’t go through. Nothing was added." />}
+              {outcome.kind === "not_connected" && <ErrorBanner role={null} message="Connect Fred Meyer again." actionLabel="Connect Fred Meyer" onAction={connectAgain} />}
+              {outcome.kind === "rejected" && <ErrorBanner role={null} message="Fred Meyer wouldn’t take these items. Try swapping them." />}
+              {outcome.kind === "too_many" && <ErrorBanner role={null} message="You’ve sent this list a lot today. Try again tomorrow." />}
+              {outcome.kind === "busy" && <ErrorBanner role={null} message="Fred Meyer is busy. Try again in a minute." />}
+              {outcome.kind === "allowance_spent" && <ErrorBanner role={null} message="Basket has looked up a lot of Fred Meyer prices today. Try again tomorrow." />}
+              {outcome.kind === "no_answer" && <ErrorBanner role={null} message={SENT_CHECK_ADVICE} />}
+              {outcome.kind === "failed" && <ErrorBanner role={null} message="That didn’t go through. Nothing was added." />}
             </>
           )}
         </div>

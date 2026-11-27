@@ -264,7 +264,7 @@ for (const look of ["light", "dark"] as const) {
     await readyToSend(page, `cartunsure${look}`);
     await page.route("**/api/kroger/cart", (route) => route.fulfill({ status: 504, json: UNSURE_BODY }));
     await sendButton(page).click();
-    const warning = page.getByTestId("send-result").getByRole("alert");
+    const warning = page.getByTestId("send-result"); // the live region itself announces the banner inside it
     await expect(warning).toContainText(ADVICE);
     await expect(warning).toBeInViewport();
     // It stays until the next send: a tap elsewhere or a reload of the lines does not clear it.

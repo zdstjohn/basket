@@ -52,13 +52,16 @@ export function ErrorBanner({
   message,
   actionLabel,
   onAction,
+  role = "alert",
 }: {
   message: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** "alert" by default; null when the banner sits inside a live region of its own, so it is not announced twice. */
+  role?: "alert" | null;
 }) {
   return (
-    <div role="alert" className="flex items-start gap-2 rounded-md bg-error-tint p-3 text-small text-error">
+    <div role={role ?? undefined} className="flex items-start gap-2 rounded-md bg-error-tint p-3 text-small text-error">
       <Icon icon={TriangleAlert} size={18} className="mt-0.5" />
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
         <p>{curly(message)}</p>

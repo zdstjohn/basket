@@ -336,6 +336,7 @@ export function ListScreen({ household }: { household: Household }) {
           ms={8000}
           onDone={() => setUndo(null)}
           testId="check-all-undo"
+          focusAction
         />
       )}
 
