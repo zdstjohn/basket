@@ -35,7 +35,7 @@ export function Segmented<T extends string>({
             type="button"
             role="radio"
             aria-checked={on}
-            tabIndex={on ? 0 : -1}
+            tabIndex={on || (i === 0 && !options.some((x) => x.id === value)) ? 0 : -1}
             onClick={() => onChange(o.id)}
             onKeyDown={(e) => {
               if (e.key === "ArrowRight" || e.key === "ArrowDown") {

@@ -38,7 +38,7 @@ export function Toast({
         data-testid={testId}
         className="bk-fade-in pointer-events-auto flex items-center gap-2 rounded-md bg-raised p-3 text-small text-ink shadow-1"
       >
-        <Icon icon={tone === "ok" ? Check : TriangleAlert} size={18} className={tone === "ok" ? "text-price" : "text-error"} />
+        <Icon icon={tone === "ok" ? Check : TriangleAlert} size={18} className={tone === "ok" ? undefined : "text-error"} />
         <span className="min-w-0">{curly(message)}</span>
         {action && (
           <Button variant="ghost" onClick={action.onAction}>

@@ -22,11 +22,11 @@ export function Stepper({
   const set = (n: number) => onChange(Math.min(max, Math.max(min, n)));
   return (
     <div className="inline-flex items-center gap-2">
-      <IconButton icon={Minus} size={18} label={fewerLabel} disabled={value <= min} onClick={() => set(value - 1)} />
+      <IconButton icon={Minus} size={18} label={fewerLabel} softDisabled={value <= min} onClick={() => set(value - 1)} />
       <span aria-live="polite" className="bk-price min-w-8 text-center text-body text-ink">
         {value}
       </span>
-      <IconButton icon={Plus} size={18} label={moreLabel} disabled={value >= max} onClick={() => set(value + 1)} />
+      <IconButton icon={Plus} size={18} label={moreLabel} softDisabled={value >= max} onClick={() => set(value + 1)} />
     </div>
   );
 }

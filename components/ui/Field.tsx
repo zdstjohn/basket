@@ -39,6 +39,15 @@ function Frame({
 
 const BOX = `${textInput} placeholder:text-ink-soft`;
 
+/** The caller's own aria-describedby plus the error's id; aria-invalid stays whatever the caller set unless there is an error. */
+function aria(fid: string, error: string | undefined, props: { "aria-describedby"?: string; "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling" }) {
+  const ids = [props["aria-describedby"], error ? `${fid}-error` : undefined].filter(Boolean).join(" ");
+  return {
+    "aria-describedby": ids || undefined,
+    "aria-invalid": error ? true : props["aria-invalid"],
+  };
+}
+
 export function TextField({
   label,
   error,
@@ -60,10 +69,9 @@ export function TextField({
         )}
         <input
           id={fid}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${fid}-error` : undefined}
           className={`${BOX} ${icon ? "pl-12" : ""}`}
           {...inputProps}
+          {...aria(fid, error, inputProps)}
         />
       </div>
     </Frame>
@@ -84,10 +92,9 @@ export function TextAreaField({
     <Frame id={fid} label={label} hideLabel={hideLabel} error={error} className={className}>
       <textarea
         id={fid}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${fid}-error` : undefined}
-        className={`${BOX} min-h-24 py-2`}
+        className={`${BOX.replace("min-h-11 ", "")} min-h-24 py-2`}
         {...areaProps}
+        {...aria(fid, error, areaProps)}
       />
     </Frame>
   );
@@ -109,10 +116,9 @@ export function SelectField({
       <div className="relative">
         <select
           id={fid}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${fid}-error` : undefined}
           className={`${BOX} appearance-none pr-12`}
           {...selectProps}
+          {...aria(fid, error, selectProps)}
         >
           {children}
         </select>

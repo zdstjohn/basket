@@ -3,8 +3,10 @@ import { act, useState, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Plus } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Button } from "@/components/ui/Button";
-import { IconButton } from "@/components/ui/Button";
+import { Button, ButtonLink, IconButton } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/Field";
+import { Chip } from "@/components/ui/Chip";
+import { Banner, OfflineStrip } from "@/components/ui/Banner";
 import { Tabs } from "@/components/ui/Tabs";
 import { Segmented } from "@/components/ui/Segmented";
 import { RadioRows } from "@/components/ui/RadioRows";
@@ -139,7 +141,7 @@ describe("Button", () => {
       </Button>,
     );
     const b = q<HTMLButtonElement>("button");
-    expect(b.disabled).toBe(true);
+    expect(b.getAttribute("aria-disabled")).toBe("true");
     expect(b.textContent).toContain("Saving…");
   });
   it("shows its children and is enabled when not busy", () => {
@@ -227,13 +229,13 @@ describe("Stepper", () => {
     const shown = () => q('[aria-live="polite"]').textContent;
     click(fewer());
     expect(shown()).toBe("1");
-    expect(fewer().disabled).toBe(true);
+    expect(fewer().getAttribute("aria-disabled")).toBe("true");
     click(fewer());
     expect(shown()).toBe("1");
     click(more());
     click(more());
     expect(shown()).toBe("3");
-    expect(more().disabled).toBe(true);
+    expect(more().getAttribute("aria-disabled")).toBe("true");
     click(more());
     expect(shown()).toBe("3");
   });
@@ -271,5 +273,99 @@ describe("LookPicker when storage throws", () => {
     expect(document.documentElement.getAttribute("data-look")).toBe("dark");
     expect(radios().map((r) => r.checked)).toEqual([false, true, false]);
     expect(localStorage.getItem(LOOK_KEY)).toBeNull();
+  });
+});
+
+describe("round 1 fixes", () => {
+  it("a busy Button keeps focus, ignores clicks, and speaks busyLabel", () => {
+    const onClick = vi.fn();
+    function H({ busy }: { busy: boolean }) {
+      return (
+        <Button variant="main" busy={busy} busyLabel="Saving…" onClick={onClick}>
+          Save
+        </Button>
+      );
+    }
+    render(<H busy={false} />);
+    const b = q<HTMLButtonElement>("button");
+    act(() => b.focus());
+    render(<H busy />);
+    expect(document.activeElement).toBe(b);
+    expect(b.disabled).toBe(false);
+    expect(b.getAttribute("aria-disabled")).toBe("true");
+    click(b);
+    expect(onClick).not.toHaveBeenCalled();
+    expect(q('[role="status"]').textContent).toBe("Saving…");
+    render(<H busy={false} />);
+    expect(q('[role="status"]').textContent).toBe("");
+    click(q("button"));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("RadioRows ids survive a value with a space", () => {
+    render(<RadioRows label="L" name="n" options={[{ value: "two words", label: "Two words", detail: "d" }]} value="two words" onChange={() => {}} />);
+    const input = q<HTMLInputElement>("input");
+    const ids = input.getAttribute("aria-labelledby")!.split(" ");
+    expect(ids).toHaveLength(1);
+    expect(document.getElementById(ids[0])?.textContent).toBe("Two words");
+    expect(document.getElementById(input.getAttribute("aria-describedby")!)?.textContent).toBe("d");
+  });
+
+  it("Stepper at its limit keeps focus and ignores the tap", () => {
+    const onChange = vi.fn();
+    render(<Stepper value={1} min={1} max={3} onChange={onChange} fewerLabel="Fewer" moreLabel="More" />);
+    const fewer = q<HTMLButtonElement>('button[aria-label="Fewer"]');
+    expect(fewer.disabled).toBe(false);
+    expect(fewer.getAttribute("aria-disabled")).toBe("true");
+    click(fewer);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("Tabs and Segmented keep one tab stop when the value matches nothing", () => {
+    render(<Tabs label="T" items={TABS} active="zzz" onChange={() => {}} panelId="p" />);
+    expect(all('[role="tab"]').map((t) => t.tabIndex)).toEqual([0, -1, -1]);
+    render(<Segmented label="S" options={SEGS} value="zzz" onChange={() => {}} />);
+    expect(all('[role="radio"]').map((t) => t.tabIndex)).toEqual([0, -1]);
+  });
+
+  it("TextField merges describedby, keeps aria-invalid, and shows the error", () => {
+    render(<TextField label="Name" error="Can't be empty" aria-describedby="hint" />);
+    const i = q<HTMLInputElement>("input");
+    const ids = i.getAttribute("aria-describedby")!.split(" ");
+    expect(ids).toContain("hint");
+    expect(document.getElementById(ids.find((x) => x !== "hint")!)?.textContent).toBe("Can’t be empty");
+    expect(i.getAttribute("aria-invalid")).toBe("true");
+    expect(q("label").textContent).toBe("Name");
+    render(<TextField label="Name" aria-invalid />);
+    expect(q("input").getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("Chip shows its text and a named remove button", () => {
+    const onRemove = vi.fn();
+    render(<Chip onRemove={onRemove} removeLabel="Remove olives">olives</Chip>);
+    click(q('button[aria-label="Remove olives"]'));
+    expect(onRemove).toHaveBeenCalledOnce();
+    expect(host.textContent).toContain("olives");
+  });
+
+  it("Banner is a status; OfflineStrip keeps its live region and changes only the text", () => {
+    render(<Banner>Prices are old.</Banner>);
+    expect(q('[role="status"]').textContent).toBe("Prices are old.");
+    render(<OfflineStrip state={null} />);
+    const region = q('[role="status"]');
+    expect(region.textContent).toBe("");
+    render(<OfflineStrip state="offline" />);
+    expect(q('[role="status"]')).toBe(region);
+    expect(region.textContent).toBe("Offline. Showing your last list.");
+    render(<OfflineStrip state="saved" />);
+    expect(region.textContent).toBe("Back online. Saved.");
+    expect(all('[role="status"]')).toHaveLength(1);
+  });
+
+  it("ButtonLink renders a link with the label", () => {
+    render(<ButtonLink variant="main" href="/week">Plan</ButtonLink>);
+    const a = q<HTMLAnchorElement>("a");
+    expect(a.getAttribute("href")).toBe("/week");
+    expect(a.textContent).toBe("Plan");
   });
 });

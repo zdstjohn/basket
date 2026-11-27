@@ -6,7 +6,7 @@ export const mainAction =
 
 /** A quieter action beside or under the main one. Wraps rather than clips. */
 export const ghostButton =
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line-strong bg-transparent px-3 text-center text-small font-semibold text-ink no-underline bk-press";
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line-strong bg-transparent px-3 py-2 text-center text-small font-semibold text-ink no-underline bk-press";
 
 /** A way out: ink, semibold, a chevron after it. */
 export const quietLink =

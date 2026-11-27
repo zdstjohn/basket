@@ -39,7 +39,7 @@ export function Tabs<T extends string>({
             role="tab"
             aria-selected={on}
             aria-controls={panelId}
-            tabIndex={on ? 0 : -1}
+            tabIndex={on || (i === 0 && !items.some((x) => x.id === active)) ? 0 : -1}
             onClick={() => onChange(it.id)}
             onKeyDown={(e) => {
               if (e.key === "ArrowRight") {

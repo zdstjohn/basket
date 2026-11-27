@@ -19,10 +19,10 @@ export function RadioRows<T extends string>({
   const uid = useId();
   return (
     <div role="radiogroup" aria-label={label} className="divide-y divide-line">
-      {options.map((o) => {
+      {options.map((o, i) => {
         const on = value === o.value;
-        const labelId = `${uid}-${o.value}-label`;
-        const detailId = `${uid}-${o.value}-detail`;
+        const labelId = `${uid}-${i}-label`;
+        const detailId = `${uid}-${i}-detail`;
         return (
           <label key={o.value} className="relative flex min-h-13 cursor-pointer items-center gap-3 py-2">
             <input
