@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/db/types';
+import { normFood } from '@/lib/domain/list';
 import type { Candidate } from '@/lib/domain/packages';
 import type { Choice, MatchRow } from '@/lib/list/matches';
 
@@ -17,7 +18,7 @@ export async function listMatches(sb: Sb, householdId: string, locationId: strin
     .gte('fetched_at', since);
   if (error) throw new Error(error.message);
   return (data ?? []).map((r) => ({
-    canonical: r.canonical,
+    canonical: normFood(r.canonical),
     locationId: r.location_id,
     term: r.term,
     candidates: Array.isArray(r.candidates) ? (r.candidates as unknown as Candidate[]) : [],
@@ -32,7 +33,7 @@ export async function listChoices(sb: Sb, householdId: string): Promise<Choice[]
     .select('canonical, upc, search_term')
     .eq('household_id', householdId);
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({ canonical: r.canonical, upc: r.upc, searchTerm: r.search_term }));
+  return (data ?? []).map((r) => ({ canonical: normFood(r.canonical), upc: r.upc, searchTerm: r.search_term }));
 }
 
 /**

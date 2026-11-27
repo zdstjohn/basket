@@ -1,5 +1,6 @@
 import { eatsRole, householdServings, portionFactor } from './portions';
 import type { Meal, Person, Quantity, Role } from './types';
+import { normFood } from './list';
 import { quantityOrCount } from './units';
 
 export interface ScaledLine {
@@ -9,7 +10,7 @@ export interface ScaledLine {
   sources: string[];
 }
 
-const norm = (s: string): string => s.trim().toLowerCase();
+const norm = normFood;
 
 /** Share of the household's portions eaten by people who eat this role. */
 function eaterShare(people: Person[], role: Role): number {

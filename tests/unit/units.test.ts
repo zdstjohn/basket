@@ -123,3 +123,30 @@ describe('formatNeed', () => {
     expect(formatNeed([q(2, 'cans')])).toBe('2 cans');
   });
 });
+
+describe('unit spellings', () => {
+  const mass: [string, number][] = [['lbs.', 453.59], ['LB.', 453.59], ['oz.', 28.35], ['ozs', 28.35], ['lbs', 453.59]];
+  for (const [unit, grams] of mass) {
+    it(`reads "${unit}" as mass`, () => {
+      const r = toQuantity(1, unit)!;
+      expect(r.kind).toBe('mass');
+      expect(r.amount).toBeCloseTo(grams, 1);
+    });
+  }
+  const volume: [string, number][] = [['Tbsps', 14.79], ['tbsp.', 14.79], ['tsps', 4.93], ['tsp.', 4.93], ['c.', 236.59], ['C', 236.59], ['fl. oz', 29.57], ['fl oz.', 29.57]];
+  for (const [unit, ml] of volume) {
+    it(`reads "${unit}" as volume`, () => {
+      const r = toQuantity(1, unit)!;
+      expect(r.kind).toBe('volume');
+      expect(r.amount).toBeCloseTo(ml, 1);
+    });
+  }
+  it('quantityOrCount no longer turns them into counts', () => {
+    expect(quantityOrCount(2, 'lbs.').kind).toBe('mass');
+    expect(quantityOrCount(3, 'Tbsps').kind).toBe('volume');
+  });
+  it('still returns null for unknown units', () => {
+    expect(toQuantity(1, 'sprigs')).toBeNull();
+    expect(toQuantity(1, 'bags')).toBeNull();
+  });
+});

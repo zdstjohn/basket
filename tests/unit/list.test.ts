@@ -289,3 +289,35 @@ describe('listTotals', () => {
     });
   });
 });
+
+describe('food names', () => {
+  it('merges names that differ only in spacing or Unicode form', () => {
+    const items = buildShoppingList({
+      ...base,
+      scaled: [
+        sl('olive  oil', q(1, 'tbsp'), 'A'),
+        sl(' Olive oil ', q(1, 'tbsp'), 'B'),
+        sl('jalapeño', q(1, ''), 'A'),
+        sl('jalapeño', q(1, ''), 'B'),
+      ],
+    });
+    expect(items.map((i) => i.key).sort()).toEqual(['jalapeño', 'olive oil']);
+    expect(items.find((i) => i.key === 'jalapeño')!.qty.amount).toBe(2);
+  });
+  it('keeps plurals apart: the key is the food name', () => {
+    const items = buildShoppingList({
+      ...base,
+      scaled: [sl('tomato', q(1, ''), 'A'), sl('tomatoes', q(1, ''), 'B')],
+    });
+    expect(items.map((i) => i.key).sort()).toEqual(['tomato', 'tomatoes']);
+  });
+  it('matches saved flags and always-have names written the tidy way', () => {
+    const items = buildShoppingList({
+      ...base,
+      scaled: [sl('olive  oil', q(1, 'tbsp'), 'A'), sl('black  pepper', q(1, 'tsp'), 'A')],
+      haveIt: new Set(['olive oil']),
+      alwaysHave: ['Black   Pepper'],
+    });
+    expect(items.every((i) => i.haveIt)).toBe(true);
+  });
+});

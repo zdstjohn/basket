@@ -105,6 +105,21 @@ export function mealCostCents(
   return sum;
 }
 
+/**
+ * What each meal costs from saved prices alone (null when any line has none), and how many meals
+ * have no price yet. Pure: it never asks anyone for a price.
+ */
+export function favoritesCosts(
+  meals: { id: string; lines: ScaledLine[] }[],
+  storeOf: (canonical: string, role: Role) => Store,
+  prices: PriceMap,
+): { costs: Map<string, number | null>; notPriced: number } {
+  const costs = new Map(meals.map((m) => [m.id, mealCostCents(m.lines, storeOf, prices)]));
+  let notPriced = 0;
+  for (const c of costs.values()) if (c === null) notPriced += 1;
+  return { costs, notPriced };
+}
+
 /** A search for the food at Amazon or Costco, opened in a new tab. */
 export function storeSearchUrl(store: 'amazon' | 'costco', canonical: string): string {
   const q = encodeURIComponent(canonical);

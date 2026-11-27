@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/db/types';
-import type { Store } from '@/lib/domain/list';
+import { normFood, type Store } from '@/lib/domain/list';
 import type { IngredientLine, Quantity, Role } from '@/lib/domain/types';
 import type { ItemPatch } from '@/lib/list/offline';
 import { isStore, krogerImageUrl, type PriceRow, type PriceSource } from '@/lib/list/prices';
@@ -8,7 +8,7 @@ import { isStore, krogerImageUrl, type PriceRow, type PriceSource } from '@/lib/
 type Sb = SupabaseClient<Database>;
 type Json = Database['public']['Tables']['households']['Row']['category_store'];
 
-const norm = (s: string): string => s.trim().toLowerCase();
+const norm = normFood;
 
 // ---------------------------------------------------------------------------
 // Staples: things bought every week, merged into the list.
@@ -67,7 +67,7 @@ export async function listAlwaysHave(sb: Sb, householdId: string): Promise<strin
     .eq('household_id', householdId)
     .order('created_at');
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => r.canonical);
+  return (data ?? []).map((r) => normFood(r.canonical));
 }
 
 export async function addAlwaysHave(sb: Sb, householdId: string, name: string): Promise<void> {
@@ -104,7 +104,8 @@ export async function listItemState(sb: Sb, weekId: string): Promise<Record<stri
   if (error) throw new Error(error.message);
   const out: Record<string, ItemState> = {};
   for (const r of data ?? []) {
-    out[r.item_key] = { have_it: r.have_it, checked: r.checked, outside_budget: r.outside_budget, pack_count: r.pack_count };
+    // Rows saved before names were tidied may have double spaces or NFD letters: read them under today's key.
+    out[normFood(r.item_key)] = { have_it: r.have_it, checked: r.checked, outside_budget: r.outside_budget, pack_count: r.pack_count };
   }
   return out;
 }
@@ -140,7 +141,7 @@ export async function listItemStores(sb: Sb, householdId: string): Promise<Map<s
   const { data, error } = await sb.from('item_store').select('canonical, store').eq('household_id', householdId);
   if (error) throw new Error(error.message);
   const out = new Map<string, Store>();
-  for (const r of data ?? []) if (isStore(r.store)) out.set(r.canonical, r.store);
+  for (const r of data ?? []) if (isStore(r.store)) out.set(normFood(r.canonical), r.store);
   return out;
 }
 
@@ -161,7 +162,7 @@ export async function listPrices(sb: Sb, householdId: string): Promise<PriceRow[
   for (const r of data ?? []) {
     if (!isStore(r.store)) continue;
     out.push({
-      canonical: r.canonical,
+      canonical: normFood(r.canonical),
       store: r.store,
       kind: r.kind as Quantity['kind'],
       centsPerBase: Number(r.cents_per_base),

@@ -23,7 +23,7 @@ const VOLUME: Record<string, number> = {
   tsp: ML_PER_TSP, teaspoon: ML_PER_TSP, teaspoons: ML_PER_TSP,
   tbsp: ML_PER_TBSP, tablespoon: ML_PER_TBSP, tablespoons: ML_PER_TBSP,
   'fl oz': ML_PER_FLOZ, 'fluid ounce': ML_PER_FLOZ, 'fluid ounces': ML_PER_FLOZ,
-  cup: ML_PER_CUP, cups: ML_PER_CUP,
+  cup: ML_PER_CUP, cups: ML_PER_CUP, c: ML_PER_CUP,
   pint: ML_PER_PINT, pints: ML_PER_PINT,
   quart: ML_PER_QUART, quarts: ML_PER_QUART,
   gallon: ML_PER_GALLON, gallons: ML_PER_GALLON,
@@ -42,8 +42,21 @@ const COUNT: Record<string, string | undefined> = {
   slice: 'slice', slices: 'slice',
 };
 
+/** Recipes write "Tbsps", "lbs.", "c.", "fl. oz": lower-case, drop dots, squeeze spaces. */
+const tidyUnit = (unit: string): string => unit.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+
+const known = (u: string): boolean => Object.hasOwn(MASS, u) || Object.hasOwn(VOLUME, u) || Object.hasOwn(COUNT, u);
+
+/** The table spelling of a unit: the tidy form, else the tidy form without a trailing "s" ("tbsps", "ozs"). */
+function unitKey(unit: string): string {
+  const u = tidyUnit(unit);
+  if (known(u) || u.length < 3 || !u.endsWith('s')) return u;
+  const singular = u.slice(0, -1);
+  return known(singular) ? singular : u;
+}
+
 export function toQuantity(amount: number, unit: string): Quantity | null {
-  const u = unit.trim().toLowerCase();
+  const u = unitKey(unit);
   if (Object.hasOwn(MASS, u)) return { amount: amount * MASS[u], kind: 'mass', base: 'g' };
   if (Object.hasOwn(VOLUME, u)) return { amount: amount * VOLUME[u], kind: 'volume', base: 'ml' };
   if (Object.hasOwn(COUNT, u)) {
