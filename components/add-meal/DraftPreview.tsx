@@ -29,6 +29,11 @@ export function draftAsMeal(draft: RecipeDraft): Meal {
   };
 }
 
+/** Flags for a draft: its own lines plus the picked option's own lines, in case the parse step renamed or dropped one. */
+export function draftFlags(draft: RecipeDraft, people: Person[], optionNames: string[] = []): Flag[] {
+  return findFlags([...ingredientNames(draftAsMeal(draft)), ...optionNames], people);
+}
+
 /** "tree nut" for a line an allergy flag names, from the family it belongs to (or the typed word); null when none does. */
 export function allergyLabel(canonical: string, allergies: Flag[]): string | null {
   for (const f of allergies) {
@@ -48,6 +53,7 @@ export function DraftPreview({
   dishPhoto,
   onDismiss,
   onIngredients,
+  optionNames,
 }: {
   draft: RecipeDraft;
   people: Person[];
@@ -58,6 +64,8 @@ export function DraftPreview({
   dishPhoto?: { checked: boolean; onChange: (checked: boolean) => void } | null;
   onDismiss: () => void;
   onIngredients: (lines: IngredientLine[]) => void;
+  /** The picked recipe's own ingredient lines (kept in memory only), checked beside the draft's. */
+  optionNames?: string[];
 }) {
   const [editing, setEditing] = useState(false);
   const meal = draftAsMeal(draft);
@@ -67,7 +75,7 @@ export function DraftPreview({
   const protein = meal.ingredients.find((i) => i.role === "meat" || i.role === "fish");
   const swapNames = joinNames(skipping);
   const swapLabel = skipping.length === 1 ? `${swapNames}'s portion` : swapNames;
-  const flags = findFlags(ingredientNames(meal), people);
+  const flags = draftFlags(draft, people, optionNames);
   const allergies = flags.filter((f) => f.kind === "allergy");
   const shownPhoto = photoSrc ?? draft.photo?.url ?? null;
 

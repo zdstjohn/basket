@@ -10,7 +10,7 @@ function Body({ text, found }: { text: string; found: string[] }) {
   const rest = cut === -1 ? "" : text.slice(cut);
   const words = [...new Set(found)].sort((a, b) => b.length - a.length).map(escape);
   if (words.length === 0) return <>{text}</>;
-  const parts = first.split(new RegExp(`(${words.join("|")})`));
+  const parts = first.split(new RegExp(`\\b(${words.join("|")})\\b`));
   return (
     <>
       {parts.map((part, i) => (i % 2 === 1 ? <strong key={i} className="font-semibold">{part}</strong> : part))}

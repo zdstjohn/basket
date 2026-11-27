@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DraftPreview, draftAsMeal } from "@/components/add-meal/DraftPreview";
+import { DraftPreview, draftFlags } from "@/components/add-meal/DraftPreview";
 import { PasteTab } from "@/components/add-meal/PasteTab";
 import { SearchTab } from "@/components/add-meal/SearchTab";
 import { draftFromOption, messageFor } from "@/components/add-meal/api";
@@ -15,12 +15,13 @@ import { listAlwaysHave } from "@/lib/db/queries/list";
 import { getMeals, saveMeal, setMealPhoto, toMeal } from "@/lib/db/queries/meals";
 import { findWeek, getOrCreateWeek, listWeekMeals, setWeekMeal } from "@/lib/db/queries/weeks";
 import type { Household, MealRow } from "@/lib/db/rows";
-import { findFlags, ingredientNames } from "@/lib/domain/flags";
+import { ingredientNames } from "@/lib/domain/flags";
 import type { Meal, Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts";
 import { parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
+import { subscribeHousehold } from "@/lib/realtime";
 import { weekFoods } from "@/lib/recipes/search/overlap";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 import { bigGreenLink, focusRing, pillButton, stickyBottom } from "@/lib/ui";
@@ -57,6 +58,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const [others, setOthers] = useState<{ entries: { meal: Meal; servings: number | null }[]; alwaysHave: string[] } | null>(null);
   const [needWeek, setNeedWeek] = useState(false);
   const wantWeek = useCallback(() => setNeedWeek(true), []);
+  // The picked recipe's own lines, kept in memory beside the draft (never saved) so the check sees both.
+  const [optionNames, setOptionNames] = useState<string[]>([]);
   const savedMealId = useRef<string | null>(null);
 
   const key = weekStart ? `add-meal:${weekStart}:${day}:${slot}` : null;
@@ -96,7 +99,12 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPeople();
-  }, [loadPeople]);
+    // An allergy added on another phone counts as soon as it arrives.
+    const stop = subscribeHousehold(household.id, ["people"], () => {
+      listPeople(sb, household.id).then(setPeople, () => {});
+    });
+    return stop;
+  }, [loadPeople, sb, household.id]);
 
   // The other dinners already planned this week (not the one being added or replaced), read only once
   // "Fits this week" is chosen.
@@ -168,6 +176,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
 
   function startOver() {
     setDraft(null);
+    setOptionNames([]);
     setCustom(null);
     setError(null);
     savedMealId.current = null;
@@ -178,6 +187,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     setError(null);
     try {
       setDraft(await draftFromOption(option));
+      setOptionNames(ingredientNames(option));
       setCustom(null);
       savedMealId.current = null;
     } catch (e) {
@@ -238,8 +248,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
 
   const showPreview = draft && tab !== "favorites";
   const hasAllergy = useMemo(
-    () => !!draft && !!people && findFlags(ingredientNames(draftAsMeal(draft)), people).some((f) => f.kind === "allergy"),
-    [draft, people],
+    () => !!draft && !!people && draftFlags(draft, people, optionNames).some((f) => f.kind === "allergy"),
+    [draft, people, optionNames],
   );
   const cantAdd = adding || !weekStart || people === null;
 
@@ -309,7 +319,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       )}
       {showPreview && (
         <>
-          <DraftPreview draft={draft} people={people ?? []} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} />
+          <DraftPreview draft={draft} people={people ?? []} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} optionNames={optionNames} />
           <label className="mx-5 mt-3 flex min-h-11 items-center gap-2.5 text-[15px] font-medium">
             <input
               type="checkbox"
@@ -323,7 +333,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       )}
       {peopleFailed && (
         <div className="mx-5 mt-3 flex flex-wrap items-center gap-3">
-          <p role="alert" className="text-[15px] font-medium text-[#A6261B]">Couldn&apos;t check allergies. Try again.</p>
+          <p role="alert" className="text-[15px] font-medium text-[#A6261B]">Couldn’t check allergies. Try again.</p>
           <button type="button" onClick={loadPeople} className={pillButton}>
             Retry
           </button>

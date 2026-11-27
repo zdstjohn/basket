@@ -88,7 +88,7 @@ export function FavoritesBrowser({
       }
     }
     void load();
-    const stop = subscribeHousehold(household.id, ["meals"], () => void load());
+    const stop = subscribeHousehold(household.id, ["meals", "people"], () => void load());
     return () => {
       run++;
       stop();

@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AllergyBox } from '@/components/flags/AllergyBox';
 import { cardFlagText, cardLines, FlagLines } from '@/components/flags/FlagLines';
-import { allergyLabel } from '@/components/add-meal/DraftPreview';
+import { allergyLabel, draftFlags } from '@/components/add-meal/DraftPreview';
 import { findFlags, ingredientNames } from '@/lib/domain/flags';
 import type { Person } from '@/lib/domain/types';
 import { familyOfFive } from '@/lib/fixtures/household';
@@ -73,5 +73,25 @@ describe('what the components print', () => {
     const allergies = flags.filter((f) => f.kind === 'allergy');
     expect(allergyLabel('sliced almonds', allergies)).toBe('tree nut');
     expect(allergyLabel('quinoa', allergies)).toBeNull();
+  });
+});
+
+describe('the draft checks the picked recipe\'s own lines too', () => {
+  const peanuts = people.map((p) => (p.id === 'daughter-4' ? { ...p, allergies: ['peanuts'] } : p));
+  const draft = {
+    name: 'Noodles', baseServings: 4, vegSwap: null, sourceUrl: null, photo: null,
+    ingredients: [{ canonical: 'noodles', amount: 1, unit: 'lb', role: 'pantry' as const }],
+  } as unknown as Parameters<typeof draftFlags>[0];
+  it('still flags when the cleaned names dropped the peanut', () => {
+    expect(draftFlags(draft, peanuts)).toEqual([]);
+    const flags = draftFlags(draft, peanuts, ['1 lb noodles', '1/4 cup peanuts']);
+    expect(flags.map((f) => f.kind)).toEqual(['allergy']);
+    expect(flags[0].found).toEqual(['peanuts']);
+  });
+  it('bolds a whole word only', () => {
+    const f = findFlags(['1/4 cup peanuts'], peanuts);
+    const html = renderToStaticMarkup(createElement(AllergyBox, { flags: f, people: peanuts }));
+    expect(html).toContain('<strong class="font-semibold">peanuts</strong>');
+    expect(html).not.toContain('pea<strong');
   });
 });
