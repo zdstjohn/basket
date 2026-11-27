@@ -17,6 +17,8 @@ const SENDS_PER_DAY = 20;
 const IN_FLIGHT_MS = 5 * 60 * 1000;
 /** The slowest send (150 single calls, 4 at once, 10 s each) is cut off by cart.ts at 240 s; Vercel's limit is 300 s. */
 export const maxDuration = 300;
+/** Sends stamped this close together are taken to be racing, whichever commit landed first. */
+const RACE_MS = 5000;
 const SPEND_CHUNK = 60; // kroger_spend takes at most 60 per call
 
 const fail = (error: string, status: number, headers?: Record<string, string>) => NextResponse.json({ error }, { status, headers });
@@ -138,13 +140,14 @@ export async function POST(req: Request) {
       const mine = pending.find((p) => p.id === sendId);
       // A send of the same list yields to an earlier one. A resend, which skips the "already sent" check, yields
       // to any other send in flight, whichever started first: the later one may already have passed its own check.
+      const racing = (at: string) => !mine || Math.abs(Date.parse(at) - Date.parse(mine.createdAt)) <= RACE_MS;
       const earlier = pending.some(
         (p) =>
           p.id !== sendId &&
-          (body.resend || !mine || p.createdAt < mine.createdAt || (p.createdAt === mine.createdAt && p.id < sendId)),
+          (body.resend || !mine || racing(p.createdAt) || p.createdAt < mine.createdAt || (p.createdAt === mine.createdAt && p.id < sendId)),
       );
       const startedBefore = (at: string, id: string) =>
-        !mine || at < mine.createdAt || (at === mine.createdAt && id < sendId);
+        racing(at) || at < mine!.createdAt || (at === mine!.createdAt && id < sendId);
       let changed = false;
       if (!body.resend) {
         const fresh = cartDiff(lines, (await listCartSends(sb, body.weekId)).filter((s) => s.id !== sendId && (s.status !== 'pending' || startedBefore(s.sentAt, s.id))), me).toSend;
@@ -214,7 +217,7 @@ export async function POST(req: Request) {
       console.error('kroger cart row not trimmed');
     }
     const names = toSend.filter((l) => refused.has(l.upc)).map((l) => ({ key: l.key, name: l.name }));
-    return NextResponse.json(names.length > 0 ? { error: 'unsure', rejected: names } : { error: 'unsure' }, { status: 504 });
+    return NextResponse.json(names.length > 0 ? { error: 'unsure', ok: known.ok, rejected: names } : { error: 'unsure', ok: known.ok }, { status: 504 });
   }
 
   const added = new Set(answer.ok);

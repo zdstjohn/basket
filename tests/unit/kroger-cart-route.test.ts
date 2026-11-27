@@ -306,7 +306,7 @@ describe('POST /api/kroger/cart', () => {
     const three = body({ lines: lines(['milk#volume', MILK, 2], ['eggs#count', EGGS, 1], ['rice#mass', RICE, 1]) });
     const res = await post(three);
     expect(res.status).toBe(504);
-    expect(await res.json()).toEqual({ error: 'unsure', rejected: [{ key: 'rice#mass', name: 'Rice 2 lb' }] });
+    expect(await res.json()).toEqual({ error: 'unsure', ok: [MILK], rejected: [{ key: 'rice#mass', name: 'Rice 2 lb' }] });
     const row = w.sends[0] as { status: string; total_cents: number; items: { upc: string }[] };
     expect(row.status).toBe('pending');
     expect(row.items.map((i) => i.upc)).toEqual([MILK, EGGS]);
@@ -404,13 +404,12 @@ describe('POST /api/kroger/cart', () => {
     expect((await post(body())).status).toBe(200);
   });
 
-  it('two requests at once make one Kroger call', async () => {
+  it('two requests at once never both call Kroger, and a stood-down one is marked failed', async () => {
     const [a, b] = await Promise.all([post(body()), post(body())]);
-    expect([a.status, b.status].sort()).toEqual([200, 409]);
-    const loser = a.status === 409 ? a : b;
-    expect((await loser.json()).error).toBe('already_sending');
-    expect(addToCart).toHaveBeenCalledTimes(1);
-    expect(w.sends.map((s) => s.status).sort()).toEqual(['failed', 'sent']);
+    expect(addToCart.mock.calls.length).toBeLessThanOrEqual(1);
+    for (const r of [a, b]) expect([200, 409]).toContain(r.status);
+    expect([a, b].filter((r) => r.status === 200)).toHaveLength(addToCart.mock.calls.length);
+    expect(w.sends.filter((s) => s.status === 'pending')).toHaveLength(0);
   });
 
   it('two resends at once never both call Kroger', async () => {
@@ -427,6 +426,21 @@ describe('POST /api/kroger/cart', () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('already_sending');
     expect(addToCart).not.toHaveBeenCalled();
+  });
+
+  it('a send stamped a moment later but committed first still makes this one stand down', async () => {
+    const later = { id: 'zzz', household_id: 'h1', week_id: WEEK, user_id: 'u2', status: 'pending', items: [], created_at: new Date(Date.now() + 2_000).toISOString() };
+    setup({ existing: [later] });
+    const res = await post(body());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('already_sending');
+    expect(addToCart).not.toHaveBeenCalled();
+  });
+
+  it('an in-flight send stamped more than five seconds later does not stop this one', async () => {
+    const later = { id: 'zzz', household_id: 'h1', week_id: WEEK, user_id: 'u2', status: 'pending', items: [], created_at: new Date(Date.now() + 60_000).toISOString() };
+    setup({ existing: [later] });
+    expect((await post(body())).status).toBe(200);
   });
 
   it('a send from another week still in flight blocks this one', async () => {
