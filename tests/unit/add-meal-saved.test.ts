@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseSavedAddMeal } from "@/lib/add-meal-saved";
+import { matchedWords, parseSavedAddMeal } from "@/lib/add-meal-saved";
+import { familyOfFive } from "@/lib/fixtures/household";
 import { failureForStatus, loginUrl, messageFor, ApiFailure } from "@/components/add-meal/api";
 
 const draft = {
@@ -29,6 +30,21 @@ describe("parseSavedAddMeal", () => {
     ]) {
       expect(parseSavedAddMeal(bad)).toBeNull();
     }
+  });
+});
+
+describe("the matched food words kept beside a draft", () => {
+  it("keeps only the words that matched, never the recipe's lines", () => {
+    const people = familyOfFive.map((p) => (p.id === "son" ? { ...p, allergies: ["tree nuts"] } : p));
+    const lines = ["1 cup sliced almonds", "2 cups quinoa", "olive oil"];
+    expect(matchedWords(lines, people)).toEqual(["almonds"]);
+    expect(matchedWords(lines, familyOfFive)).toEqual([]);
+  });
+  it("reads them back, drops anything that is not a short word, and defaults to none", () => {
+    expect(parseSavedAddMeal({ ...ok, matched: ["almonds"] })?.matched).toEqual(["almonds"]);
+    expect(parseSavedAddMeal({ ...ok, matched: ["almonds", 4, "x".repeat(200)] })?.matched).toEqual(["almonds"]);
+    expect(parseSavedAddMeal({ ...ok, matched: "almonds" })?.matched).toEqual([]);
+    expect(parseSavedAddMeal(ok)?.matched).toEqual([]);
   });
 });
 

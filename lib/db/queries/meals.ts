@@ -41,7 +41,7 @@ export function toMeal(row: MealRow): Meal {
 export async function saveMeal(
   sb: Sb,
   householdId: string,
-  draft: RecipeDraft & { isFavorite: boolean; everyoneVegetarian?: boolean },
+  draft: Omit<RecipeDraft, 'personChanges'> & Partial<Pick<RecipeDraft, 'personChanges'>> & { isFavorite: boolean; everyoneVegetarian?: boolean },
 ): Promise<MealRow> {
   const { data, error } = await sb
     .from('meals')
@@ -57,6 +57,7 @@ export async function saveMeal(
       photo_url: draft.photo?.url ?? null,
       photo_credit: draft.photo?.credit ?? null,
       photo_credit_url: draft.photo?.creditUrl ?? null,
+      person_changes: (draft.personChanges ?? []) as unknown as Database['public']['Tables']['meals']['Insert']['person_changes'],
     })
     .select()
     .single();

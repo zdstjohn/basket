@@ -6,6 +6,10 @@ export interface PersonInput {
   name: string;
   age: number;
   diet?: "None" | "Vegetarian" | "Vegan" | "Pescatarian";
+  /** Foods this person won't eat, set on the Household screen after onboarding. */
+  wontEat?: string[];
+  /** Allergies, set on the Household screen after onboarding. */
+  allergies?: string[];
 }
 
 export const FAMILY: PersonInput[] = [
@@ -33,13 +37,39 @@ export async function onboard(
   }
 }
 
-/** Signs in a new user, onboards the five-person family and lands on /week. */
-export async function createHousehold(page: Page, label = "owner"): Promise<string> {
+/** Types each person's won't-eat foods and allergies on the Household screen, one person at a time. */
+export async function setFoods(page: Page, people: PersonInput[]): Promise<void> {
+  const wanted = people.flatMap((p, i) => ((p.wontEat?.length ?? 0) > 0 || (p.allergies?.length ?? 0) > 0 ? [{ p, i }] : []));
+  if (wanted.length === 0) return;
+  await page.goto("/household");
+  for (const { p, i } of wanted) {
+    const row = page.getByTestId("person-row").nth(i);
+    await row.click();
+    const form = page.getByRole("form", { name: `Edit ${p.name}` });
+    for (const food of p.wontEat ?? []) {
+      const box = form.getByLabel("Add a food");
+      await box.fill(food);
+      await box.press("Enter");
+    }
+    for (const food of p.allergies ?? []) {
+      const box = form.getByLabel("Add an allergy");
+      await box.fill(food);
+      await box.press("Enter");
+    }
+    await form.getByRole("button", { name: "Save" }).click();
+    await expect(form).toHaveCount(0);
+  }
+}
+
+/** Signs in a new user, onboards the family (five people unless told otherwise) and lands on /week. */
+export async function createHousehold(page: Page, label = "owner", people: PersonInput[] = FAMILY): Promise<string> {
   const email = uniqueEmail(label);
   await signInAs(page, email);
-  await onboard(page);
+  await onboard(page, people);
   await page.getByRole("button", { name: "Start planning" }).click();
   await expect(page).toHaveURL(/\/week$/);
+  await setFoods(page, people);
+  if (people.some((p) => p.wontEat?.length || p.allergies?.length)) await page.goto("/week");
   return email;
 }
 

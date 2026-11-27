@@ -18,8 +18,9 @@ import type { Household, MealRow } from "@/lib/db/rows";
 import { ingredientNames } from "@/lib/domain/flags";
 import type { Meal, Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
+import { watchPeople } from "@/lib/people-watch";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts";
-import { parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
+import { matchedWords, parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
 import { subscribeHousehold } from "@/lib/realtime";
 import { weekFoods } from "@/lib/recipes/search/overlap";
@@ -60,6 +61,11 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const wantWeek = useCallback(() => setNeedWeek(true), []);
   // The picked recipe's own lines, kept in memory beside the draft (never saved) so the check sees both.
   const [optionNames, setOptionNames] = useState<string[]>([]);
+  // After a reload only the matched words come back ("almonds"), never the recipe's lines; they join the check.
+  const [restoredWords, setRestoredWords] = useState<string[]>([]);
+  const checkNames = useMemo(() => [...optionNames, ...restoredWords], [optionNames, restoredWords]);
+  // What is kept beside the draft: only the words that matched someone's list. Until people load, keep what came back.
+  const matched = useMemo(() => (people ? matchedWords(checkNames, people) : restoredWords), [checkNames, people, restoredWords]);
   const savedMealId = useRef<string | null>(null);
 
   const key = weekStart ? `add-meal:${weekStart}:${day}:${slot}` : null;
@@ -78,6 +84,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       setQuery(saved.query);
       setPaste(saved.paste);
       setDraft(saved.draft);
+      setRestoredWords(saved.draft ? saved.matched : []);
       setSaveFavorite(saved.saveFavorite);
     }
     setWeekStart(start);
@@ -85,26 +92,23 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [household.week_start, household.time_zone, day, slot]);
 
-  const loadPeople = useCallback(() => {
-    setPeopleFailed(false);
-    listPeople(sb, household.id).then(
-      (list) => {
-        setPeople(list);
-        setPeopleFailed(false);
-      },
-      () => setPeopleFailed(true),
-    );
-  }, [sb, household.id]);
+  const peopleWatch = useRef<{ retry: () => void } | null>(null);
+  const loadPeople = useCallback(() => peopleWatch.current?.retry(), []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadPeople();
-    // An allergy added on another phone counts as soon as it arrives.
-    const stop = subscribeHousehold(household.id, ["people"], () => {
-      listPeople(sb, household.id).then(setPeople, () => {});
+    // An allergy added on another phone counts as soon as it arrives, and a refetch that works clears the failure message.
+    const watch = watchPeople({
+      load: () => listPeople(sb, household.id),
+      subscribe: (onChange) => subscribeHousehold(household.id, ["people"], onChange),
+      onPeople: setPeople,
+      onFailed: setPeopleFailed,
     });
-    return stop;
-  }, [loadPeople, sb, household.id]);
+    peopleWatch.current = watch;
+    return () => {
+      peopleWatch.current = null;
+      watch.stop();
+    };
+  }, [sb, household.id]);
 
   // The other dinners already planned this week (not the one being added or replaced), read only once
   // "Fits this week" is chosen.
@@ -143,8 +147,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   useEffect(() => {
     if (!key || !restored) return;
     if (!query && !paste && !draft) clearDraft(key);
-    else saveDraft(key, { tab, query, paste, draft, saveFavorite } satisfies SavedAddMeal);
-  }, [key, restored, tab, query, paste, draft, saveFavorite]);
+    else saveDraft(key, { tab, query, paste, draft, saveFavorite, matched } satisfies SavedAddMeal);
+  }, [key, restored, tab, query, paste, draft, saveFavorite, matched]);
 
   useEffect(() => {
     if (!custom) return;
@@ -177,6 +181,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   function startOver() {
     setDraft(null);
     setOptionNames([]);
+    setRestoredWords([]);
     setCustom(null);
     setError(null);
     savedMealId.current = null;
@@ -188,6 +193,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     try {
       setDraft(await draftFromOption(option));
       setOptionNames(ingredientNames(option));
+      setRestoredWords([]);
       setCustom(null);
       savedMealId.current = null;
     } catch (e) {
@@ -248,8 +254,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
 
   const showPreview = draft && tab !== "favorites";
   const hasAllergy = useMemo(
-    () => !!draft && !!people && draftFlags(draft, people, optionNames).some((f) => f.kind === "allergy"),
-    [draft, people, optionNames],
+    () => !!draft && !!people && draftFlags(draft, people, checkNames).some((f) => f.kind === "allergy"),
+    [draft, people, checkNames],
   );
   const cantAdd = adding || !weekStart || people === null;
 
@@ -319,7 +325,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       )}
       {showPreview && (
         <>
-          <DraftPreview draft={draft} people={people ?? []} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} optionNames={optionNames} />
+          <DraftPreview draft={draft} people={people ?? []} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} onChanges={(personChanges) => setDraft({ ...draft, personChanges })} optionNames={checkNames} />
           <label className="mx-5 mt-3 flex min-h-11 items-center gap-2.5 text-[15px] font-medium">
             <input
               type="checkbox"

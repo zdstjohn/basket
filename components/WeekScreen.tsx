@@ -13,6 +13,7 @@ import { useWeekList } from "@/lib/useWeekList";
 import { copyWeek } from "@/lib/db/queries/weeks";
 import { toMeal } from "@/lib/db/queries/meals";
 import type { Household } from "@/lib/db/rows";
+import { allergyCopy, findFlags, ingredientNames } from "@/lib/domain/flags";
 import { householdServings } from "@/lib/domain/portions";
 import { daysOfWeek, type Day } from "@/lib/domain/weeks";
 import { bigGreenLink, focusRing, pillButton, stickyAboveNav } from "@/lib/ui";
@@ -121,6 +122,10 @@ export function WeekScreen({ household }: { household: Household }) {
           days.map((d) => {
             const wm = forDay(d);
             const meal = wm ? data.meals.get(wm.meal_id) : null;
+            const domainMeal = meal ? toMeal(meal) : null;
+            const allergy = domainMeal && data.people.length > 0
+              ? allergyCopy(findFlags(ingredientNames(domainMeal), data.people).filter((f) => f.kind === "allergy"), data.people)
+              : null;
             return (
               <DayRow
                 key={d}
@@ -128,10 +133,11 @@ export function WeekScreen({ household }: { household: Household }) {
                 slot={slot}
                 onOpen={() => setOpenDay(d)}
                 filled={
-                  wm && meal
+                  wm && meal && domainMeal
                     ? {
                         name: meal.name,
-                        note: dayNote(toMeal(meal), data.people, wm.servings_override === null ? null : Number(wm.servings_override)),
+                        allergy: allergy?.head ?? null,
+                        note: dayNote(domainMeal, data.people, wm.servings_override === null ? null : Number(wm.servings_override)),
                         photo: data.photos[meal.id] ?? null,
                         favorite: meal.is_favorite,
                       }

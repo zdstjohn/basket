@@ -1,13 +1,14 @@
 "use client";
 
 import { AllergyBox } from "@/components/flags/AllergyBox";
+import { DislikeBox } from "@/components/flags/DislikeBox";
 import { MealThumb } from "@/components/MealThumb";
 import type { RecipeDraft } from "@/lib/ai/schemas";
 import { familiesFor, matchFood } from "@/lib/domain/families";
-import { findFlags, ingredientNames, type Flag } from "@/lib/domain/flags";
+import { findFlags, flagAmount, ingredientNames, type Flag } from "@/lib/domain/flags";
 import { householdServings } from "@/lib/domain/portions";
 import { scaleMeal } from "@/lib/domain/scaling";
-import type { Meal, Person } from "@/lib/domain/types";
+import type { Meal, Person, PersonChange } from "@/lib/domain/types";
 import { formatQuantityRoundedUp } from "@/lib/domain/units";
 import { useState } from "react";
 import { IngredientEditor } from "@/components/add-meal/IngredientEditor";
@@ -26,6 +27,7 @@ export function draftAsMeal(draft: RecipeDraft): Meal {
     vegSwap: draft.vegSwap,
     everyoneVegetarian: false,
     isFavorite: false,
+    personChanges: draft.personChanges ?? [],
   };
 }
 
@@ -53,6 +55,7 @@ export function DraftPreview({
   dishPhoto,
   onDismiss,
   onIngredients,
+  onChanges,
   optionNames,
 }: {
   draft: RecipeDraft;
@@ -64,6 +67,8 @@ export function DraftPreview({
   dishPhoto?: { checked: boolean; onChange: (checked: boolean) => void } | null;
   onDismiss: () => void;
   onIngredients: (lines: IngredientLine[]) => void;
+  /** Who leaves out or swaps what; kept in the draft and saved with the meal. */
+  onChanges: (changes: PersonChange[]) => void;
   /** The picked recipe's own ingredient lines (kept in memory only), checked beside the draft's. */
   optionNames?: string[];
 }) {
@@ -192,6 +197,18 @@ export function DraftPreview({
         </section>
       )}
       <AllergyBox flags={flags} people={people} />
+      {flags.filter((f) => f.kind === "dislike").map((f) => (
+        <DislikeBox
+          key={f.food}
+          flag={f}
+          people={people}
+          amount={flagAmount(meal, f)}
+          changes={draft.personChanges ?? []}
+          onChange={onChanges}
+          mealName={draft.name}
+          meal={meal}
+        />
+      ))}
     </>
   );
 }

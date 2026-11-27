@@ -179,6 +179,7 @@ export async function draftFromText(
       vegSwap: wantSwap && hasMeatOrFish(r.object.ingredients) ? r.object.vegSwap : null,
       sourceUrl: null,
       photo: null,
+      personChanges: [],
     };
   }
 

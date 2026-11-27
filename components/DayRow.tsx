@@ -7,6 +7,8 @@ import type { Day } from "@/lib/domain/weeks";
 export interface FilledDay {
   name: string;
   note: string;
+  /** The allergy warning's first line ("Tree nut allergy: Daughter (4)"); replaces the note while set. */
+  allergy: string | null;
   photo: string | null;
   favorite: boolean;
 }
@@ -47,7 +49,17 @@ export function DayRow({
         <MealThumb src={filled.photo} className="size-12 rounded-[10px]" />
         <span className="min-w-0 flex-1">
           <span className="block text-[15px] font-semibold">{filled.name}</span>
-          <span className="mt-0.5 block text-xs text-muted">{filled.note}</span>
+          {filled.allergy ? (
+            <span className="mt-0.5 flex items-start gap-1 text-xs font-semibold text-[#A6261B]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-px flex-none">
+                <path d="M12 3.5l9.5 16.5h-19z" />
+                <path d="M12 10v4.5M12 17.6h.01" />
+              </svg>
+              <span className="min-w-0 break-words">{filled.allergy}</span>
+            </span>
+          ) : (
+            <span className="mt-0.5 block text-xs text-muted">{filled.note}</span>
+          )}
         </span>
         {filled.favorite && (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="#E8A13A" stroke="#E8A13A" strokeWidth="1.5" role="img" aria-label="Favorite">

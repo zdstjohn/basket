@@ -20,7 +20,7 @@ function Body({ text, found }: { text: string; found: string[] }) {
 }
 
 /** The red allergy warning: who has the allergy, what the recipe lists, and a reminder to check every label. */
-export function AllergyBox({ flags, people }: { flags: Flag[]; people: Person[] }) {
+export function AllergyBox({ flags, people, className = "mx-5 mt-3" }: { flags: Flag[]; people: Person[]; className?: string }) {
   const allergies = flags.filter((f) => f.kind === "allergy");
   const copy = allergyCopy(allergies, people);
   if (!copy) return null;
@@ -29,7 +29,7 @@ export function AllergyBox({ flags, people }: { flags: Flag[]; people: Person[] 
       role="alert"
       aria-label="Allergy"
       data-testid="allergy-box"
-      className="mx-5 mt-3 flex gap-2.5 rounded-[14px] border-[1.5px] border-[#A6261B] bg-[#FDE8E6] px-3.5 py-3"
+      className={`${className} flex gap-2.5 rounded-[14px] border-[1.5px] border-[#A6261B] bg-[#FDE8E6] px-3.5 py-3`}
     >
       <span className="mt-px flex text-[#A6261B]">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">

@@ -52,6 +52,8 @@ export const RecipeDraftSchema = z.object({
   photo: z
     .object({ url: HttpUrlSchema, credit: z.string().max(120), creditUrl: HttpUrlSchema })
     .nullable(),
+  // Who leaves out or swaps what. Set by the person in the draft, never by a model or a recipe page.
+  personChanges: z.array(PersonChangeSchema).max(60).default([]),
 });
 export type RecipeDraft = z.infer<typeof RecipeDraftSchema>;
 
