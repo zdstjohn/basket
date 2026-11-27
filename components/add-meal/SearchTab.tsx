@@ -14,15 +14,18 @@ const SOURCES: { id: RecipeSource; label: string }[] = [
   { id: "spoonacular", label: "Spoonacular" },
 ];
 
-function MetaLine({ o, first }: { o: RecipeOption; first: boolean }) {
+function metaParts(o: RecipeOption, first: boolean) {
   const rating = ratingLine(o);
   const minutes = o.totalMinutes !== null ? formatMinutes(o.totalMinutes) : null;
-  if (!rating && !minutes) return null;
+  return { loved: first && !!rating && isMostLoved(o), line: [rating, minutes].filter(Boolean).join(" · ") };
+}
+
+function MetaLine({ loved, line }: { loved: boolean; line: string }) {
   return (
-    <span data-testid="result-meta" className="mt-0.5 block truncate text-[13px] text-[#4A544F]">
-      {first && rating && isMostLoved(o) && <span className="font-semibold text-[#1F7A4D]">Most loved </span>}
-      {[rating, minutes].filter(Boolean).join(" · ")}
-    </span>
+    <>
+      {loved && <span data-testid="result-loved" className="mt-0.5 block text-[13px] font-semibold text-[#1F7A4D]">Most loved</span>}
+      {line && <span data-testid="result-meta" className="mt-0.5 block truncate text-[13px] text-[#4A544F]">{line}</span>}
+    </>
   );
 }
 
@@ -205,12 +208,14 @@ export function SearchTab({
                 <p className="text-[15px] text-muted">No recipes found on our sites. Try other words, or paste a recipe.</p>
               ) : (
                 <ul className="flex flex-col gap-2">
-                  {options.map((o, index) => (
+                  {options.map((o, index) => {
+                    const m = metaParts(o, index === 0);
+                    return (
                     <li key={o.url}>
                       <button
                         type="button"
                         data-testid="result-card"
-                        aria-label={`${o.title} · ${o.site}`}
+                        aria-label={`${o.title} · ${o.site}${m.loved ? ", Most loved" : ""}${m.line ? `, ${m.line}` : ""}`}
                         disabled={picking}
                         onClick={() => onPick(o)}
                         className={`flex min-h-[88px] w-full items-center gap-3 rounded-2xl border border-line bg-white p-2.5 text-left disabled:opacity-60 ${focusRing}`}
@@ -223,11 +228,12 @@ export function SearchTab({
                           <span data-testid="result-site" className="mt-0.5 block text-[13px] text-muted">
                             {o.site}
                           </span>
-                          <MetaLine o={o} first={index === 0} />
+                          <MetaLine loved={m.loved} line={m.line} />
                         </span>
                       </button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
               {showsSpoonacular && (

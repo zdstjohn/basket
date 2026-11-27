@@ -73,6 +73,8 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
   }
   await expect(cards.first()).toContainText("★ 4.7 · 1,203 ratings");
   await expect(cards.first()).toContainText("Most loved");
+  // The spoken name carries the evidence too, and still starts with the title and site.
+  await expect(page.getByRole("button", { name: "Chicken tacos · Allrecipes, Most loved, ★ 4.7 · 1,203 ratings · 30 min" })).toBeVisible();
   await expect(cards.nth(1)).not.toContainText("Most loved");
   await expect(cards.nth(1)).toContainText("♥ 340 likes · 30 min");
   await expect(page.getByText("Only a few on the big sites, so here are some from Spoonacular too.")).toBeVisible();
@@ -372,4 +374,20 @@ test("add a meal: bad links go back to the week; ingredients can be edited befor
   expect(lines.find((l) => l.canonical === "corn tortillas")?.amount).toBe(8);
   expect(lines.find((l) => l.canonical === "lime")?.amount).toBe(2);
   expect(lines.some((l) => l.canonical === "yellow onion")).toBe(false);
+});
+
+test("ratings: nothing is clipped on a 360 px screen", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await createHousehold(page);
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await searchFor(page, "tacos");
+  const first = page.getByTestId("result-card").first();
+  await expect(first.getByTestId("result-loved")).toHaveText("Most loved");
+  const meta = first.getByTestId("result-meta");
+  await expect(meta).toHaveText("★ 4.7 · 1,203 ratings · 30 min");
+  expect(await meta.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  const box = (await meta.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(360);
+  expect(box.height).toBeLessThan(24);
 });
