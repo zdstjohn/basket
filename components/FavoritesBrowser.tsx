@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Plus, Search } from "lucide-react";
 import { AllergyBox } from "@/components/flags/AllergyBox";
 import { cardFlagText, FlagLines, flagsOf } from "@/components/flags/FlagLines";
-import { MealThumb } from "@/components/MealThumb";
+import { MealTile } from "@/components/MealTile";
 import { ensurePreviews } from "@/lib/photos/ensure-previews";
 import { Sheet } from "@/components/Sheet";
+import { Button, ButtonLink, IconButton } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/Field";
+import { EmptyState, ErrorBanner, Loading, SkeletonTile } from "@/components/ui/states";
 import { createBrowserClient } from "@/lib/db/client";
 import { listPeople } from "@/lib/db/queries/household";
 import { listItemStores, listPrices } from "@/lib/db/queries/list";
@@ -17,15 +21,12 @@ import type { Person } from "@/lib/domain/types";
 import { favoritesCosts, storeFor, toPriceMap, type PriceRow } from "@/lib/list/prices";
 import { subscribeHousehold } from "@/lib/realtime";
 import type { Flag } from "@/lib/domain/flags";
-import { focusRing, pillButton } from "@/lib/ui";
+import { ghostButton } from "@/lib/ui";
 import { mealTag } from "@/lib/week/note";
 
 type Chip = "all" | FavoriteFilter;
 
-const TAGS = {
-  vegetarian: { label: "Vegetarian", cls: "bg-green-tint text-[#134D31]" },
-  swap: { label: "Veg swap", cls: "bg-[#EEF0ED] text-[#4A544F]" },
-} as const;
+const TAGS = { vegetarian: "Vegetarian", swap: "Veg swap" } as const;
 
 interface Pricing {
   itemStores: Map<string, Store>;
@@ -41,6 +42,7 @@ export function FavoritesBrowser({
   addLabel,
   anywayLabel = "Add to this week anyway",
   onAdd,
+  emptyAction,
 }: {
   household: Household;
   showChips: boolean;
@@ -48,11 +50,14 @@ export function FavoritesBrowser({
   /** The text of the second button when a recipe lists an allergy. */
   anywayLabel?: string;
   onAdd: (meal: MealRow) => void | Promise<void>;
+  /** A way on from the empty list (Favorites passes "Find a dinner"; the Add a meal tab does not). */
+  emptyAction?: { label: string; href: string };
 }) {
   const sb = useMemo(() => createBrowserClient(), []);
   const [rows, setRows] = useState<MealRow[] | null>(null);
   const [photos, setPhotos] = useState<Record<string, string | null>>({});
   const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [q, setQ] = useState("");
   const [chip, setChip] = useState<Chip>("all");
   const [people, setPeople] = useState<Person[]>([]);
@@ -95,7 +100,7 @@ export function FavoritesBrowser({
       run++;
       stop();
     };
-  }, [sb, household.id, showChips]);
+  }, [sb, household.id, showChips, attempt]);
 
   const storeOf = useMemo(
     () => (canonical: string, role: Parameters<typeof storeFor>[1]) =>
@@ -123,8 +128,32 @@ export function FavoritesBrowser({
     [rows, people],
   );
 
-  if (error && !rows) return <p role="alert" className="mx-5 mt-4 text-[15px]">We couldn&apos;t load your favorites. Try again in a moment.</p>;
-  if (!rows) return <p className="mx-5 mt-4 text-[15px] text-muted">Loading favorites…</p>;
+  if (error && !rows) {
+    return (
+      <div className="bk-gutter mt-3">
+        <ErrorBanner
+          message="Couldn’t load your favorites."
+          actionLabel="Try again"
+          onAction={() => {
+            setError(false);
+            setAttempt((n) => n + 1);
+          }}
+        />
+      </div>
+    );
+  }
+  if (!rows) {
+    return (
+      <div className="bk-gutter mt-3">
+        <Loading label="Loading favorites…" />
+        <div className="grid grid-cols-2 items-start gap-2">
+          {Array.from({ length: 6 }, (_, i) => (
+            <SkeletonTile key={i} crop="tile" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const chips: { id: Chip; label: string }[] = [
     { id: "all", label: `All ${rows.length}` },
@@ -133,37 +162,35 @@ export function FavoritesBrowser({
     { id: "most", label: "Most made" },
   ];
 
+  const chipBase = "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-md px-3 py-2 text-small bk-press";
+
   return (
     <div>
-      <div className="relative mx-5">
-        <label htmlFor="favorites-q" className="sr-only">
-          Search favorites
-        </label>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6560" strokeWidth="2" strokeLinecap="round" aria-hidden="true" className="absolute left-3.5 top-[15px]">
-          <circle cx="11" cy="11" r="7" />
-          <path d="M20 20l-3.5-3.5" />
-        </svg>
-        <input
-          id="favorites-q"
+      <div className="bk-gutter">
+        <TextField
+          label="Search favorites"
+          hideLabel
+          icon={Search}
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search meals or ingredients"
-          className={`h-12 w-full rounded-xl border border-[#D5DBD5] bg-white pl-[42px] pr-3.5 text-base ${focusRing}`}
         />
       </div>
 
       {showChips && (
-        <div role="group" aria-label="Filter" className="mx-5 mt-3 flex flex-wrap gap-2">
+        <div
+          role="group"
+          aria-label="Filter"
+          className="bk-gutter mt-3 flex gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {chips.map((c) => (
             <button
               key={c.id}
               type="button"
               aria-pressed={chip === c.id}
               onClick={() => setChip(c.id)}
-              className={`inline-flex min-h-11 items-center rounded-full px-3.5 text-[13px] ${focusRing} ${
-                chip === c.id ? "bg-ink font-semibold text-white" : "border border-[#D5DBD5] bg-white font-medium text-ink"
-              }`}
+              className={chip === c.id ? `${chipBase} bg-ink font-semibold text-ground` : `${ghostButton} shrink-0 whitespace-nowrap`}
             >
               {c.label}
             </button>
@@ -172,68 +199,82 @@ export function FavoritesBrowser({
       )}
 
       {showChips && chip === "under15" && priced && priced.notPriced > 0 && (
-        <p data-testid="not-priced-yet" className="mx-5 mt-3 text-[13px] text-muted">
+        <p data-testid="not-priced-yet" className="bk-gutter mt-3 text-small text-ink-soft">
           {priced.notPriced} not priced yet
         </p>
       )}
 
       {shown.length === 0 ? (
-        <p className="mx-5 mt-4 text-[15px] text-muted">
-          {rows.length === 0
-            ? "No favorites yet. Save a meal as a favorite when you add it."
-            : "No favorites match that."}
-        </p>
+        <div className="bk-gutter">
+          {rows.length === 0 ? (
+            <>
+              <EmptyState sentence="Nothing saved yet. Meals you keep will wait here." />
+              {emptyAction && (
+                <div className="-mt-4 pb-8">
+                  <ButtonLink variant="ghost" href={emptyAction.href}>
+                    {emptyAction.label}
+                  </ButtonLink>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="py-8 text-body text-ink">No favorites match that.</p>
+          )}
+        </div>
       ) : (
-        <ul className="mx-5 mt-3.5 flex flex-col gap-2">
+        <ul className="bk-gutter mt-3 grid grid-cols-2 items-start gap-2">
           {shown.map((m) => {
             const tag = mealTag(toMeal(m));
             const flags = flagsById.get(m.id) ?? [];
             return (
-              <li key={m.id} data-testid="favorite-row" className="flex min-h-[58px] items-center gap-3 rounded-[14px] border border-line bg-white py-1.5 pl-2.5 pr-2">
-                <MealThumb src={photos[m.id] ?? null} className="size-14 rounded-[10px]" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[15px] font-semibold">{m.name}</p>
-                  <p className="mt-0.5 text-xs text-muted">{made(m.times_planned)}</p>
-                  <FlagLines flags={flags} people={people} />
-                </div>
-                {tag && <span className={`whitespace-nowrap rounded-[10px] px-2 py-[3px] text-xs font-semibold ${TAGS[tag].cls}`}>{TAGS[tag].label}</span>}
-                <button
-                  type="button"
-                  aria-label={`${addLabel(m)}${cardFlagText(toMeal(m), people)}`}
-                  onClick={() => (flags.some((f) => f.kind === "allergy") ? setWarning({ meal: m, flags }) : void onAdd(m))}
-                  className={`flex size-11 shrink-0 items-center justify-center rounded-full bg-green-tint text-green ${focusRing}`}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                </button>
+              <li key={m.id} data-testid="favorite-row">
+                <MealTile
+                  name={m.name}
+                  photo={photos[m.id] ?? null}
+                  preview={m.photo_preview}
+                  width={m.photo_width}
+                  note={made(m.times_planned)}
+                  lines={
+                    <>
+                      {tag && <span className="block text-label text-ink-soft">{TAGS[tag]}</span>}
+                      <FlagLines flags={flags} people={people} />
+                    </>
+                  }
+                  trailing={
+                    <span className="mt-1 flex justify-end">
+                      <IconButton
+                        icon={Plus}
+                        size={18}
+                        label={`${addLabel(m)}${cardFlagText(toMeal(m), people)}`}
+                        onClick={() => (flags.some((f) => f.kind === "allergy") ? setWarning({ meal: m, flags }) : void onAdd(m))}
+                        className="bg-sunk"
+                      />
+                    </span>
+                  }
+                />
               </li>
             );
           })}
         </ul>
       )}
       {warning && (
-        <Sheet label="Allergy" onClose={() => setWarning(null)}>
-          <div className="pb-5 pt-3">
-            <p className="mx-5 text-[17px] font-bold">{warning.meal.name}</p>
+        <Sheet label="Allergy" title={warning.meal.name} onClose={() => setWarning(null)}>
+          <div className="pb-4">
             <AllergyBox flags={warning.flags} people={people} />
-            <div className="mx-5 mt-3 grid gap-2">
-              <button type="button" onClick={() => setWarning(null)} className={`${pillButton} h-[52px] w-full text-base`}>
+            <div className="mx-4 mt-3 grid gap-2">
+              <Button variant="main" onClick={() => setWarning(null)}>
                 Pick a different dinner
-              </button>
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const meal = warning.meal;
-                    setWarning(null);
-                    void onAdd(meal);
-                  }}
-                  className={`inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-[15px] font-semibold text-ink ${focusRing}`}
-                >
-                  {anywayLabel}
-                </button>
-              </div>
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const meal = warning.meal;
+                  setWarning(null);
+                  void onAdd(meal);
+                }}
+              >
+                {anywayLabel}
+              </Button>
             </div>
           </div>
         </Sheet>
