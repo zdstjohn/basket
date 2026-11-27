@@ -4,6 +4,7 @@ import { signInAs, uniqueEmail } from "./helpers/auth";
 import { audit, measureShell, textPairs } from "./helpers/audit";
 import { addFromSearch } from "./helpers/flows-a";
 import { routeFoodImages } from "./helpers/fixtures";
+import { chooseStore, openReview, planTacos } from "./helpers/fred-meyer";
 import { createHousehold } from "./helpers/household";
 import { setInsets, setLook } from "./helpers/look";
 import { SCREENS, type Screen } from "./screens";
@@ -32,7 +33,8 @@ for (const variant of VARIANTS) {
     if (variant.insets) await setInsets(page, variant.insets[0], variant.insets[1]);
     await createHousehold(page, "layout");
 
-    // Put a planned meal on the week so the list and week screens have real content.
+    // Put a planned meal on the week so the list and week screens have real content, and a Fred Meyer store so the review screen opens.
+    await chooseStore(page);
     await addFromSearch(page, { day: "thu", query: "tacos", pick: "Chicken tacos · Allrecipes" });
 
     const found: string[] = [];
@@ -63,13 +65,21 @@ for (const variant of VARIANTS) {
       }
 
       // Text contrast (the ratios use the real contrastRatio, not a copy of the maths).
-      const weak = (await textPairs(page)).filter(([fg, bg]) => contrastRatio(fg, bg) < MIN_CONTRAST);
+      const { pairs, skipped } = await textPairs(page);
+      const weak = pairs.map((p) => ({ ...p, ratio: contrastRatio(p.fg, p.bg) })).filter((p) => p.ratio < MIN_CONTRAST);
+      // An image or gradient behind the text cannot be measured here; anything else unreadable is a failure to look into.
+      const unmeasured = skipped.filter((k) => !k.reason.startsWith("image"));
       if (screen.contrastPending) {
-        if (weak.length) testInfo.annotations.push({ type: "contrast-pending", description: `${screen.name}: ${weak.length} pair(s) under ${MIN_CONTRAST}` });
-      } else {
-        for (const [fg, bg, text] of weak) {
-          found.push(`${where}: contrast ${contrastRatio(fg, bg).toFixed(2)} for "${text}" (${fg} on ${bg})`);
+        const worklist = [
+          ...weak.map((p) => `${p.ratio.toFixed(2)} "${p.text}" ${p.fg} on ${p.bg}`),
+          ...unmeasured.map((k) => `unmeasured "${k.text}": ${k.reason}`),
+        ];
+        if (worklist.length) {
+          testInfo.annotations.push({ type: "contrast-pending", description: `${screen.name}: ${weak.length} pair(s) under ${MIN_CONTRAST}, ${unmeasured.length} unmeasured\n${worklist.join("\n")}` });
         }
+      } else {
+        for (const p of weak) found.push(`${where}: contrast ${p.ratio.toFixed(2)} for "${p.text}" (${p.fg} on ${p.bg})`);
+        for (const k of unmeasured) found.push(`${where}: contrast not measurable for "${k.text}": ${k.reason}`);
       }
       await page.screenshot({ path: `${shots}/layout-${screen.name}-${tag}.png`, fullPage: true });
     };
@@ -86,3 +96,19 @@ for (const variant of VARIANTS) {
     expect(found, found.join("\n")).toEqual([]);
   });
 }
+
+test("review screen: no sideways scroll at 360, 402 and 412, and the send button sits above the nav", async ({ page }) => {
+  await createHousehold(page, "layoutreview");
+  await chooseStore(page);
+  await planTacos(page);
+  await openReview(page);
+  await expect(page.getByTestId("review-line").first()).toBeVisible();
+  for (const width of [360, 402, 412]) {
+    await page.setViewportSize({ width, height: 800 });
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(wide, `sideways scroll at ${width}`).toBe(false);
+    const send = await page.getByTestId("send-cart").boundingBox();
+    const nav = await page.getByRole("navigation", { name: "Main" }).boundingBox();
+    expect(send && nav && send.y + send.height <= nav.y + 0.5, `send button above the nav at ${width}`).toBe(true);
+  }
+});

@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { dayName } from "../../lib/week/format";
 import type { Day } from "../../lib/domain/weeks";
 
@@ -44,9 +44,9 @@ export async function addFavoriteToDay(page: Page, { day, name }: { day: Day; na
   await expect(page).toHaveURL(/\/week$/);
 }
 
-/** Opens Favorites, taps a filter (such as "Under $15") and returns how many favorites it keeps. */
-export async function favoritesKept(page: Page, filter: string): Promise<number> {
+/** Opens Favorites, taps a filter (such as "Under $15") and returns the rows it keeps; assert with toHaveCount so it retries. */
+export async function favoritesKept(page: Page, filter: string): Promise<Locator> {
   await page.goto("/favorites");
   await page.getByRole("button", { name: filter }).click();
-  return page.getByTestId("favorite-row").count();
+  return page.getByTestId("favorite-row");
 }

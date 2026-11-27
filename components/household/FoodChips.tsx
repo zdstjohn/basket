@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { cleanFood, coversLine } from "@/lib/domain/families";
 import { focusRing } from "@/lib/ui";
 
@@ -19,6 +19,32 @@ export function addFood(list: string[], typed: string): { list: string[]; error:
   return { list: [...list, food], error: null };
 }
 
+/** True when an allergy names no food family: Basket can only look for those exact words. */
+export function exactWordsOnly(food: string): boolean {
+  return coversLine(food, { wide: true }) === null;
+}
+
+/** The nine common allergies stay on offer while the list is empty or any entry matches nothing (a typo). */
+export function showSuggestions(allergies: string[]): boolean {
+  return allergies.length === 0 || allergies.some(exactWordsOnly);
+}
+
+/** What EACH allergy covers, once each; "None…" when the list is empty; "" when nothing matched. */
+export function allergyHelp(allergies: string[]): string {
+  if (allergies.length === 0) return "None. Tap one, or type your own.";
+  const lines = allergies.map((a) => coversLine(a, { wide: true })).filter((l): l is string => l !== null);
+  return [...new Set(lines)].join(" ");
+}
+
+/** Three-way merge of one list: keep what I added and removed since `base`, take the rest from `fresh`. */
+export function mergeList(base: string[], mine: string[], fresh: string[]): string[] {
+  const added = mine.filter((f) => !base.includes(f));
+  const removed = base.filter((f) => !mine.includes(f));
+  return [...fresh.filter((f) => !removed.includes(f)), ...added.filter((f) => !fresh.includes(f))];
+}
+
+export const EXACT_WORDS = "Basket will look for these exact words only.";
+
 function WarningIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">
@@ -36,6 +62,10 @@ export function FoodChips({
   help,
   value,
   onChange,
+  typed,
+  onTyped,
+  error,
+  onError,
   placeholder,
   addLabel,
   suggestions,
@@ -45,25 +75,39 @@ export function FoodChips({
   help: string;
   value: string[];
   onChange: (v: string[]) => void;
+  /** What is in the box right now. The parent owns it so Save can add it first. */
+  typed: string;
+  onTyped: (t: string) => void;
+  error: string | null;
+  onError: (e: string | null) => void;
   placeholder: string;
   addLabel: string;
   suggestions?: readonly string[];
   allergy?: boolean;
 }) {
-  const [typed, setTyped] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (refocus.current) {
+      refocus.current = false;
+      input.current?.focus();
+    }
+  });
 
-  function add(text: string) {
+  function add(text: string, fromBox = true) {
     const r = addFood(value, text);
-    setError(r.error);
+    onError(r.error);
     if (r.error === null) {
       onChange(r.list);
-      setTyped("");
+      if (fromBox) onTyped(""); // a tapped suggestion leaves what is being typed alone
     }
   }
 
   const covers = typed.trim() ? coversLine(typed, { wide: allergy }) : null;
+  const statusText = covers ?? (allergy && typed.trim() ? EXACT_WORDS : null);
   const border = allergy ? "border-[#A6261B]" : "border-[#D5DBD5]";
+  const offered = (suggestions ?? []).filter((s) => !value.includes(s));
+  const showOffer = suggestions !== undefined && (allergy ? showSuggestions(value) : value.length === 0);
 
   return (
     <div className="grid gap-2" role="group" aria-label={label}>
@@ -72,29 +116,35 @@ export function FoodChips({
         {help && <p className="mt-px text-xs text-muted">{help}</p>}
       </div>
       {value.length > 0 && (
-        <ul className="flex flex-wrap gap-2">
+        <ul className="flex flex-wrap items-start gap-2">
           {value.map((food) => (
             <li key={food} className="max-w-full">
-              <button
-                type="button"
-                aria-label={`Remove ${food}`}
-                onClick={() => onChange(value.filter((f) => f !== food))}
-                className={`${chipBase} ${border} gap-1.5 pr-2.5 pl-3.5 text-sm`}
-              >
-                <span className="truncate">{food}</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4A544F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </button>
+              <span className={`inline-flex h-11 max-w-full items-center rounded-full border bg-white text-sm font-semibold text-ink ${border}`}>
+                <span className="truncate pr-1 pl-3.5">{food}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${food}`}
+                  onClick={() => {
+                    refocus.current = true;
+                    onChange(value.filter((f) => f !== food));
+                  }}
+                  className={`flex h-11 w-11 flex-none items-center justify-center rounded-full ${focusRing}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4A544F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </span>
+              {allergy && exactWordsOnly(food) && <p className="mt-1 max-w-[16rem] text-xs text-[#4A544F]">{EXACT_WORDS}</p>}
             </li>
           ))}
         </ul>
       )}
-      {suggestions && value.length === 0 && (
+      {showOffer && offered.length > 0 && (
         <ul className="flex flex-wrap gap-2">
-          {suggestions.map((s) => (
+          {offered.map((s) => (
             <li key={s}>
-              <button type="button" onClick={() => add(s)} className={`${chipBase} border-[#D5DBD5] px-3.5 text-[13px]`}>
+              <button type="button" onClick={() => add(s, false)} className={`${chipBase} border-[#D5DBD5] px-3.5 text-[13px]`}>
                 + {s}
               </button>
             </li>
@@ -104,13 +154,14 @@ export function FoodChips({
       <div>
         <div className="flex gap-2">
           <input
+            ref={input}
             value={typed}
             placeholder={placeholder}
             aria-label={placeholder}
             aria-invalid={error ? true : undefined}
             onChange={(e) => {
-              setTyped(e.target.value);
-              setError(null);
+              onTyped(e.target.value);
+              onError(null);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -133,8 +184,8 @@ export function FoodChips({
             {error}
           </p>
         )}
-        <p role="status" className={covers ? "mt-1.5 text-[13px] text-[#4A544F]" : "sr-only"}>
-          {covers}
+        <p role="status" className={statusText ? "mt-1.5 text-[13px] text-[#4A544F]" : "sr-only"}>
+          {statusText}
         </p>
       </div>
       {allergy && (

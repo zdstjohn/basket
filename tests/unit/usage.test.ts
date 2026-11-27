@@ -63,8 +63,8 @@ describe('recordUsage', () => {
 
   it('uses the default haiku price when AI_PRICES_JSON is unset', async () => {
     const m = mockSb();
-    await recordUsage(m.sb, 'h', 'estimate', 'anthropic/claude-haiku-5.5', { inputTokens: 1_000_000, outputTokens: 1_000_000 });
-    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(60);
+    await recordUsage(m.sb, 'h', 'estimate', 'anthropic/claude-haiku-5.5', { inputTokens: 500_000, outputTokens: 500_000 });
+    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(30);
   });
 
   it('charges a search SEARCH_COST_CENTS, default 0.5', async () => {
@@ -82,5 +82,23 @@ describe('recordUsage', () => {
     await recordUsage(m.sb, 'h', 'estimate', 'anthropic/claude-haiku-5.5', { inputTokens: 0, outputTokens: 4000, assumed: true });
     // 4000 output tokens at 1500 per million = 6 cents, not the 0.2 the Haiku price would give.
     expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(6);
+  });
+
+  it('never inserts a row over 50 cents (the table refuses it), so a pricey call still leaves its record', async () => {
+    process.env.AI_PRICES_JSON = JSON.stringify({ big: { in: 1_000_000, out: 1_000_000 } });
+    const m = mockSb();
+    await recordUsage(m.sb, 'h', 'parse', 'big', { inputTokens: 1_000_000, outputTokens: 1_000_000 });
+    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(50);
+  });
+
+  it('charges a Spoonacular request SPOONACULAR_COST_CENTS, default 1', async () => {
+    const m = mockSb();
+    await recordUsage(m.sb, 'h', 'search', 'spoonacular', { inputTokens: 0, outputTokens: 0 });
+    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(1);
+    process.env.SPOONACULAR_COST_CENTS = '0.2';
+    const m2 = mockSb();
+    await recordUsage(m2.sb, 'h', 'search', 'spoonacular', { inputTokens: 0, outputTokens: 0 });
+    expect((m2.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(0.2);
+    delete process.env.SPOONACULAR_COST_CENTS;
   });
 });

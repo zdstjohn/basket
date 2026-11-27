@@ -677,7 +677,7 @@ cartDiff([L('A',1,250)], [S('pending',…,[L('A',1,250)])], me)  // alreadySent 
 
 - [ ] **Step 1 (owner, before the deploy):** Kroger developer portal: the production app lists redirect URI `https://basket-ashy.vercel.app/api/kroger/callback` and has the Cart and Identity (profile) products with scopes `cart.basic:write` and `profile.compact`. Vercel → Basket → Environment Variables → Production: `KROGER_TOKEN_KEY` (the controller supplies the command `openssl rand -base64 32`; mark Sensitive) and `KROGER_REDIRECT_URI=https://basket-ashy.vercel.app/api/kroger/callback`.
 - [ ] **Step 2 (controller):** confirm 0006 is applied and the advisors are clean; merge; production deploy; confirm the deployment is Ready and `/list` loads signed in.
-- [ ] **Step 3 (controller):** apply `0007_item_keys_by_food.sql` right after the deploy is live. Check: `select count(*) from week_item_state where item_key like '%#%'` is 0.
+- [ ] **Step 3 (controller):** apply `0007_item_keys_by_food.sql` by hand, about a week after the release, never through `supabase db push` (the folder holds 0007). Check: `select count(*) from week_item_state where item_key like '%#%'` is 0.
 - [ ] **Step 4 (controller, on production, signed in as the test account, no cart send):**
   - `/list` Fred Meyer tab: every to-buy row has a product, a count and a whole-package price; salt, garlic powder, honey, brown sugar, paprika, mustard and broth show products (the foods from the owner's screenshot); Kosher salt is one row; olive oil shows the bottle price.
   - The list total equals the sum of the rows; the Week meter matches.

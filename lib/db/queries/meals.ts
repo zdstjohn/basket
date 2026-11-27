@@ -3,7 +3,7 @@ import type { Database } from '@/lib/db/types';
 import type { MealRow } from '@/lib/db/rows';
 import { PersonChangeSchema, type RecipeDraft } from '@/lib/ai/schemas';
 import { isAllergyChange } from '@/lib/domain/flags';
-import type { IngredientLine, Meal, PersonChange, VegSwap } from '@/lib/domain/types';
+import type { IngredientLine, Meal, Person, PersonChange, VegSwap } from '@/lib/domain/types';
 
 type Sb = SupabaseClient<Database>;
 
@@ -14,6 +14,17 @@ export type FavoriteFilter = 'vegetarian' | 'under15' | 'most';
 export const UNDER_15_CENTS = 1500;
 
 const SIGNED_URL_SECONDS = 3600;
+/** A signed link is reused for 50 minutes, so a realtime reload keeps the same src and the browser keeps its cached image. */
+const REUSE_MS = 50 * 60 * 1000;
+const signedLinks = new Map<string, { url: string; at: number }>();
+
+function freshLink(path: string): string | null {
+  const hit = signedLinks.get(path);
+  return hit && Date.now() - hit.at <= REUSE_MS ? hit.url : null;
+}
+function rememberLink(path: string, url: string): void {
+  signedLinks.set(path, { url, at: Date.now() });
+}
 
 /** Reads the saved changes one by one: an entry that fails the schema is dropped, never the whole list. */
 function parseChanges(raw: unknown): PersonChange[] {
@@ -38,11 +49,31 @@ export function toMeal(row: MealRow): Meal {
   };
 }
 
+type AllergyRow = { id: string; allergies: string[] | null };
+
+/** The people named by these changes, with their allergies. */
+async function allergiesOf(sb: Sb, changes: PersonChange[]): Promise<AllergyRow[]> {
+  if (changes.length === 0) return [];
+  const ids = [...new Set(changes.map((c) => c.personId))];
+  const { data, error } = await sb.from('people').select('id, allergies').in('id', ids);
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? (data as AllergyRow[]) : [];
+}
+
+const asPerson = (r: AllergyRow): Person => ({ id: r.id, name: '', age: 0, diet: 'none', appetite: 1, dislikes: [], allergies: r.allergies ?? [] });
+
 export async function saveMeal(
   sb: Sb,
   householdId: string,
-  draft: RecipeDraft & { isFavorite: boolean; everyoneVegetarian?: boolean },
+  draft: Omit<RecipeDraft, 'personChanges'> & Partial<Pick<RecipeDraft, 'personChanges'>> & { isFavorite: boolean; everyoneVegetarian?: boolean },
 ): Promise<MealRow> {
+  // A change that names someone's allergy is dropped here, as setPersonChanges refuses it: an allergy is only warned about.
+  const wanted = draft.personChanges ?? [];
+  const rows = await allergiesOf(sb, wanted);
+  const kept = wanted.filter((c) => {
+    const row = rows.find((r) => r.id === c.personId);
+    return !row || !isAllergyChange(c, asPerson(row));
+  });
   const { data, error } = await sb
     .from('meals')
     .insert({
@@ -57,6 +88,7 @@ export async function saveMeal(
       photo_url: draft.photo?.url ?? null,
       photo_credit: draft.photo?.credit ?? null,
       photo_credit_url: draft.photo?.creditUrl ?? null,
+      person_changes: kept as unknown as Database['public']['Tables']['meals']['Insert']['person_changes'],
     })
     .select()
     .single();
@@ -90,16 +122,10 @@ export function withoutChange(changes: PersonChange[], personId: string, food: s
  */
 export async function setPersonChanges(sb: Sb, mealId: string, changes: PersonChange[]): Promise<MealRow> {
   const clean = changes.map((c) => PersonChangeSchema.parse(c));
-  if (clean.length > 0) {
-    const ids = [...new Set(clean.map((c) => c.personId))];
-    const { data, error } = await sb.from('people').select('id, allergies').in('id', ids);
-    if (error) throw new Error(error.message);
-    for (const c of clean) {
-      const person = (data ?? []).find((p) => p.id === c.personId);
-      if (person && isAllergyChange(c, { id: person.id, name: '', age: 0, diet: 'none', appetite: 1, dislikes: [], allergies: person.allergies ?? [] })) {
-        throw new Error(`${c.food} is an allergy, so it can’t be left out or swapped`);
-      }
-    }
+  const rows = await allergiesOf(sb, clean);
+  for (const c of clean) {
+    const row = rows.find((r) => r.id === c.personId);
+    if (row && isAllergyChange(c, asPerson(row))) throw new Error(`${c.food} is an allergy, so it can’t be left out or swapped`);
   }
   return updateMeal(sb, mealId, { person_changes: clean as unknown as Database['public']['Tables']['meals']['Update']['person_changes'] });
 }
@@ -108,12 +134,14 @@ export async function setPersonChanges(sb: Sb, mealId: string, changes: PersonCh
 export async function setMealPhoto(sb: Sb, mealId: string, photo: MealPhoto): Promise<MealRow> {
   const patch =
     'path' in photo
-      ? { photo_path: photo.path }
+      ? { photo_path: photo.path, photo_preview: null, photo_width: null }
       : {
           photo_url: photo.url,
           photo_credit: photo.credit,
           photo_credit_url: photo.creditUrl,
           photo_path: null,
+          photo_preview: null,
+          photo_width: null,
         };
   return updateMeal(sb, mealId, patch);
 }
@@ -124,8 +152,13 @@ export async function mealPhotoSrc(
   meal: Pick<MealRow, 'photo_path' | 'photo_url'>,
 ): Promise<string | null> {
   if (meal.photo_path) {
+    const reused = freshLink(meal.photo_path);
+    if (reused) return reused;
     const { data } = await sb.storage.from('meal-photos').createSignedUrl(meal.photo_path, SIGNED_URL_SECONDS);
-    if (data?.signedUrl) return data.signedUrl;
+    if (data?.signedUrl) {
+      rememberLink(meal.photo_path, data.signedUrl);
+      return data.signedUrl;
+    }
   }
   return meal.photo_url;
 }
@@ -136,13 +169,21 @@ export async function mealPhotoSrcs(
   meals: Pick<MealRow, 'id' | 'photo_path' | 'photo_url'>[],
 ): Promise<Record<string, string | null>> {
   const out: Record<string, string | null> = {};
-  const uploaded = meals.filter((m) => m.photo_path);
   const signed = new Map<string, string>();
-  if (uploaded.length > 0) {
-    const { data } = await sb.storage
-      .from('meal-photos')
-      .createSignedUrls(uploaded.map((m) => m.photo_path as string), SIGNED_URL_SECONDS);
-    for (const r of data ?? []) if (r.path && r.signedUrl) signed.set(r.path, r.signedUrl);
+  const missing = new Set<string>();
+  for (const m of meals) {
+    if (!m.photo_path) continue;
+    const reused = freshLink(m.photo_path);
+    if (reused) signed.set(m.photo_path, reused);
+    else missing.add(m.photo_path);
+  }
+  if (missing.size > 0) {
+    const { data } = await sb.storage.from('meal-photos').createSignedUrls([...missing], SIGNED_URL_SECONDS);
+    for (const r of data ?? []) {
+      if (!r.path || !r.signedUrl) continue;
+      signed.set(r.path, r.signedUrl);
+      rememberLink(r.path, r.signedUrl);
+    }
   }
   for (const m of meals) {
     out[m.id] = (m.photo_path && signed.get(m.photo_path)) || m.photo_url;

@@ -1,9 +1,11 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 import type { IngredientLine, Role } from '@/lib/domain/types';
+import { bestPhotoUrl } from '@/lib/photos/best-url';
 import { httpUrl } from '../url';
 import { clampOption } from './clamp';
 import { fakeSpoonacular } from './fake';
-import { SourceLimitError, type RecipeOption } from './provider';
+import { SourceLimitError, type RecipeOption, type SearchMeter } from './provider';
 
 interface SpoonIngredient {
   name?: unknown; amount?: unknown; unit?: unknown; aisle?: unknown; original?: unknown;
@@ -43,8 +45,9 @@ function toLine(i: SpoonIngredient): IngredientLine | null {
 
 function toOption(r: SpoonResult): RecipeOption | null {
   const title = str(r.title);
-  const image = httpUrl(r.image);
-  if (!title || !image) return null;
+  const rawImage = httpUrl(r.image);
+  if (!title || !rawImage) return null;
+  const image = bestPhotoUrl(rawImage);
   const url = httpUrl(r.sourceUrl) ?? httpUrl(r.spoonacularSourceUrl);
   if (!url) return null;
   const ings = Array.isArray(r.extendedIngredients) ? r.extendedIngredients : [];
@@ -65,8 +68,8 @@ function toOption(r: SpoonResult): RecipeOption | null {
   };
 }
 
-export async function searchSpoonacular(query: string): Promise<RecipeOption[]> {
-  if (process.env.RECIPE_SEARCH_FAKE === '1') return fakeSpoonacular(query);
+export async function searchSpoonacular(query: string, meter?: SearchMeter): Promise<RecipeOption[]> {
+  if (fakeOn('RECIPE_SEARCH_FAKE')) return fakeSpoonacular(query);
   const key = process.env.SPOONACULAR_API_KEY;
   if (!key) throw new Error('SPOONACULAR_API_KEY is not set');
   const url = new URL('https://api.spoonacular.com/recipes/complexSearch');
@@ -74,6 +77,7 @@ export async function searchSpoonacular(query: string): Promise<RecipeOption[]> 
   url.searchParams.set('number', '8');
   url.searchParams.set('addRecipeInformation', 'true');
   url.searchParams.set('fillIngredients', 'true');
+  if (meter) meter.spoonacularCalls++; // counted when sent, like Brave: a refused request used quota too
   const res = await fetch(url, {
     headers: { 'x-api-key': key, accept: 'application/json' },
     signal: AbortSignal.timeout(6000),

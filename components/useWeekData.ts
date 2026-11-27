@@ -9,6 +9,7 @@ import type { Household, MealRow, Week, WeekMeal } from "@/lib/db/rows";
 import type { Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { singleFlight } from "@/lib/list/single-flight";
+import { ensurePreviews } from "@/lib/photos/ensure-previews";
 import { subscribeHousehold } from "@/lib/realtime";
 import { previousWeekStart } from "@/lib/week/format";
 
@@ -28,6 +29,8 @@ export function useWeekData(household: Household) {
   const [data, setData] = useState<WeekData | null>(null);
   const [error, setError] = useState(false);
   const [live, setLive] = useState(false);
+  // Goes up each time the subscription fires, so things that load beside the week (the dinner card) can follow it.
+  const [changes, setChanges] = useState(0);
   const latest = useRef(0);
   const invalidate = useCallback(() => {
     latest.current++;
@@ -58,6 +61,7 @@ export function useWeekData(household: Household) {
         lastWeek: prev ? { id: prev.id, count: prevMeals.length } : null,
       });
       setError(false);
+      setTimeout(() => ensurePreviews(meals), 0); // outside this try: it never throws and is never awaited
     } catch {
       if (run === latest.current) setError(true);
     }
@@ -69,12 +73,20 @@ export function useWeekData(household: Household) {
   useEffect(() => {
     // Loading starts from an effect on purpose: the week depends on the phone's clock.
     void load();
-    const stop = subscribeHousehold(household.id, ["week_meals", "meals", "people"], () => void load(), setLive);
+    const stop = subscribeHousehold(
+      household.id,
+      ["week_meals", "meals", "people", "meal_verdicts"],
+      () => {
+        setChanges((n) => n + 1);
+        void load();
+      },
+      setLive,
+    );
     return () => {
       invalidate();
       stop();
     };
   }, [household.id, load, invalidate]);
 
-  return { sb, data, error, live, reload: load };
+  return { sb, data, error, live, changes, reload: load };
 }

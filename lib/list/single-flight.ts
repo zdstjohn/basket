@@ -8,6 +8,8 @@
 export interface SingleFlight {
   run: (task: () => Promise<void>) => Promise<void>;
   join: (task: () => Promise<void>) => Promise<void>;
+  /** A run is out right now. */
+  busy: () => boolean;
 }
 
 export function singleFlight(): SingleFlight {
@@ -42,6 +44,7 @@ export function singleFlight(): SingleFlight {
       latest = task;
       return start();
     },
+    busy: () => current !== null,
   };
 }
 
@@ -57,3 +60,36 @@ export const FAILED_REQUEST_HOLD_MS = 60_000;
 /** Milliseconds until a key may be asked again: 0 when it was never held or the hold is over. */
 export const retryAfter = (retryAt: number | undefined, now = Date.now()): number =>
   retryAt === undefined ? 0 : Math.max(0, retryAt - now);
+
+/**
+ * Calls `attempt` after 5, 10, 20, then every 30 seconds until it resolves true. Returns the function that
+ * stops it. An attempt that throws counts as a failed one.
+ */
+export function retryWithBackoff(attempt: () => Promise<boolean>): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let n = 0;
+  const schedule = () => {
+    timer = setTimeout(() => {
+      attempt().then(
+        (done) => {
+          if (!done && !stopped) {
+            n++;
+            schedule();
+          }
+        },
+        () => {
+          if (!stopped) {
+            n++;
+            schedule();
+          }
+        },
+      );
+    }, backoffDelay(n));
+  };
+  schedule();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+}

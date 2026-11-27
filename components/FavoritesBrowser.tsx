@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { AllergyBox } from "@/components/flags/AllergyBox";
+import { cardFlagText, FlagLines, flagsOf } from "@/components/flags/FlagLines";
 import { MealThumb } from "@/components/MealThumb";
+import { ensurePreviews } from "@/lib/photos/ensure-previews";
+import { Sheet } from "@/components/Sheet";
 import { createBrowserClient } from "@/lib/db/client";
 import { listPeople } from "@/lib/db/queries/household";
 import { listItemStores, listPrices } from "@/lib/db/queries/list";
@@ -12,7 +16,8 @@ import { scaleMeal } from "@/lib/domain/scaling";
 import type { Person } from "@/lib/domain/types";
 import { favoritesCosts, storeFor, toPriceMap, type PriceRow } from "@/lib/list/prices";
 import { subscribeHousehold } from "@/lib/realtime";
-import { focusRing } from "@/lib/ui";
+import type { Flag } from "@/lib/domain/flags";
+import { focusRing, pillButton } from "@/lib/ui";
 import { mealTag } from "@/lib/week/note";
 
 type Chip = "all" | FavoriteFilter;
@@ -23,7 +28,6 @@ const TAGS = {
 } as const;
 
 interface Pricing {
-  people: Person[];
   itemStores: Map<string, Store>;
   prices: PriceRow[];
 }
@@ -35,11 +39,14 @@ export function FavoritesBrowser({
   household,
   showChips,
   addLabel,
+  anywayLabel = "Add to this week anyway",
   onAdd,
 }: {
   household: Household;
   showChips: boolean;
   addLabel: (meal: MealRow) => string;
+  /** The text of the second button when a recipe lists an allergy. */
+  anywayLabel?: string;
   onAdd: (meal: MealRow) => void | Promise<void>;
 }) {
   const sb = useMemo(() => createBrowserClient(), []);
@@ -48,28 +55,32 @@ export function FavoritesBrowser({
   const [error, setError] = useState(false);
   const [q, setQ] = useState("");
   const [chip, setChip] = useState<Chip>("all");
+  const [people, setPeople] = useState<Person[]>([]);
   const [pricing, setPricing] = useState<Pricing | null>(null);
+  const [warning, setWarning] = useState<{ meal: MealRow; flags: Flag[] } | null>(null);
 
   useEffect(() => {
     let run = 0;
     async function load() {
       const mine = ++run;
       try {
-        const all = await listFavorites(sb, household.id);
+        // People come with the rows, so a row is never drawn without its flags.
+        const [all, loadedPeople] = await Promise.all([listFavorites(sb, household.id), listPeople(sb, household.id)]);
         const urls = await mealPhotoSrcs(sb, all);
         if (mine !== run) return;
         setRows(all);
+        setPeople(loadedPeople);
         setPhotos(urls);
+        setTimeout(() => ensurePreviews(all), 0); // never throws, never awaited
         setError(false);
         if (showChips) {
           // Only the "Under $15" chip needs these; the list still works without them.
           try {
-            const [people, itemStores, prices] = await Promise.all([
-              listPeople(sb, household.id),
+            const [itemStores, prices] = await Promise.all([
               listItemStores(sb, household.id),
               listPrices(sb, household.id),
             ]);
-            if (mine === run) setPricing({ people, itemStores, prices });
+            if (mine === run) setPricing({ itemStores, prices });
           } catch {
             // Without prices the chip simply finds nothing.
           }
@@ -79,7 +90,7 @@ export function FavoritesBrowser({
       }
     }
     void load();
-    const stop = subscribeHousehold(household.id, ["meals"], () => void load());
+    const stop = subscribeHousehold(household.id, ["meals", "people"], () => void load());
     return () => {
       run++;
       stop();
@@ -92,8 +103,8 @@ export function FavoritesBrowser({
     [pricing, household.category_store],
   );
   const lines = useMemo(
-    () => (rows && pricing ? rows.map((r) => ({ id: r.id, lines: scaleMeal(toMeal(r), pricing.people) })) : []),
-    [rows, pricing],
+    () => (rows && pricing ? rows.map((r) => ({ id: r.id, lines: scaleMeal(toMeal(r), people) })) : []),
+    [rows, pricing, people],
   );
   // "Under $15" uses the prices already saved and never asks anyone for more.
   const priced = useMemo(
@@ -105,6 +116,11 @@ export function FavoritesBrowser({
   const shown = useMemo(
     () => (rows ? filterFavorites(rows, { q, filter: chip === "all" ? undefined : chip, costs }) : []),
     [rows, q, chip, costs],
+  );
+
+  const flagsById = useMemo(
+    () => new Map<string, Flag[]>((rows ?? []).map((r) => [r.id, flagsOf(toMeal(r), people)])),
+    [rows, people],
   );
 
   if (error && !rows) return <p role="alert" className="mx-5 mt-4 text-[15px]">We couldn&apos;t load your favorites. Try again in a moment.</p>;
@@ -171,18 +187,20 @@ export function FavoritesBrowser({
         <ul className="mx-5 mt-3.5 flex flex-col gap-2">
           {shown.map((m) => {
             const tag = mealTag(toMeal(m));
+            const flags = flagsById.get(m.id) ?? [];
             return (
               <li key={m.id} data-testid="favorite-row" className="flex min-h-[58px] items-center gap-3 rounded-[14px] border border-line bg-white py-1.5 pl-2.5 pr-2">
                 <MealThumb src={photos[m.id] ?? null} className="size-14 rounded-[10px]" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[15px] font-semibold">{m.name}</p>
                   <p className="mt-0.5 text-xs text-muted">{made(m.times_planned)}</p>
+                  <FlagLines flags={flags} people={people} />
                 </div>
                 {tag && <span className={`whitespace-nowrap rounded-[10px] px-2 py-[3px] text-xs font-semibold ${TAGS[tag].cls}`}>{TAGS[tag].label}</span>}
                 <button
                   type="button"
-                  aria-label={addLabel(m)}
-                  onClick={() => void onAdd(m)}
+                  aria-label={`${addLabel(m)}${cardFlagText(toMeal(m), people)}`}
+                  onClick={() => (flags.some((f) => f.kind === "allergy") ? setWarning({ meal: m, flags }) : void onAdd(m))}
                   className={`flex size-11 shrink-0 items-center justify-center rounded-full bg-green-tint text-green ${focusRing}`}
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
@@ -193,6 +211,32 @@ export function FavoritesBrowser({
             );
           })}
         </ul>
+      )}
+      {warning && (
+        <Sheet label="Allergy" onClose={() => setWarning(null)}>
+          <div className="pb-5 pt-3">
+            <p className="mx-5 text-[17px] font-bold">{warning.meal.name}</p>
+            <AllergyBox flags={warning.flags} people={people} />
+            <div className="mx-5 mt-3 grid gap-2">
+              <button type="button" onClick={() => setWarning(null)} className={`${pillButton} h-[52px] w-full text-base`}>
+                Pick a different dinner
+              </button>
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const meal = warning.meal;
+                    setWarning(null);
+                    void onAdd(meal);
+                  }}
+                  className={`inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-[15px] font-semibold text-ink ${focusRing}`}
+                >
+                  {anywayLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Sheet>
       )}
     </div>
   );

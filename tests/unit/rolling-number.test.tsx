@@ -62,6 +62,15 @@ describe("RollingNumber", () => {
     expect(host.querySelector('[aria-hidden="true"]')!.textContent).toBe("$172.00");
     expect(live().textContent).toBe("$172.00");
   });
+  it("successive changes in the same direction each roll with fresh columns", () => {
+    show("$168.00");
+    show("$172.00");
+    const first = [...cols()];
+    show("$176.00");
+    const second = [...cols()];
+    expect(second.length).toBe(1);
+    expect(first.some((c) => second.includes(c))).toBe(false);
+  });
   it("same value again does not roll", () => {
     show("$168.00");
     show("$168.00");

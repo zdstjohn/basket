@@ -54,24 +54,28 @@ create table public.meal_verdicts (
 );
 create index meal_verdicts_household_id_idx on public.meal_verdicts (household_id);
 
--- An answer is never downgraded to a skip (two phones, one dinner).
+-- An answer is never downgraded to a skip (two phones, one dinner), and who wrote the row
+-- is whoever is signed in, never a value the client sent.
 create function public.meal_verdicts_keep_answer() returns trigger
 language plpgsql set search_path = '' as $$
 begin
-  if old.status = 'answered' and new.status = 'skipped' then
+  if tg_op = 'UPDATE' and old.status = 'answered' and new.status = 'skipped' then
     new := old;
   end if;
   new.updated_at = now();
+  new.updated_by = auth.uid();
   return new;
 end $$;
 
 create trigger meal_verdicts_keep_answer
-  before update on public.meal_verdicts
+  before insert or update on public.meal_verdicts
   for each row execute function public.meal_verdicts_keep_answer();
 
 alter table public.meal_verdicts enable row level security;
 revoke all on public.meal_verdicts from anon, authenticated;
-grant select, insert, update, delete on public.meal_verdicts to authenticated;
+-- No delete: a verdict is never removed by the app, and a delete-then-insert would get round
+-- the rule that an answer is never downgraded.
+grant select, insert, update on public.meal_verdicts to authenticated;
 
 create policy meal_verdicts_select on public.meal_verdicts
   for select to authenticated using (public.is_member(household_id));
@@ -80,8 +84,6 @@ create policy meal_verdicts_insert on public.meal_verdicts
 create policy meal_verdicts_update on public.meal_verdicts
   for update to authenticated
   using (public.is_member(household_id)) with check (public.is_member(household_id));
-create policy meal_verdicts_delete on public.meal_verdicts
-  for delete to authenticated using (public.is_member(household_id));
 
 alter publication supabase_realtime add table public.meal_verdicts;
 

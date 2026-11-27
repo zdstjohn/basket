@@ -14,7 +14,8 @@ import { formatDollars } from "@/lib/domain/money-input";
 import { checkedOffMessage, keysToCheck, keysToUntick } from "@/lib/list/check-all";
 import { groupItems } from "@/lib/list/groups";
 import { STORE_NAMES } from "@/lib/list/prices";
-import { focusRing, pillButton, stickyAboveNav } from "@/lib/ui";
+import { reviewLines } from "@/lib/list/review";
+import { bigGreenLink, focusRing, pillButton, stickyAboveNav } from "@/lib/ui";
 import { listView, useWeekId, useWeekList } from "@/lib/useWeekList";
 
 export function ListScreen({ household }: { household: Household }) {
@@ -35,6 +36,7 @@ export function ListScreen({ household }: { household: Household }) {
   const here = useMemo(() => items.filter((i) => i.store === store), [items, store]);
   const toBuy = useMemo(() => groupItems(here.filter((i) => !i.haveIt)), [here]);
   const skipped = useMemo(() => here.filter((i) => i.haveIt), [here]);
+  const reviewable = useMemo(() => reviewLines(items, products).lines.length, [items, products]);
   const buyCount = items.filter((i) => !i.haveIt).length;
   const look = BUDGET_LOOK[state];
   const toCheck = useMemo(() => keysToCheck(items, store, checked), [items, store, checked]);
@@ -198,6 +200,11 @@ export function ListScreen({ household }: { household: Household }) {
 
       <div className="mt-auto" />
       <div data-testid="list-bar" className={stickyAboveNav}>
+        {store === "fred_meyer" && productMode && reviewable > 0 && (
+          <Link href="/list/review" className={`${bigGreenLink} mb-2`}>
+            Review and send to Fred Meyer
+          </Link>
+        )}
         <div className="flex items-center justify-between rounded-2xl border border-line bg-white px-4 py-3">
           <div>
             <p className="text-xs text-muted">

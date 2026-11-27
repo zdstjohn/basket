@@ -134,7 +134,7 @@ No service-role key is used in any approach.
 - `cart_sends` (household, week, person, profile id, pickup/delivery, status, items, total). Members read; only the sender writes.
 - `price_observations` (household, store, UPC, regular, promo, day).
 - `week_item_state.pack_count` (this week's count for an item); `households.fulfillment`.
-- 0007 rewrites this week's saved have-it/checked keys from "food#kind" to "food". Run right after the new version is live.
+- 0007 rewrites this week's saved have-it/checked keys from "food#kind" to "food". Run by hand, about a week after the release, never through `supabase db push` (the folder holds 0007).
 
 ## 8. What the owner sets up
 

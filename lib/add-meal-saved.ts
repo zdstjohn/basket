@@ -1,4 +1,6 @@
 import { RecipeDraftSchema, type RecipeDraft } from '@/lib/ai/schemas';
+import { findFlags } from '@/lib/domain/flags';
+import type { Person } from '@/lib/domain/types';
 
 export type AddMealTab = 'search' | 'paste' | 'favorites';
 
@@ -9,6 +11,22 @@ export interface SavedAddMeal {
   paste: string;
   draft: RecipeDraft | null;
   saveFavorite: boolean;
+  /** Only the food words of the picked recipe that matched someone's list ("almonds"), never its lines. */
+  matched: string[];
+}
+
+const MOST_WORDS = 30;
+const LONGEST_WORD = 80;
+
+/** The words of a recipe's own lines that matched what someone won't eat or is allergic to. Nothing else is kept. */
+export function matchedWords(lines: string[], people: Person[]): string[] {
+  if (lines.length === 0 || people.length === 0) return [];
+  return [...new Set(findFlags(lines, people).flatMap((f) => f.found))].slice(0, MOST_WORDS);
+}
+
+function readWords(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((w): w is string => typeof w === 'string' && w.length > 0 && w.length <= LONGEST_WORD).slice(0, MOST_WORDS);
 }
 
 const TABS: AddMealTab[] = ['search', 'paste', 'favorites'];
@@ -25,5 +43,5 @@ export function parseSavedAddMeal(raw: unknown): SavedAddMeal | null {
     if (!parsed.success) return null;
     draft = parsed.data;
   }
-  return { tab: r.tab as AddMealTab, query: r.query, paste: r.paste, draft, saveFavorite: r.saveFavorite };
+  return { tab: r.tab as AddMealTab, query: r.query, paste: r.paste, draft, saveFavorite: r.saveFavorite, matched: readWords(r.matched) };
 }

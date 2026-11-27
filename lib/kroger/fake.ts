@@ -26,3 +26,12 @@ export const fakeProductsResponse = (term: string): unknown => {
   const t = term.toLowerCase();
   return BY_KEYWORD.find(([k]) => t.includes(k))?.[1] ?? empty;
 };
+
+/** The one product the fake cart refuses, so the "some items were rejected" path can be run without Kroger. */
+export const FAKE_REJECTED_UPC = '0020000000999';
+
+/** Stand-in for PUT /v1/cart/add (KROGER_FAKE=1): everything is added except FAKE_REJECTED_UPC. */
+export const fakeCartResult = (upcs: string[]): { ok: string[]; rejected: string[] } => ({
+  ok: upcs.filter((u) => u !== FAKE_REJECTED_UPC),
+  rejected: upcs.filter((u) => u === FAKE_REJECTED_UPC),
+});

@@ -13,7 +13,7 @@ export default async function OnboardingPage() {
   if (household && (await countPeople(sb, household.id)) > 0) redirect("/week");
 
   return (
-    <main className="mx-auto w-full max-w-md flex-1 px-5 py-8">
+    <main className="mx-auto w-full max-w-md flex-1 px-5 py-8 pb-[var(--bk-safe-bottom)]">
       <h1 className="text-[30px] font-bold tracking-tight text-ink">Set up your kitchen</h1>
       <p className="mt-1 text-[15px] text-muted">
         Tell us who&apos;s eating and what you like to spend. You can change it any time.

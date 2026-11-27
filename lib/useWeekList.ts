@@ -29,7 +29,7 @@ import { requestMatches } from "@/lib/list/matches-client";
 import {
   enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch, type QueuedPatch,
 } from "@/lib/list/offline";
-import { backoffDelay, FAILED_REQUEST_HOLD_MS, retryAfter, singleFlight } from "@/lib/list/single-flight";
+import { backoffDelay, FAILED_REQUEST_HOLD_MS, retryAfter, retryWithBackoff, singleFlight } from "@/lib/list/single-flight";
 import {
   estimateFor, priceKey, storeFor, toPriceMap, userCentsFor, userCentsPerBase,
   type PriceRow, type PriceSource,
@@ -52,6 +52,13 @@ export interface ListInputs {
   choices?: Choice[];
   /** The chosen Fred Meyer store (product mode); null or missing means no store is chosen. */
   locationId?: string | null;
+  /** The week this list was fetched or cached for; a list is only ever used under that week's id. */
+  weekId?: string;
+}
+
+/** The list for this week, or null when what is held belongs to another week (or none is chosen). */
+export function rawForWeek(raw: ListInputs | null, weekId: string | null): ListInputs | null {
+  return raw && weekId && raw.weekId === weekId ? raw : null;
 }
 
 const matchKey = (locationId: string, canonical: string): string => `${locationId}|${canonical}`;
@@ -171,8 +178,9 @@ export function buildList(raw: ListInputs) {
  */
 export function useWeekList(household: Household, weekId: string | null) {
   const sb = useMemo(() => createBrowserClient(), []);
-  const [raw, setRaw] = useState<ListInputs | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [held, setRaw] = useState<ListInputs | null>(null);
+  // Last week's list stays in `held` until the new one lands, but is never shown, cached or tapped under the new id.
+  const raw = useMemo(() => rawForWeek(held, weekId), [held, weekId]);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState(false);
   const [live, setLive] = useState(false);
@@ -231,7 +239,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     }
     const cached = loadListCache<ListInputs>(weekId);
     if (!cached) return false;
-    setRaw(cached);
+    setRaw({ ...cached, weekId });
     setOffline(true);
     return true;
   }, [weekId]);
@@ -263,6 +271,7 @@ export function useWeekList(household: Household, weekId: string | null) {
           : [];
       });
       setRaw({
+        weekId,
         entries,
         people,
         staples: staples.filter((s) => s.active).map(({ canonical, amount, unit, role }) => ({ canonical, amount, unit, role })),
@@ -281,8 +290,6 @@ export function useWeekList(household: Household, weekId: string | null) {
     } catch {
       if (run !== latest.current) return;
       if (!fromCache()) setError(true);
-    } finally {
-      if (run === latest.current) setLoading(false);
     }
   }, [sb, weekId, household.id, household.category_store, household.kroger_location_id, flushPending, fromCache]);
   // One load at a time: a call while one is out joins it, and it repeats once at the end.
@@ -295,7 +302,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     // Show the last list straight away while the fresh one loads (and keep it when there is no signal).
     const cached = rawRef.current ? null : loadListCache<ListInputs>(weekId);
     // Loading starts from an effect on purpose: it depends on the phone's connection.
-    if (cached) setRaw(cached);
+    if (cached) setRaw({ ...cached, weekId });
     void load();
     const stop = subscribeHousehold(
       household.id,
@@ -460,6 +467,8 @@ export function useWeekList(household: Household, weekId: string | null) {
   const updateMany = useCallback(
     async (itemKeys: string[], patch: ItemPatch) => {
       if (!weekId || itemKeys.length === 0) return;
+      // No list for this week yet (last week's is not it): nothing to tick, and nothing may be written for this week.
+      if (!rawRef.current) throw new Error("refused");
       // One state update for the whole batch, so 40+ rows render once.
       // Writes go to the food's own key and carry every flag, not just the patch: the food may still
       // have its flags on old food#kind rows, and the food row wins whole once it exists.
@@ -472,6 +481,8 @@ export function useWeekList(household: Household, weekId: string | null) {
         setRaw(next);
       }
       latest.current++; // a load already under way would bring back the old value
+      // That load is thrown away, so ask for a fresh one (it only marks the run dirty): realtime may not say so.
+      if (flight.busy()) void load();
       // Every change goes through the queue (one entry per item), so an older queued write can never land after a newer one.
       // The package count goes along only when this change names it: another phone may have set it since.
       enqueuePatches(household.id, itemKeys.map((itemKey) => ({ weekId, itemKey, patch: writeFlags(merged[itemKey], patch) })));
@@ -492,7 +503,7 @@ export function useWeekList(household: Household, weekId: string | null) {
       // The server said no (not a network problem): the screen is put back and the caller says so.
       if (refused.current) throw new Error("refused");
     },
-    [weekId, household.id, flushPending, load],
+    [weekId, household.id, flushPending, load, flight],
   );
   const update = useCallback((itemKey: string, patch: ItemPatch) => updateMany([itemKey], patch), [updateMany]);
 
@@ -587,7 +598,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     items,
     totals,
     state,
-    loading: loading && !raw,
+    loading: !raw && !error,
     offline,
     error,
     live,
@@ -642,8 +653,8 @@ export function useWeekId(household: Household): { id: string | null; failed: bo
   const { id: householdId, week_start: weekStartDay, time_zone: timeZone } = household;
   useEffect(() => {
     let alive = true;
-    let running: Promise<void> | null = null;
-    const resolve = (): Promise<void> => {
+    let running: Promise<boolean> | null = null;
+    const resolve = (): Promise<boolean> => {
       if (running) return running;
       const weekStart = weekStartFor(new Date(), weekStartDay as Day, timeZone);
       // The week seen last time is used right away, so a phone with no signal doesn't wait on the network.
@@ -660,26 +671,45 @@ export function useWeekId(household: Household): { id: string | null; failed: bo
             setId(week.id);
             setFailed(false);
           }
+          return true;
         } catch {
           // Offline: the remembered week above stands.
           if (alive) setFailed(true);
+          return false;
         } finally {
           running = null;
         }
       })();
       return running;
     };
+    // After a failed look, keep trying at 5, 10, 20, 30 s while the week still isn't the one seen.
+    let cancelRetry: (() => void) | null = null;
+    const look = async () => {
+      const ok = await resolve();
+      if (ok) {
+        cancelRetry?.();
+        cancelRetry = null;
+      } else if (alive && !cancelRetry) {
+        cancelRetry = retryWithBackoff(async () => {
+          if (!weekChanged(seen.current, new Date(), { week_start: weekStartDay, time_zone: timeZone })) return true;
+          const done = await resolve();
+          if (done) cancelRetry = null;
+          return done;
+        });
+      }
+    };
     const recheck = () => {
-      if (weekChanged(seen.current, new Date(), { week_start: weekStartDay, time_zone: timeZone })) void resolve();
+      if (weekChanged(seen.current, new Date(), { week_start: weekStartDay, time_zone: timeZone })) void look();
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") recheck();
     };
-    void resolve();
+    void look();
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", recheck);
     return () => {
       alive = false;
+      cancelRetry?.();
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", recheck);
     };

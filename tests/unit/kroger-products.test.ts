@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import beans from '../fixtures/kroger/products-black-beans.json';
 import chicken from '../fixtures/kroger/products-chicken-thighs.json';
-import eggs from '../fixtures/kroger/products-eggs.json';
-import milk from '../fixtures/kroger/products-milk.json';
 import locations from '../fixtures/kroger/locations-98402.json';
 
 vi.mock('@/lib/kroger/token', async (orig) => ({
@@ -11,7 +8,7 @@ vi.mock('@/lib/kroger/token', async (orig) => ({
 }));
 
 import { findLocations } from '@/lib/kroger/locations';
-import { priceFor } from '@/lib/kroger/products';
+import { searchProducts, toCandidates } from '@/lib/kroger/products';
 
 const fetchMock = vi.fn();
 const reply = (body: unknown) => fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
@@ -24,10 +21,10 @@ beforeEach(() => {
   fetchMock.mockReset();
 });
 
-describe('priceFor', () => {
+describe('searchProducts', () => {
   it('calls the products endpoint for the term and store', async () => {
     reply(chicken);
-    await priceFor('boneless chicken thighs', 'mass', '70100390');
+    await searchProducts('boneless chicken thighs', '70100390');
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const u = new URL(url);
     expect(u.origin + u.pathname).toBe('https://api.kroger.com/v1/products');
@@ -39,105 +36,18 @@ describe('priceFor', () => {
 
   it('gives the products request a timeout', async () => {
     reply(chicken);
-    await priceFor('boneless chicken thighs', 'mass', '70100390');
+    await searchProducts('boneless chicken thighs', '70100390');
     expect((fetchMock.mock.calls[0] as [string, RequestInit])[1].signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('prices weight-sold meat per pound as mass, with the front small image', async () => {
-    reply(chicken);
-    const r = await priceFor('boneless chicken thighs', 'mass', '70100390');
-    expect(r).toEqual({
-      centsPerBase: 399 / 453.59237,
-      productName: 'Heritage Farm Boneless Skinless Chicken Thighs',
-      onSale: false,
-      imageUrl: 'https://www.kroger.com/product/images/small/front/0020000000001',
-    });
-  });
-
-  it('compares per unit across products and pack sizes', async () => {
-    reply(milk);
-    const r = await priceFor('milk', 'volume', '1');
-    // Each product's first priced item counts: the half gallon at $3.49 beats the promo 32 oz at $2.49.
-    expect(r?.centsPerBase).toBeCloseTo(349 / (64 * 29.5735296));
-    expect(r?.onSale).toBe(false);
-  });
-
-  it('uses the promo price over regular, marks it on sale, and falls back to the thumbnail image', async () => {
-    reply({ data: [milk.data[1]] });
-    const r = await priceFor('milk', 'volume', '1');
-    expect(r).toMatchObject({
-      onSale: true,
-      productName: 'Kroger Vitamin D Whole Milk',
-      imageUrl: 'https://www.kroger.com/product/images/thumbnail/front/0001111041702',
-    });
-    expect(r?.centsPerBase).toBeCloseTo(249 / (32 * 29.5735296));
-  });
-
-  it('picks the cheaper larger pack per unit', async () => {
-    reply(eggs);
-    const r = await priceFor('eggs', 'count', '1');
-    expect(r?.centsPerBase).toBeCloseTo(519 / 18); // 28.8 beats 33.25
-    expect(r?.productName).toBe('Kroger Grade A Large White Eggs Bulk');
-  });
-
-  it('converts between kinds by density and typical item weight, and is null only without a size', async () => {
-    reply(chicken);
-    expect(await priceFor('boneless chicken thighs', 'count', '1')).not.toBeNull();
-    reply(eggs);
-    expect(await priceFor('eggs', 'mass', '1')).not.toBeNull();
-    reply({ data: [{ productId: '0003333000001', upc: '0003333000001', description: 'Rice', items: [{ soldBy: 'UNIT', price: { regular: 3 } }] }] });
-    expect(await priceFor('rice', 'mass', '1')).toBeNull();
-  });
-
-  it('prefers results whose description has every word of the name', async () => {
-    reply(beans);
-    const r = await priceFor('black beans', 'mass', '1');
-    expect(r?.productName).toBe('Simple Truth Organic Black Beans');
-  });
-
-  it('tolerates singular and plural', async () => {
-    reply(beans);
-    const r = await priceFor('black bean', 'mass', '1');
-    expect(r?.productName).toBe('Simple Truth Organic Black Beans');
-    reply(chicken);
-    const t = await priceFor('chicken thigh', 'mass', '1');
-    expect(t?.productName).toBe('Heritage Farm Boneless Skinless Chicken Thighs');
-  });
-
-  it('falls back to the first three results when none match the words', async () => {
-    reply(beans);
-    const r = await priceFor('quinoa', 'mass', '1');
-    expect(r?.productName).toBe('Kroger Pinto Beans');
-  });
-
-  it('ignores items with no price, and images off www.kroger.com', async () => {
-    reply({
-      data: [
-        {
-          productId: '1', upc: '0003333000001', description: 'Rice', brand: 'x',
-          images: [{ perspective: 'front', featured: true, sizes: [{ size: 'small', url: 'http://www.kroger.com/a.jpg' }] }],
-          items: [{ itemId: '1', size: '2 lb', soldBy: 'UNIT', price: { regular: 0, promo: 0 } }, { itemId: '2', size: '2 lb', soldBy: 'UNIT', price: { regular: 3, promo: 0 } }],
-        },
-        {
-          productId: '2', upc: '0003333000002', description: 'Rice Bulk', brand: 'x',
-          images: [{ perspective: 'front', featured: true, sizes: [{ size: 'small', url: 'https://evil.example/a.jpg' }] }],
-          items: [{ itemId: '3', size: '5 lb', soldBy: 'UNIT' }],
-        },
-      ],
-    });
-    const r = await priceFor('rice', 'mass', '1');
-    expect(r).toMatchObject({ productName: 'Rice', imageUrl: null });
-    expect(r?.centsPerBase).toBeCloseTo(300 / (2 * 453.59237));
-  });
-
-  it('returns null for no results', async () => {
+  it('returns no products for no results', async () => {
     reply({ data: [] });
-    expect(await priceFor('unobtainium', 'mass', '1')).toBeNull();
+    expect(await searchProducts('unobtainium', '1')).toEqual([]);
   });
 
   it('throws when Kroger answers with an error', async () => {
     fetchMock.mockResolvedValueOnce(new Response('no', { status: 500 }));
-    await expect(priceFor('rice', 'mass', '1')).rejects.toThrow();
+    await expect(searchProducts('rice', '1')).rejects.toThrow();
   });
 });
 
@@ -163,10 +73,10 @@ describe('KROGER_FAKE=1', () => {
     vi.stubEnv('KROGER_CLIENT_ID', '');
     const locs = await findLocations('98402');
     expect(locs[0]).toMatchObject({ id: '70100390', name: 'Fred Meyer - Tacoma-Stevens' });
-    const r = await priceFor('boneless chicken thighs', 'mass', '70100390');
-    expect(r?.productName).toBe('Heritage Farm Boneless Skinless Chicken Thighs');
-    expect(r?.imageUrl).toMatch(/^https:\/\/www\.kroger\.com\//);
-    expect(await priceFor('unobtainium', 'mass', '70100390')).toBeNull();
+    const found = toCandidates(await searchProducts('boneless chicken thighs', '70100390'), 'boneless chicken thighs');
+    expect(found[0]?.name).toBe('Heritage Farm Boneless Skinless Chicken Thighs');
+    expect(found[0]?.imageUrl).toMatch(/^https:\/\/www\.kroger\.com\//);
+    expect(await searchProducts('unobtainium', '70100390')).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

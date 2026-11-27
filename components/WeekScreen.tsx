@@ -7,18 +7,30 @@ import { DayRow } from "@/components/DayRow";
 import { MealSheet } from "@/components/MealSheet";
 import { Sheet } from "@/components/Sheet";
 import { useWeekData } from "@/components/useWeekData";
+import { VerdictCard } from "@/components/verdicts/VerdictCard";
+import { useDinnerToAsk, useOffline, type Ask } from "@/components/verdicts/useDinnerToAsk";
 import { useWeekList } from "@/lib/useWeekList";
 import { copyWeek } from "@/lib/db/queries/weeks";
 import { toMeal } from "@/lib/db/queries/meals";
 import type { Household } from "@/lib/db/rows";
+import { allergyCopy, findFlags, ingredientNames } from "@/lib/domain/flags";
 import { householdServings } from "@/lib/domain/portions";
 import { daysOfWeek, type Day } from "@/lib/domain/weeks";
 import { bigGreenLink, focusRing, pillButton, stickyAboveNav } from "@/lib/ui";
 import { formatWeekRange } from "@/lib/week/format";
 import { dayNote } from "@/lib/week/note";
 
+const weekdayOf = (ymd: string): string =>
+  new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(new Date(`${ymd}T00:00:00Z`));
+
 export function WeekScreen({ household }: { household: Household }) {
-  const { sb, data, error, live, reload } = useWeekData(household);
+  const { sb, data, error, live, changes, reload } = useWeekData(household);
+  // The dinner card loads on its own and fails quietly: it is never part of the week's load.
+  const { ask, reload: reloadAsk } = useDinnerToAsk(household, sb, changes);
+  // The card the family just answered stays up while "Saved." shows, though the dinner no longer needs asking.
+  const [held, setHeld] = useState<Ask | null>(null);
+  const offline = useOffline();
+  const card = held ?? ask;
   const list = useWeekList(household, data?.week.id ?? null);
   const [openDay, setOpenDay] = useState<Day | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -73,6 +85,20 @@ export function WeekScreen({ household }: { household: Household }) {
 
       <BudgetMeter totalCents={list.totals.totalCents} targetCents={household.budget_cents} cushionCents={household.cushion_cents} />
 
+      {data && card && data.people.length > 0 && (
+        <VerdictCard
+          key={`${card.dinner.mealId}|${card.dinner.date}`}
+          ask={card}
+          dayName={weekdayOf(card.dinner.date)}
+          people={data.people}
+          offline={offline}
+          sb={sb}
+          householdId={household.id}
+          onHold={setHeld}
+          onDone={reloadAsk}
+        />
+      )}
+
       <section aria-label="Dinners" className="mx-5 mt-3.5 flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <h2 className="text-[15px] font-semibold">
@@ -96,6 +122,10 @@ export function WeekScreen({ household }: { household: Household }) {
           days.map((d) => {
             const wm = forDay(d);
             const meal = wm ? data.meals.get(wm.meal_id) : null;
+            const domainMeal = meal ? toMeal(meal) : null;
+            const allergy = domainMeal && data.people.length > 0
+              ? allergyCopy(findFlags(ingredientNames(domainMeal), data.people).filter((f) => f.kind === "allergy"), data.people)
+              : null;
             return (
               <DayRow
                 key={d}
@@ -103,10 +133,11 @@ export function WeekScreen({ household }: { household: Household }) {
                 slot={slot}
                 onOpen={() => setOpenDay(d)}
                 filled={
-                  wm && meal
+                  wm && meal && domainMeal
                     ? {
                         name: meal.name,
-                        note: dayNote(toMeal(meal), data.people, wm.servings_override === null ? null : Number(wm.servings_override)),
+                        allergy: allergy?.head ?? null,
+                        note: dayNote(domainMeal, data.people, wm.servings_override === null ? null : Number(wm.servings_override)),
                         photo: data.photos[meal.id] ?? null,
                         favorite: meal.is_favorite,
                       }

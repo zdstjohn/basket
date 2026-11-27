@@ -1,15 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { AllergyBox } from "@/components/flags/AllergyBox";
+import { DislikeBox } from "@/components/flags/DislikeBox";
 import { MealThumb } from "@/components/MealThumb";
 import { Sheet } from "@/components/Sheet";
+import { VerdictSheet } from "@/components/verdicts/VerdictSheet";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { setMealPhoto, toMeal, updateMeal } from "@/lib/db/queries/meals";
+import { setMealPhoto, setPersonChanges, toMeal, updateMeal } from "@/lib/db/queries/meals";
+import { listVerdicts, saveVerdict } from "@/lib/db/queries/verdicts";
 import { setWeekMeal } from "@/lib/db/queries/weeks";
 import type { MealRow, WeekMeal } from "@/lib/db/rows";
 import type { Database } from "@/lib/db/types";
+import { findFlags, flagAmount, ingredientNames } from "@/lib/domain/flags";
 import { householdServings } from "@/lib/domain/portions";
-import type { Person } from "@/lib/domain/types";
+import type { Person, PersonChange } from "@/lib/domain/types";
+import { latestAnswer, verdictWords, type Verdict, type Vote } from "@/lib/domain/verdicts";
 import type { Day } from "@/lib/domain/weeks";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
 import { focusRing, pillButton } from "@/lib/ui";
@@ -40,9 +46,32 @@ export function MealSheet({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // How the family answered the last time they ate this (all dates). A failed read just leaves the line out.
+  const [last, setLast] = useState<Verdict | null>(null);
+  const [changing, setChanging] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    listVerdicts(sb, householdId, { mealId: meal.id })
+      .then((all) => {
+        if (alive) setLast(latestAnswer(all, meal.id));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sb, householdId, meal.id]);
+  const lastWords = last ? verdictWords(last) : null;
+
+  async function changeAnswer(votes: Record<string, Vote>) {
+    if (!last) return;
+    await saveVerdict(sb, householdId, { mealId: meal.id, date: last.eatenOn }, votes);
+    setLast({ ...last, status: "answered", votes });
+  }
   const base = householdServings(people);
   const override = weekMeal.servings_override === null ? null : Number(weekMeal.servings_override);
   const extra = override === null ? 0 : Math.max(0, Math.round((override - base) * 10) / 10);
+  const domainMeal = toMeal(meal);
+  const flags = people.length === 0 ? [] : findFlags(ingredientNames(domainMeal), people);
   const credit = !meal.photo_path && meal.photo_url ? meal.photo_credit : null;
 
   async function run(action: () => Promise<void>, failure: string) {
@@ -71,6 +100,10 @@ export function MealSheet({
       () => setWeekMeal(sb, weekMeal.week_id, day, weekMeal.slot, meal.id, n > 0 ? base + n : null),
       "We couldn't change that. Try again.",
     );
+
+  // Leave out or swap saves at once, so a favorite remembers it.
+  const saveChanges = (next: PersonChange[]) =>
+    run(async () => void (await setPersonChanges(sb, meal.id, next)), "We couldn't change that. Try again.");
 
   return (
     <Sheet label={meal.name} onClose={onClose}>
@@ -108,7 +141,31 @@ export function MealSheet({
           </label>
         </div>
 
-        <p className="text-sm text-muted">{dayNote(toMeal(meal), people, override)}</p>
+        <p className="text-sm text-muted">{dayNote(domainMeal, people, override)}</p>
+        <AllergyBox flags={flags} people={people} className="" />
+        {flags.filter((f) => f.kind === "dislike").map((f) => (
+          <DislikeBox
+            key={f.food}
+            flag={f}
+            people={people}
+            amount={flagAmount(domainMeal, f)}
+            changes={domainMeal.personChanges ?? []}
+            onChange={saveChanges}
+            mealName={meal.name}
+            meal={domainMeal}
+            className=""
+          />
+        ))}
+        {last && lastWords && (
+          <div className="flex items-center justify-between gap-3">
+            <p data-testid="last-time" className="min-w-0 text-sm text-muted">
+              Last time: {lastWords}
+            </p>
+            <button type="button" onClick={() => setChanging(true)} className={`${pillButton} shrink-0`}>
+              Change
+            </button>
+          </div>
+        )}
         {meal.source_url && (
           <a
             href={meal.source_url}
@@ -161,6 +218,9 @@ export function MealSheet({
           </p>
         )}
       </div>
+      {changing && last && (
+        <VerdictSheet mealName={meal.name} people={people} initial={last.votes} onSave={changeAnswer} onClose={() => setChanging(false)} />
+      )}
     </Sheet>
   );
 }

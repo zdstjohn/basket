@@ -15,8 +15,8 @@ export async function chooseStore(page: Page, zip = "98402"): Promise<void> {
   await expect(stores.getByRole("button", { name: "Choose store" })).toHaveCount(0);
 }
 
-/** Sets the weekly budget target (and, when given, the wiggle room) in whole dollars, and waits until each is saved. */
-export async function setBudget(page: Page, { target, wiggle }: { target: number; wiggle?: number }): Promise<void> {
+/** Sets the weekly budget target and/or the wiggle room in whole dollars, and waits until each is saved. Each must differ from what is saved now. */
+export async function setBudget(page: Page, { target, wiggle }: { target?: number; wiggle?: number }): Promise<void> {
   await page.goto("/household");
   const saved = () => page.waitForResponse((r) => r.url().includes("/rest/v1/households") && r.request().method() === "PATCH");
   for (const [label, value] of [
@@ -25,6 +25,8 @@ export async function setBudget(page: Page, { target, wiggle }: { target: number
   ] as const) {
     if (value === undefined) continue;
     const field = page.getByLabel(label);
+    // Nothing is saved when the value is unchanged, so there would be no response to wait for.
+    if ((await field.inputValue()) === String(value)) continue;
     await field.fill(String(value));
     await Promise.all([saved(), field.press("Tab")]);
   }

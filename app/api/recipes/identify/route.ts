@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import { identifyDish, UnreadableError, type ImageMediaType } from '@/lib/ai/identify';
 import type { UsageReport } from '@/lib/ai/provider';
 import { IdentifyBodySchema } from '@/lib/ai/schemas';
+import { newMeter, recordSearchCalls } from '@/lib/ai/billing';
 import { holdCents, recordUsage } from '@/lib/ai/usage';
-import { isResponse, readJson, requireHouseholdWithinCap } from '@/lib/api/household-context';
+import { isResponse, readJson, requireHousehold, takeGate } from '@/lib/api/household-context';
 import { updateHousehold } from '@/lib/db/queries/household';
 import { searchRecipes } from '@/lib/recipes/search';
-import { SourceLimitError, type SearchMeter } from '@/lib/recipes/search/provider';
+import { SourceLimitError } from '@/lib/recipes/search/provider';
 
 // Model time plus two searches can pass the platform default.
 export const maxDuration = 60;
@@ -32,7 +33,7 @@ function sniffType(b64: string): ImageMediaType | null {
 /** The photo is read once and dropped: never stored, never logged. */
 export async function POST(req: Request) {
   const body = IdentifyBodySchema.safeParse(await readJson(req));
-  const ctx = await requireHouseholdWithinCap(holdCents('identify'));
+  const ctx = await requireHousehold();
   if (isResponse(ctx)) return ctx;
   if (!body.success) return NextResponse.json({ error: 'bad_request' }, { status: 400 });
   const { image, source } = body.data;
@@ -41,9 +42,11 @@ export async function POST(req: Request) {
   if (decodedLength(image) > MAX_IMAGE_BYTES) return NextResponse.json({ error: 'too_large' }, { status: 413 });
   const mediaType = sniffType(image);
   if (!mediaType) return NextResponse.json({ error: 'bad_type' }, { status: 415 });
+  const refused = await takeGate(ctx, holdCents('identify'));
+  if (refused) return refused;
 
   const usages: UsageReport[] = [];
-  const meter: SearchMeter = { braveCalls: 0 };
+  const meter = newMeter();
   let searches = 0;
   try {
     const guess = await identifyDish({ base64: image, mediaType }, { onUsage: (u) => void usages.push(u) });
@@ -73,10 +76,8 @@ export async function POST(req: Request) {
           inputTokens: u.inputTokens, outputTokens: u.outputTokens, assumed: u.assumed,
         });
       }
-      // Only Brave costs money (Spoonacular's free plan does not): bill each request it was sent.
-      for (let i = 0; i < meter.braveCalls; i++) {
-        await recordUsage(sb, household.id, 'search', 'brave', { inputTokens: 0, outputTokens: 0 });
-      }
+      // Bill each paid search request that was sent (Brave, Spoonacular), even when the search then failed.
+      await recordSearchCalls(sb, household.id, meter);
       if (searches > 0 && household.recipe_source !== source) await updateHousehold(sb, household.id, { recipe_source: source });
     } catch (e) {
       console.error('identify bookkeeping failed', e instanceof Error ? e.message : 'unknown');

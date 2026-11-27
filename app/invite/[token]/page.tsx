@@ -32,7 +32,7 @@ export default async function InvitePage({
   if (!error) redirect("/week");
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col bg-ground pb-8">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col bg-ground pb-[calc(var(--bk-safe-bottom)+32px)]">
       <ScreenHeader title="Invite" />
       <div className="bk-gutter mt-4 flex flex-col items-start gap-3">
         <div className="w-full">

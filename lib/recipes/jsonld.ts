@@ -53,6 +53,20 @@ function firstNumber(v: Json): number | null {
   return null;
 }
 
+/** The widest image that states a numeric width, else the first image. */
+function bestImage(v: Json, base?: string): string | null {
+  if (Array.isArray(v)) {
+    let best: { url: string; width: number } | null = null;
+    for (const x of v) {
+      if (!isObj(x) || typeof x.width !== 'number' || !(x.width > 0)) continue;
+      const url = firstImage(x, base);
+      if (url && (!best || x.width > best.width)) best = { url, width: x.width };
+    }
+    if (best) return best.url;
+  }
+  return firstImage(v, base);
+}
+
 function firstImage(v: Json, base?: string): string | null {
   if (typeof v === 'string') return httpUrl(v, base);
   if (Array.isArray(v)) {
@@ -135,7 +149,7 @@ export function extractRecipeJsonLd(html: string, pageUrl?: string): ExtractedRe
         servings: firstNumber(node.recipeYield),
         ingredients,
         steps: steps(node.recipeInstructions),
-        image: firstImage(node.image, pageUrl),
+        image: bestImage(node.image, pageUrl),
         rating: rating ? num(rating.ratingValue) : null,
         ratingCount: rating ? num(rating.ratingCount ?? rating.reviewCount) : null,
         totalMinutes: minutes(node.totalTime),

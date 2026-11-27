@@ -3,7 +3,7 @@ import { isIP, type LookupFunction } from 'node:net';
 import { Agent, fetch as undiciFetch } from 'undici';
 
 export type ImportErrorCode =
-  | 'bad_url' | 'blocked_host' | 'too_large' | 'timeout' | 'not_html' | 'fetch_failed';
+  | 'bad_url' | 'blocked_host' | 'too_large' | 'timeout' | 'not_html' | 'not_image' | 'fetch_failed';
 
 export class ImportError extends Error {
   constructor(public readonly code: ImportErrorCode, message?: string) {
@@ -115,13 +115,13 @@ interface Capped {
   body: ReadableStream<Uint8Array> | null;
 }
 
-async function readCapped(res: Capped, maxBytes: number): Promise<string> {
+async function readCappedBytes(res: Capped, maxBytes: number): Promise<Uint8Array> {
   const declared = Number(res.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) {
     await res.body?.cancel().catch(() => {});
     throw new ImportError('too_large');
   }
-  if (!res.body) return '';
+  if (!res.body) return new Uint8Array(0);
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -141,19 +141,25 @@ async function readCapped(res: Capped, maxBytes: number): Promise<string> {
     buf.set(c, at);
     at += c.byteLength;
   }
-  return new TextDecoder('utf-8').decode(buf);
+  return buf;
 }
 
 /**
- * Fetches a public web page for recipe import. Server only: it refuses non-http(s) URLs, any host
- * that resolves to a private/loopback/link-local address, follows at most 3 redirects (re-checking
- * each), and stops at `maxBytes`.
+ * The one guarded fetch. Server only: it refuses non-http(s) URLs, any host that resolves to a
+ * private/loopback/link-local address, follows at most 3 redirects (re-checking each), accepts only
+ * a reply whose content-type passes `okType`, and stops at `maxBytes` or `timeoutMs`.
  */
-export async function fetchRecipePage(
+export async function fetchGuarded(
   url: string,
-  opts: { timeoutMs?: number; maxBytes?: number } = {},
-): Promise<string> {
-  const { timeoutMs = 8000, maxBytes = 2 * 1024 * 1024 } = opts;
+  opts: {
+    accept: string;
+    okType: (contentType: string) => boolean;
+    wrongType: ImportErrorCode;
+    timeoutMs: number;
+    maxBytes: number;
+  },
+): Promise<Uint8Array> {
+  const { timeoutMs, maxBytes } = opts;
   const signal = AbortSignal.timeout(timeoutMs);
   let current: URL;
   try {
@@ -170,7 +176,7 @@ export async function fetchRecipePage(
         redirect: 'manual',
         signal,
         dispatcher: agent,
-        headers: { accept: 'text/html,application/xhtml+xml', 'user-agent': USER_AGENT },
+        headers: { accept: opts.accept, 'user-agent': USER_AGENT },
       });
       if (res.status >= 300 && res.status < 400) {
         const location = res.headers.get('location');
@@ -188,11 +194,11 @@ export async function fetchRecipePage(
         throw new ImportError('fetch_failed', `http ${res.status}`);
       }
       const type = res.headers.get('content-type');
-      if (type && !/text\/html|application\/xhtml\+xml/i.test(type)) {
+      if (type && !opts.okType(type)) {
         await res.body?.cancel().catch(() => {});
-        throw new ImportError('not_html');
+        throw new ImportError(opts.wrongType);
       }
-      return await readCapped(res as unknown as Capped, maxBytes);
+      return await readCappedBytes(res as unknown as Capped, maxBytes);
     }
   } catch (e) {
     if (e instanceof ImportError) throw e;
@@ -202,4 +208,33 @@ export async function fetchRecipePage(
     }
     throw new ImportError('fetch_failed');
   }
+}
+
+/** Fetches a public web page for recipe import (see `fetchGuarded`). */
+export async function fetchRecipePage(
+  url: string,
+  opts: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<string> {
+  const bytes = await fetchGuarded(url, {
+    accept: 'text/html,application/xhtml+xml',
+    okType: (t) => /text\/html|application\/xhtml\+xml/i.test(t),
+    wrongType: 'not_html',
+    timeoutMs: opts.timeoutMs ?? 8000,
+    maxBytes: opts.maxBytes ?? 2 * 1024 * 1024,
+  });
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+/** Fetches a public image (5 s, 8 MB, content-type must start with image/). */
+export async function fetchPublicBytes(
+  url: string,
+  opts: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<Uint8Array> {
+  return fetchGuarded(url, {
+    accept: 'image/*',
+    okType: (t) => /^image\//i.test(t.trim()),
+    wrongType: 'not_image',
+    timeoutMs: opts.timeoutMs ?? 5000,
+    maxBytes: opts.maxBytes ?? 8 * 1024 * 1024,
+  });
 }

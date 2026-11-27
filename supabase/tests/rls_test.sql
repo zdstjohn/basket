@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(219);
+select plan(247);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -238,12 +238,19 @@ select is((select status from public.meal_verdicts), 'answered', 'C, in the same
 update public.meal_verdicts set status = 'skipped';
 select is((select status from public.meal_verdicts), 'answered', 'a skip never downgrades an answer');
 select is((select votes from public.meal_verdicts), '{"x":"up"}'::jsonb, 'the votes survive the skip');
+select is((select updated_by from public.meal_verdicts), 'cccccccc-0000-4000-8000-00000000000c'::uuid, 'the update is stamped with whoever made it');
 reset role;
 
 select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
 select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-25', 'answered')$q$, '23505', null, 'a second verdict for the same meal and day is a unique violation');
 select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-24', 'maybe')$q$, '23514', null, 'an unknown verdict status violates the check');
 select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status, votes) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-24', 'answered', '[]')$q$, '23514', null, 'votes must be an object');
+select lives_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status, updated_by) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-20', 'skipped', 'cccccccc-0000-4000-8000-00000000000c')$q$, 'A can insert a verdict even while naming someone else');
+select is((select updated_by from public.meal_verdicts where eaten_on = '2026-11-20'), 'aaaaaaaa-0000-4000-8000-00000000000a'::uuid, 'the insert is stamped with whoever made it, not who the client named');
+select throws_ok($q$delete from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'nobody can delete a verdict, even in their own household');
+select throws_ok($q$delete from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '42501', null, 'A cannot delete an HB verdict');
+select throws_ok($q$update public.meal_verdicts set household_id = (select v::uuid from t_kv where k = 'HB') where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'A cannot move an HA verdict into HB');
+select throws_ok($q$update public.meal_verdicts set meal_id = (select v::uuid from t_kv where k = 'M_B') where household_id = (select v::uuid from t_kv where k = 'HA') and eaten_on = '2026-11-20'$q$, '23503', null, 'A cannot point an HA verdict at an HB meal');
 
 update public.people set allergies = array['tree nuts'] where household_id = (select v::uuid from t_kv where k = 'HA');
 select is((select allergies from public.people where household_id = (select v::uuid from t_kv where k = 'HA') limit 1), array['tree nuts'], 'A can set allergies on HA people');
@@ -258,13 +265,17 @@ select throws_ok($q$update public.meals set person_changes = '{}' where househol
 select lives_ok($q$update public.meals set method = 'oven', total_minutes = 45, make_ahead = true, rating = 4.5, rating_count = 812, likes = 3, steps = '["Mix","Bake"]', person_changes = '[{"personId":"x","change":"leave_out"}]', facts_checked_at = now() where household_id = (select v::uuid from t_kv where k = 'HA')$q$, 'valid meal facts are accepted');
 select is((select method || total_minutes::text || rating::text from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 'oven454.5', 'the meal facts read back');
 select is((select jsonb_array_length(steps) from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 2, 'steps read back');
-select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and method is not null), 0, 'A''s update did not reach an HB meal');
+select lives_ok($q$update public.meals set photo_preview = 'data:image/webp;base64,AAAA', photo_width = 800 where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '0017 a member can write a meal''s photo preview and width');
+select is((select photo_width from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 800, '0017 the photo width reads back');
+select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and photo_preview is not null), 0, '0017 A''s preview write did not reach an HB meal');
 
 reset role;
 
 select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
 select is((select status from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), 'skipped', 'A''s update left the HB verdict alone');
 select is((select votes from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), '{}'::jsonb, 'A''s update left the HB votes alone');
+select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and method is not null), 0, 'A''s update did not reach an HB meal');
+select throws_ok($q$update public.meal_verdicts set household_id = (select v::uuid from t_kv where k = 'HA') where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '42501', null, 'B cannot move an HB verdict into HA');
 select is((select count(*)::int from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HA')), 0, 'B sees no HA verdicts');
 select is((select allergies from public.people where household_id = (select v::uuid from t_kv where k = 'HB') limit 1), '{}'::text[], 'A''s update left HB allergies alone');
 reset role;
@@ -462,15 +473,21 @@ select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
 select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'slow', 'per_day: two holds today is the daily limit');
 reset role;
 update public.spend_limits set per_day = 300;
+-- A name Postgres does not list can only be an old row now (a trigger refuses new ones): plant one.
+set local session_replication_role = replica;
 update public.households set time_zone = 'nonsense' where id = (select v::uuid from t_kv where k = 'HD');
+set local session_replication_role = origin;
 select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
 select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'an unknown time zone falls back instead of failing');
 reset role;
 
 -- The untrusted pool: busy for an untrusted household, ok for a trusted one.
 update public.households set ai_cap_cents = 2000000000 where id = (select v::uuid from t_kv where k = 'HA');
-insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HA'), 'parse', 'test', 1500000000);
-update public.spend_limits set untrusted_day_cents = 1000000000;
+update public.spend_limits set untrusted_day_cents = 1 + (
+  select coalesce(sum(u.cost_cents), 0) from public.ai_usage u join public.households x on x.id = u.household_id
+  where not x.trusted and u.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc' and u.created_at <= now()
+    and (u.kind <> 'hold' or u.created_at > now() - interval '90 seconds'));
+insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HA'), 'parse', 'test', 5);
 select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
 select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 1), 'busy', 'untrusted pool full: busy for an untrusted household');
 reset role;
@@ -478,6 +495,79 @@ update public.households set trusted = true where id = (select v::uuid from t_kv
 select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
 select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 1), 'ok', 'untrusted pool full: ok for a trusted household');
 reset role;
+
+-- Spoonacular searches count: strangers fill the shared pool with them, and then get busy; a trusted one searches on.
+update public.households set trusted = false where id = (select v::uuid from t_kv where k = 'HA');
+update public.spend_limits set untrusted_day_cents = 1 + (
+  select coalesce(sum(u.cost_cents), 0) from public.ai_usage u join public.households x on x.id = u.household_id
+  where not x.trusted and u.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc' and u.created_at <= now()
+    and (u.kind <> 'hold' or u.created_at > now() - interval '90 seconds'));
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select lives_ok($q$insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HD'), 'search', 'spoonacular', 0.5), ((select v::uuid from t_kv where k = 'HD'), 'search', 'spoonacular', 0.5)$q$, 'a member records two Spoonacular searches');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'busy', 'two Spoonacular searches fill the untrusted pool: busy');
+reset role;
+update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HA');
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 1), 'ok', 'a trusted household still gets through the full pool');
+reset role;
+update public.spend_limits set untrusted_day_cents = 1000000000;
+update public.households set trusted = false where id = (select v::uuid from t_kv where k = 'HD');
+
+-- Members cannot choose created_at or id, and a future-dated row counts for nothing.
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select throws_ok($q$insert into public.ai_usage (household_id, kind, model, created_at) values ((select v::uuid from t_kv where k = 'HD'), 'parse', 'x', now() + interval '1 day')$q$, '42501', null, 'a member cannot set created_at on a usage row');
+select throws_ok($q$insert into public.ai_usage (id, household_id, kind, model) values (gen_random_uuid(), (select v::uuid from t_kv where k = 'HD'), 'parse', 'x')$q$, '42501', null, 'a member cannot set the id of a usage row');
+reset role;
+update public.spend_limits set untrusted_day_cents = 1 + (
+  select coalesce(sum(u.cost_cents), 0) from public.ai_usage u join public.households x on x.id = u.household_id
+  where not x.trusted and u.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc' and u.created_at <= now()
+    and (u.kind <> 'hold' or u.created_at > now() - interval '90 seconds'));
+insert into public.ai_usage (household_id, kind, model, cost_cents, created_at) values ((select v::uuid from t_kv where k = 'HD'), 'parse', 'test', 50, now() + interval '1 day');
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'a future-dated row does not count toward the pool');
+reset role;
+update public.spend_limits set untrusted_day_cents = 1000000000;
+
+-- A direct call cannot hold more than 5 cents.
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 100), 'ok', 'a big hold is accepted');
+reset role;
+select is((select count(*)::int from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HA') and kind = 'hold' and cost_cents = 5), 1, 'and clamped to 5 cents');
+
+-- One row cannot cost more than 50 cents, so one inserted row cannot fill the shared pool.
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select throws_ok($q$insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HD'), 'parse', 'x', 51)$q$, '23514', null, 'a usage row over 50 cents is refused');
+reset role;
+select ok(not has_function_privilege('anon', 'public.households_check_time_zone()', 'execute') and not has_function_privilege('authenticated', 'public.households_check_time_zone()', 'execute') and not has_function_privilege('public', 'public.households_check_time_zone()', 'execute'), 'nobody can call the time zone trigger function directly');
+
+-- Trusted households get the higher rate limits.
+delete from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HB') and kind = 'hold';
+update public.households set trusted = true, ai_cap_cents = 2000000000 where id = (select v::uuid from t_kv where k = 'HB');
+update public.spend_limits set per_minute = 1, trusted_per_minute = 2;
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'ok', 'trusted per_minute: first call ok');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'ok', 'trusted per_minute: the second is ok where an untrusted household would be slow');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'slow', 'trusted per_minute: the third is slow');
+reset role;
+update public.spend_limits set per_minute = 20, trusted_per_minute = 60;
+
+-- A time zone Postgres does not list cannot be stored.
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select throws_ok($q$update public.households set time_zone = 'nonsense' where id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'a member cannot set an unknown time zone');
+select lives_ok($q$update public.households set time_zone = 'Europe/Paris' where id = (select v::uuid from t_kv where k = 'HA')$q$, 'a listed time zone is accepted');
+reset role;
+
+-- No spend_limits row means the defaults, not no limits.
+delete from public.spend_limits;
+-- (trusted, so the answer does not depend on how much untrusted usage the local database holds today)
+update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HD');
+update public.ai_usage set created_at = now() - interval '2 days' where household_id = (select v::uuid from t_kv where k = 'HD') and kind = 'hold';
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'with no spend_limits row ai_gate still answers, on the defaults');
+reset role;
+insert into public.spend_limits default values;
+update public.spend_limits set untrusted_day_cents = 1000000000;
+update public.households set trusted = false where id = (select v::uuid from t_kv where k = 'HD');
 
 -- The untrusted Kroger pool (600 a day for all untrusted households together).
 update public.kroger_global_calls set untrusted_calls = 598 where day = (now() at time zone 'utc')::date;
@@ -574,6 +664,8 @@ select ok((select a = (select count(*) from public.always_have) and c = (select 
                   and w = (select count(*) from public.week_item_state)
                   and names = (select string_agg(canonical, ',' order by canonical) from public.always_have) from t_tidy_before),
           '0016 run twice changes nothing');
+
+select ok(not has_function_privilege('anon', 'public.tidy_food(text)', 'execute') and not has_function_privilege('authenticated', 'public.tidy_food(text)', 'execute') and not has_function_privilege('public', 'public.tidy_food(text)', 'execute'), '0016 tidy_food is not callable by anon or signed-in people');
 
 select * from finish();
 rollback;
