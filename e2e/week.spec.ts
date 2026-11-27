@@ -158,9 +158,10 @@ test("sources: the toggle, the Spoonacular footer, the fallback note and the lim
   await expect(page.getByTestId("result-card").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Recipes from Spoonacular" })).toBeVisible();
 
+  // The big sites have nothing, so Spoonacular is tried too; the empty answer names the source that was last searched.
   await searchFor(page, "zzzz nothing");
   await expect(
-    page.getByText("No recipes found on our sites. Try other words, or paste a recipe."),
+    page.getByText("No recipes found on Spoonacular. Try other words, or paste a recipe."),
   ).toBeVisible();
 
   await page.route("**/api/recipes/search", (route) =>
