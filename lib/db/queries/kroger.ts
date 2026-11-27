@@ -109,16 +109,20 @@ export async function countCartSendsSince(sb: Sb, householdId: string, sinceIso:
   return count ?? 0;
 }
 
-/** Sends of the household that are still `pending` and were started since `sinceIso`, in any week. */
-export async function listPendingSendsSince(sb: Sb, householdId: string, sinceIso: string): Promise<{ id: string; createdAt: string }[]> {
+/** Sends of the household that are `pending` or `sent` (not failed) and were started since `sinceIso`, in any week. */
+export async function listLiveSendsSince(
+  sb: Sb,
+  householdId: string,
+  sinceIso: string,
+): Promise<{ id: string; createdAt: string; status: string }[]> {
   const { data, error } = await sb
     .from('cart_sends')
-    .select('id, created_at')
+    .select('id, created_at, status')
     .eq('household_id', householdId)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'sent'])
     .gte('created_at', sinceIso);
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({ id: r.id, createdAt: r.created_at }));
+  return (data ?? []).map((r) => ({ id: r.id, createdAt: r.created_at, status: r.status }));
 }
 
 /** Records a send as `pending`, before Kroger is asked. The signed-in user becomes its sender. */

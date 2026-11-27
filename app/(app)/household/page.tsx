@@ -1,5 +1,6 @@
 import { createServerClient } from "@/lib/db/server";
-import { getMyHousehold, listPeople } from "@/lib/db/queries/household";
+import { listPeople } from "@/lib/db/queries/household";
+import { getMyHouseholdOnce } from "@/lib/db/queries/household-server";
 import { linkStatus } from "@/lib/kroger/link";
 import { isCartConfigured } from "@/lib/kroger/oauth";
 import { isKrogerConfigured } from "@/lib/kroger/token";
@@ -15,7 +16,7 @@ export default async function HouseholdPage({
   const {
     data: { user },
   } = await sb.auth.getUser();
-  const household = await getMyHousehold(sb);
+  const household = await getMyHouseholdOnce();
   if (!user || !household) return null; // the layout has already redirected
 
   const [people, members] = await Promise.all([

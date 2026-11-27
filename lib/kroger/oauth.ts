@@ -97,14 +97,18 @@ export async function exchangeCode(code: string, verifier: string): Promise<User
 
 /**
  * New tokens from a refresh token. 'refused' only when Kroger says the refresh token itself is dead (error invalid_grant).
- * 'rejected' for any other 4xx (a wrong client secret, say): our setup is at fault, not the link. Throws on network or 5xx.
+ * 'rejected' for any other 4xx but 429 (a wrong client secret, say): our setup is at fault, not the link. Throws on network, 429 or 5xx.
  */
 export async function refreshTokens(refresh: string): Promise<UserTokens | 'refused' | 'rejected'> {
   if (fakeOn('KROGER_FAKE')) return fakeTokens();
   const res = await tokenCall({ grant_type: 'refresh_token', refresh_token: refresh });
-  if (res.status >= 400 && res.status < 500) {
+  // A 429 is Kroger asking us to slow down, not a verdict on the link: throw so the caller can retry later.
+  if (res.status >= 400 && res.status < 500 && res.status !== 429) {
     const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
-    return body?.error === 'invalid_grant' ? 'refused' : 'rejected';
+    if (body?.error === 'invalid_grant') return 'refused';
+    // Status number only: never the body or a token.
+    console.error(`kroger refresh rejected ${res.status}`);
+    return 'rejected';
   }
   if (!res.ok) throw new Error(`kroger token ${res.status}`);
   return readTokens(res, refresh);

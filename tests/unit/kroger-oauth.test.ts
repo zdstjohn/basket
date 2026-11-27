@@ -122,6 +122,17 @@ describe('refreshTokens', () => {
     fetchMock.mockResolvedValue(new Response('not json', { status: 401 }));
     expect(await refreshTokens('R1')).toBe('rejected');
   });
+  it('throws on a 429 like a 5xx, so it can be retried', async () => {
+    fetchMock.mockResolvedValue(json(429, { error: 'too_many_requests' }));
+    await expect(refreshTokens('R1')).rejects.toThrow('kroger token 429');
+  });
+  it("logs one fixed line with the status number only when 'rejected'", async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValue(json(401, { error: 'invalid_client', error_description: 'secret-body-text' }));
+    expect(await refreshTokens('R-secret-token')).toBe('rejected');
+    expect(err.mock.calls).toEqual([['kroger refresh rejected 401']]);
+    err.mockRestore();
+  });
   it('throws on 503 and on a network error', async () => {
     fetchMock.mockResolvedValue(json(503, {}));
     await expect(refreshTokens('R1')).rejects.toThrow('kroger token 503');

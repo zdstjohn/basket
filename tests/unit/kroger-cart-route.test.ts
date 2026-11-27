@@ -272,6 +272,8 @@ describe('POST /api/kroger/cart', () => {
     expect((await again.json()).error).toBe('already_sent');
     expect(addToCart).not.toHaveBeenCalled();
     expect(w.sends).toHaveLength(1);
+    // A person resends well after the first send, not within the same few seconds.
+    w.sends[0].created_at = new Date(Date.now() - 60_000).toISOString();
     const forced = await post(body({ resend: true }));
     expect(forced.status).toBe(200);
     expect(addToCart).toHaveBeenCalledTimes(1);
@@ -417,6 +419,22 @@ describe('POST /api/kroger/cart', () => {
     expect(addToCart.mock.calls.length).toBeLessThanOrEqual(1);
     expect([a.status, b.status].filter((s) => s === 200).length).toBe(addToCart.mock.calls.length);
     expect(w.sends.filter((s) => s.status === 'pending')).toHaveLength(0);
+  });
+
+  it('a resend whose twin already reached sent 2 s earlier stands down', async () => {
+    const twin = { id: 'aaa', household_id: 'h1', week_id: WEEK, user_id: 'u1', status: 'sent', items: [], created_at: new Date(Date.now() - 2_000).toISOString() };
+    setup({ existing: [twin] });
+    const res = await post(body({ resend: true }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('already_sending');
+    expect(addToCart).not.toHaveBeenCalled();
+    expect(w.sends.find((s) => s.id !== 'aaa')?.status).toBe('failed');
+  });
+
+  it('a resend goes ahead when the earlier sent row is more than five seconds old', async () => {
+    const old = { id: 'aaa', household_id: 'h1', week_id: WEEK, user_id: 'u1', status: 'sent', items: [], created_at: new Date(Date.now() - 60_000).toISOString() };
+    setup({ existing: [old] });
+    expect((await post(body({ resend: true }))).status).toBe(200);
   });
 
   it('a resend stands down for any send still in flight, even one that started later', async () => {

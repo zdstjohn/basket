@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { CartBodySchema } from '@/lib/ai/schemas';
 import { isResponse, readJson, requireHousehold } from '@/lib/api/household-context';
 import type { Database } from '@/lib/db/types';
-import { countCartSendsSince, insertPendingSend, listCartSends, listMatches, listPendingSendsSince, settleSend } from '@/lib/db/queries/kroger';
+import { countCartSendsSince, insertPendingSend, listCartSends, listMatches, listLiveSendsSince, settleSend } from '@/lib/db/queries/kroger';
 import { cartDiff, type CartLine } from '@/lib/domain/cart';
 import { addToCart, KrogerAuth, KrogerLimited, KrogerNotAdded, KrogerUnsure } from '@/lib/kroger/cart';
 import { getUserAccess } from '@/lib/kroger/link';
@@ -136,12 +136,16 @@ export async function POST(req: Request) {
     // The row is in. Look again for anything that overlaps it: a send of this household started earlier and
     // still in flight (the earlier one goes on, this one stands down), or one that finished since we looked.
     try {
-      const pending = await listPendingSendsSince(sb, household.id, new Date(Date.now() - IN_FLIGHT_MS).toISOString());
+      const live = await listLiveSendsSince(sb, household.id, new Date(Date.now() - IN_FLIGHT_MS).toISOString());
+      const pending = live.filter((p) => p.status === 'pending');
       const mine = pending.find((p) => p.id === sendId);
       // A send of the same list yields to an earlier one. A resend, which skips the "already sent" check, yields
       // to any other send in flight, whichever started first: the later one may already have passed its own check.
       const racing = (at: string) => !mine || Math.abs(Date.parse(at) - Date.parse(mine.createdAt)) <= RACE_MS;
-      const earlier = pending.some(
+      // A resend skips the "already sent" check, so a twin that already reached `sent` a moment before it also
+      // counts: its cart is already filled, and sending again would double it.
+      const sentTwin = Boolean(body.resend && mine && live.some((p) => p.status === 'sent' && racing(p.createdAt)));
+      const earlier = sentTwin || pending.some(
         (p) =>
           p.id !== sendId &&
           (body.resend || !mine || racing(p.createdAt) || p.createdAt < mine.createdAt || (p.createdAt === mine.createdAt && p.id < sendId)),

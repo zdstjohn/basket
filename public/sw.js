@@ -15,11 +15,9 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-async function save(cache, path) {
-  const res = await fetch(path, { credentials: "same-origin" });
-  // A redirect means signed out: never keep a login page as the list.
-  if (res.ok && !res.redirected) await cache.put(path, res);
-}
+const SLOW_MS = 4000; // the list waits this long for the network before opening from the saved page
+
+const save = (cache, path) => self.saveOnce(cache, path, (p) => fetch(p, { credentials: "same-origin" }));
 
 self.addEventListener("message", (event) => {
   const data = event.data;
@@ -54,10 +52,12 @@ self.addEventListener("fetch", (event) => {
           fetch(req).then((res) => {
             if (res.ok) {
               const copy = res.clone();
-              caches.open(CACHE).then(async (c) => {
-                await c.put(url.pathname, copy);
-                await trimStatic(c, MAX_STATIC);
-              });
+              event.waitUntil(
+                caches.open(CACHE).then(async (c) => {
+                  await c.put(url.pathname, copy);
+                  await trimStatic(c, MAX_STATIC);
+                }),
+              );
             }
             return res;
           }),
@@ -67,17 +67,22 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (req.mode === "navigate" && url.pathname === PAGE) {
+    const network = fetch(req).then((res) => {
+      if (res.ok && !res.redirected) {
+        const copy = res.clone();
+        // Keep the worker alive until the copy is saved, even if the page was already served from the saved one.
+        event.waitUntil(caches.open(CACHE).then((c) => c.put(PAGE, copy)).catch(() => {}));
+      }
+      return res;
+    });
+    // Only the list goes on a timer: on weak signal it opens from the saved page after SLOW_MS instead of waiting.
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res.ok && !res.redirected) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(PAGE, copy));
-          }
-          return res;
-        })
-        .catch(async () => (await caches.match(PAGE)) || Response.error()),
+      self
+        .raceSaved(network, () => caches.match(PAGE), SLOW_MS, (ms) => new Promise((r) => setTimeout(r, ms)))
+        .catch(() => Response.error()),
     );
+    // The page keeps loading after the timer; let it finish so the saved copy is refreshed.
+    event.waitUntil(network.catch(() => {}));
     return;
   }
 
