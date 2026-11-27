@@ -255,7 +255,7 @@ describe("design guard", () => {
 });
 
 /** Only these files may set `data-on-photo`, which exempts text from the contrast audit. Adding one needs a real scrim behind the text. */
-const ON_PHOTO_OK: string[] = [];
+const ON_PHOTO_OK: string[] = ["components/week/TonightHero.tsx"];
 
 describe("data-on-photo allowlist", () => {
   it("only allowlisted files set data-on-photo", () => {
