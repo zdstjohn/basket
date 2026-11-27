@@ -114,3 +114,53 @@ test("layout: every screen fits, taps are 44px and nothing hides under the nav",
   }
   expect(found, found.join("\n")).toEqual([]);
 });
+
+/** Every control inside the open dialog is a full-size tap target that stays on screen. */
+async function dialogProblems(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const out: string[] = [];
+    const dialog = document.querySelector("dialog[open]");
+    if (!dialog) return ["no dialog open"];
+    if (document.documentElement.scrollWidth > window.innerWidth) out.push("horizontal scroll");
+    if (dialog.scrollWidth > dialog.clientWidth + 1) out.push("dialog scrolls sideways");
+    for (const el of dialog.querySelectorAll<HTMLElement>("button, a, label")) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      const name = `${el.tagName.toLowerCase()} "${(el.textContent ?? "").trim().slice(0, 30)}"`;
+      if (r.width < 44 || r.height < 44) out.push(`${name} is ${Math.round(r.width)}x${Math.round(r.height)}`);
+      if (r.right > window.innerWidth + 0.5 || r.left < -0.5) out.push(`${name} is off screen sideways`);
+    }
+    return out;
+  });
+}
+
+test("layout: the cook double picker and the leftovers sheet fit", async ({ page }, testInfo) => {
+  const shots = `e2e/screenshots/${testInfo.project.name}`;
+  await createHousehold(page, "layout-leftovers");
+  await page.goto("/week/add?day=wed&slot=dinner");
+  await page.getByLabel("What's for dinner?").fill("tacos");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
+  await page.getByRole("button", { name: "Add to Wednesday" }).click();
+  await expect(page).toHaveURL(/\/week$/);
+
+  await page.getByTestId("day-row-wed").getByRole("button").click();
+  expect(await dialogProblems(page), "meal sheet").toEqual([]);
+  await page.getByTestId("cook-double").getByRole("button", { name: "Cook double" }).click();
+  await expect(page.getByTestId("night-picker")).toBeVisible();
+  expect(await dialogProblems(page), "picker").toEqual([]);
+  await page.screenshot({ path: `${shots}/layout-leftovers-picker.png` });
+  await page.getByTestId("night-picker").locator("label", { hasText: "Friday" }).click();
+  await page.getByTestId("night-picker").getByRole("button", { name: "Cook double", exact: true }).click();
+  await expect(page.getByTestId("cook-double")).toContainText("Leftovers on Friday");
+  expect(await dialogProblems(page), "meal sheet with the done box").toEqual([]);
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await page.getByTestId("day-row-fri").getByRole("button").click();
+  await expect(page.getByRole("dialog")).toContainText("Nothing to buy for Friday");
+  expect(await dialogProblems(page), "leftovers sheet").toEqual([]);
+  await page.screenshot({ path: `${shots}/layout-leftovers-sheet.png` });
+  await page.getByRole("button", { name: "Move to another night" }).click();
+  await expect(page.getByTestId("night-picker")).toBeVisible();
+  expect(await dialogProblems(page), "move picker").toEqual([]);
+});

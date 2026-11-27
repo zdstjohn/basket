@@ -179,7 +179,7 @@ describe('leftover nights and the list', () => {
   const grams = (i: { qty: { amount: number } }) => i.qty.amount;
   const row = (b: ReturnType<typeof buildList>, food: string) => byKey(b, food);
 
-  it('cook double buys exactly twice, the leftovers night buys nothing, and the swap doubles', () => {
+  it('cook double scales every food (and the swap) by two before packing, and the leftovers night adds nothing', () => {
     const single = buildList(inputs([{ meal: tacos, servings: null }]));
     const doubled = buildList(inputs(weekEntries([cook7_6, leftoverFri], mealsMap)));
     // The list rounds counts (cans, onions) up to whole ones, so exact doubling is checked on the scaled
@@ -196,6 +196,26 @@ describe('leftover nights and the list', () => {
       expect(grams(row(doubled, food))).toBe(Math.ceil(twice.find((l) => l.canonical === food)!.qty.amount - 1e-9));
     }
     expect(doubled.items).toHaveLength(single.items.length);
+  });
+
+  it('a cook-double week buys exactly what two separate dinners of that meal buy, row by row, and costs the same', () => {
+    const prices = [
+      match('boneless chicken thighs', [cand('0000000000011', '1 lb', 399, { soldBy: 'WEIGHT' })]),
+      match('black beans', [cand('0000000000012', '15 oz', 125)]),
+      match('yellow onion', [cand('0000000000013', '1 each', 100)]),
+      match('corn tortillas', [cand('0000000000014', '12 each', 250)]),
+    ];
+    const withPrices = (entries: ListInputs['entries']): ListInputs => base({ entries, people, staples: [], matches: prices });
+    const cookDoubleWeek = buildList(withPrices(weekEntries([cook7_6, leftoverFri], mealsMap)));
+    const twoDinners = buildList(withPrices([{ meal: tacos, servings: null }, { meal: tacos, servings: null }]));
+    const rows = (b: ReturnType<typeof buildList>) => b.items.map((i) => [i.key, i.qty.amount, i.qty.kind]).sort();
+    expect(rows(cookDoubleWeek)).toEqual(rows(twoDinners));
+    const amt = (food: string) => cookDoubleWeek.items.find((i) => i.key === food)!.qty.amount;
+    expect(Math.round(amt('boneless chicken thighs'))).toBe(635);
+    expect([amt('black beans'), amt('yellow onion'), amt('corn tortillas')]).toEqual([1, 2, 23]);
+    expect(cookDoubleWeek.items.map((i) => i.estimateCents)).toEqual(twoDinners.items.map((i) => i.estimateCents));
+    expect(listTotals(cookDoubleWeek.items).totalCents).toBe(listTotals(twoDinners.items).totalCents);
+    expect(listTotals(cookDoubleWeek.items).totalCents).toBeGreaterThan(listTotals(buildList(withPrices([{ meal: tacos, servings: null }])).items).totalCents);
   });
 
   it('a phone on the last release adds nothing for a leftovers night either', () => {

@@ -5,16 +5,19 @@ import { useState } from "react";
 import { BudgetMeter } from "@/components/BudgetMeter";
 import { DayRow } from "@/components/DayRow";
 import { MealSheet } from "@/components/MealSheet";
+import { LeftoverSheet } from "@/components/leftovers/LeftoverSheet";
 import { Sheet } from "@/components/Sheet";
 import { useWeekData } from "@/components/useWeekData";
 import { useWeekList } from "@/lib/useWeekList";
 import { copyWeek } from "@/lib/db/queries/weeks";
 import { toMeal } from "@/lib/db/queries/meals";
 import type { Household } from "@/lib/db/rows";
+import { cookNightOf, cookState, isLeftover } from "@/lib/domain/leftovers";
 import { householdServings } from "@/lib/domain/portions";
 import { daysOfWeek, type Day } from "@/lib/domain/weeks";
 import { bigGreenLink, focusRing, pillButton, stickyAboveNav } from "@/lib/ui";
 import { formatWeekRange } from "@/lib/week/format";
+import { leftoverRowNote } from "@/lib/week/leftover-copy";
 import { dayNote } from "@/lib/week/note";
 
 export function WeekScreen({ household }: { household: Household }) {
@@ -31,6 +34,9 @@ export function WeekScreen({ household }: { household: Household }) {
   const forDay = (d: Day) => data?.weekMeals.find((m) => m.day === d && m.slot === slot) ?? null;
   const open = openDay && data ? forDay(openDay) : null;
   const openMeal = open && data ? (data.meals.get(open.meal_id) ?? null) : null;
+  const mealNames = Object.fromEntries([...(data?.meals ?? [])].map(([id, m]) => [id, m.name]));
+  // Task 7 supplies the busy nights; until then none are marked.
+  const busyDays: Day[] = [];
 
   async function repeat() {
     if (!data?.lastWeek) return;
@@ -96,6 +102,7 @@ export function WeekScreen({ household }: { household: Household }) {
           days.map((d) => {
             const wm = forDay(d);
             const meal = wm ? data.meals.get(wm.meal_id) : null;
+            const cook = wm && isLeftover(wm) ? cookNightOf(data.weekMeals, wm) : null;
             return (
               <DayRow
                 key={d}
@@ -104,12 +111,24 @@ export function WeekScreen({ household }: { household: Household }) {
                 onOpen={() => setOpenDay(d)}
                 filled={
                   wm && meal
-                    ? {
-                        name: meal.name,
-                        note: dayNote(toMeal(meal), data.people, wm.servings_override === null ? null : Number(wm.servings_override)),
-                        photo: data.photos[meal.id] ?? null,
-                        favorite: meal.is_favorite,
-                      }
+                    ? isLeftover(wm)
+                      ? {
+                          name: "Leftovers",
+                          note: cook ? leftoverRowNote(meal.name, cook.day as Day) : meal.name,
+                          photo: data.photos[meal.id] ?? null,
+                          favorite: false,
+                        }
+                      : {
+                          name: meal.name,
+                          note: dayNote(
+                            toMeal(meal),
+                            data.people,
+                            wm.servings_override === null ? null : Number(wm.servings_override),
+                            cookState(wm, data.weekMeals, servings ?? 0).kind === "double",
+                          ),
+                          photo: data.photos[meal.id] ?? null,
+                          favorite: meal.is_favorite,
+                        }
                     : null
                 }
               />
@@ -125,7 +144,24 @@ export function WeekScreen({ household }: { household: Household }) {
         </Link>
       </div>
 
-      {data && openDay && open && openMeal && (
+      {data && openDay && open && openMeal && isLeftover(open) && (
+        <LeftoverSheet
+          sb={sb}
+          leftover={open}
+          cook={cookNightOf(data.weekMeals, open)}
+          meal={openMeal}
+          photo={data.photos[openMeal.id] ?? null}
+          people={data.people}
+          nights={data.weekMeals}
+          mealNames={mealNames}
+          weekDays={days}
+          busyDays={busyDays}
+          onClose={() => setOpenDay(null)}
+          onChanged={reload}
+        />
+      )}
+
+      {data && openDay && open && openMeal && !isLeftover(open) && (
         <MealSheet
           sb={sb}
           householdId={household.id}
@@ -134,6 +170,10 @@ export function WeekScreen({ household }: { household: Household }) {
           day={openDay}
           photo={data.photos[openMeal.id] ?? null}
           people={data.people}
+          nights={data.weekMeals}
+          mealNames={mealNames}
+          weekDays={days}
+          busyDays={busyDays}
           onClose={() => setOpenDay(null)}
           onChanged={reload}
         />

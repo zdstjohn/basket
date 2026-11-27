@@ -3,17 +3,23 @@
 import { useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import { Sheet } from "@/components/Sheet";
+import { CookDoubleRow } from "@/components/leftovers/CookDoubleRow";
+import { leftoverFailure } from "@/components/leftovers/errors";
+import { NightPicker } from "@/components/leftovers/NightPicker";
+import { useOnline } from "@/components/leftovers/useOnline";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { setMealPhoto, toMeal, updateMeal } from "@/lib/db/queries/meals";
-import { setWeekMeal } from "@/lib/db/queries/weeks";
+import { cookDouble, setWeekMeal, usualAmount } from "@/lib/db/queries/weeks";
 import type { MealRow, WeekMeal } from "@/lib/db/rows";
 import type { Database } from "@/lib/db/types";
+import { cookState, defaultChoice, doubleServings, nightChoices } from "@/lib/domain/leftovers";
 import { householdServings } from "@/lib/domain/portions";
 import type { Person } from "@/lib/domain/types";
 import type { Day } from "@/lib/domain/weeks";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
 import { focusRing, pillButton } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
+import { swapDoubleLine, takeOffNote } from "@/lib/week/leftover-copy";
 import { dayNote } from "@/lib/week/note";
 
 /** A planned dinner opened from the week: photo, link to the recipe, leftovers, favorite, take it off. */
@@ -25,6 +31,10 @@ export function MealSheet({
   day,
   photo,
   people,
+  nights,
+  mealNames,
+  weekDays,
+  busyDays,
   onClose,
   onChanged,
 }: {
@@ -35,6 +45,10 @@ export function MealSheet({
   day: Day;
   photo: string | null;
   people: Person[];
+  nights: WeekMeal[];
+  mealNames: Record<string, string>;
+  weekDays: Day[];
+  busyDays: Day[];
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
@@ -42,7 +56,10 @@ export function MealSheet({
   const [error, setError] = useState<string | null>(null);
   const base = householdServings(people);
   const override = weekMeal.servings_override === null ? null : Number(weekMeal.servings_override);
-  const extra = override === null ? 0 : Math.max(0, Math.round((override - base) * 10) / 10);
+  const online = useOnline();
+  const [view, setView] = useState<"main" | "pick">("main");
+  const state = cookState(weekMeal, nights, base);
+  const leftoverNight = state.kind === "double" ? state.night : null;
   const credit = !meal.photo_path && meal.photo_url ? meal.photo_credit : null;
 
   async function run(action: () => Promise<void>, failure: string) {
@@ -66,11 +83,51 @@ export function MealSheet({
       await setMealPhoto(sb, meal.id, { path });
     }, "We couldn't save that photo. Try again.");
 
-  const setLeftovers = (n: number) =>
-    run(
-      () => setWeekMeal(sb, weekMeal.week_id, day, weekMeal.slot, meal.id, n > 0 ? base + n : null),
-      "We couldn't change that. Try again.",
+  const choices = nightChoices({ cookDay: day, slot: weekMeal.slot, weekDays, rows: nights, busy: busyDays, cookId: weekMeal.id });
+  const takenNames: Record<string, string> = {};
+  for (const c of choices) if (c.taken === "dinner" && c.takenMealId) takenNames[c.day] = mealNames[c.takenMealId] ?? "A dinner";
+
+  /** Runs a leftovers change from the picker; on success the sheet goes back to the main view (the green box is the confirmation). */
+  async function changeLeftovers(action: () => Promise<void>, picked: Day | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      await onChanged();
+      setView("main");
+    } catch (e) {
+      setError(leftoverFailure(e, picked, "We couldn't change that. Try again."));
+      // The other phone may have changed the week: rebuild the choices from fresh rows.
+      await onChanged().catch(() => undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (view === "pick") {
+    return (
+      <Sheet label={meal.name} onClose={onClose}>
+        <NightPicker
+          mode="cook"
+          mealName={meal.name}
+          cookDay={day}
+          choices={choices}
+          takenNames={takenNames}
+          swapLine={swapDoubleLine(toMeal(meal), people)}
+          initial={defaultChoice(choices)}
+          busy={busy}
+          error={error}
+          showUsual={state.kind !== "usual"}
+          onConfirm={(picked) => void changeLeftovers(() => cookDouble(sb, weekMeal, doubleServings(base), picked), picked)}
+          onUsual={() => void changeLeftovers(() => usualAmount(sb, weekMeal), null)}
+          onBack={() => {
+            setError(null);
+            setView("main");
+          }}
+        />
+      </Sheet>
     );
+  }
 
   return (
     <Sheet label={meal.name} onClose={onClose}>
@@ -108,7 +165,7 @@ export function MealSheet({
           </label>
         </div>
 
-        <p className="text-sm text-muted">{dayNote(toMeal(meal), people, override)}</p>
+        <p className="text-sm text-muted">{dayNote(toMeal(meal), people, override, state.kind === "double")}</p>
         {meal.source_url && (
           <a
             href={meal.source_url}
@@ -120,17 +177,7 @@ export function MealSheet({
           </a>
         )}
 
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2">
-          <p className="text-sm font-medium">Leftovers: +{extra} servings</p>
-          <div className="flex gap-2">
-            <button type="button" aria-label="Fewer leftovers" disabled={busy || extra <= 0} onClick={() => void setLeftovers(extra - 1)} className={`${pillButton} w-11 px-0 text-lg`}>
-              −
-            </button>
-            <button type="button" aria-label="More leftovers" disabled={busy} onClick={() => void setLeftovers(extra + 1)} className={`${pillButton} w-11 px-0 text-lg`}>
-              +
-            </button>
-          </div>
-        </div>
+        <CookDoubleRow state={state} disabled={busy} offline={!online} onOpen={() => setView("pick")} />
 
         <button
           type="button"
@@ -142,19 +189,22 @@ export function MealSheet({
         >
           {meal.is_favorite ? "Remove from favorites" : "Save as a favorite"}
         </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            void run(async () => {
-              await setWeekMeal(sb, weekMeal.week_id, day, weekMeal.slot, null);
-              onClose();
-            }, "We couldn't take that off. Try again.")
-          }
-          className={`${pillButton} w-full text-[#A6261B]`}
-        >
-          Take off {dayName(day)}
-        </button>
+        <div className="flex flex-col gap-1.5">
+          {takeOffNote(leftoverNight) && <p className="text-[13px] text-[#4A544F]">{takeOffNote(leftoverNight)}</p>}
+          <button
+            type="button"
+            disabled={busy || !online}
+            onClick={() =>
+              void run(async () => {
+                await setWeekMeal(sb, weekMeal.week_id, day, weekMeal.slot, null);
+                onClose();
+              }, "We couldn't take that off. Try again.")
+            }
+            className={`${pillButton} w-full text-[#A6261B]`}
+          >
+            Take off {dayName(day)}
+          </button>
+        </div>
         {error && (
           <p role="alert" className="text-sm font-medium text-[#A6261B]">
             {error}
