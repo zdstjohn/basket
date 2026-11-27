@@ -252,22 +252,22 @@ async function clippedBy(target: Locator): Promise<string[]> {
     }
 
     const box = el.getBoundingClientRect();
-    // Past a scroller, what lies beyond the edge is reached by scrolling, so only clamps count from there up.
+    // Past a scroller, what lies beyond the edge is reached by scrolling, so only clamps count from there up (the scroller itself still counts for sideways clipping).
     let inScroller = false;
     for (let up = el.parentElement; up && up !== document.documentElement; up = up.parentElement) {
       if (lineClamped(up)) out.push(`ancestor ${name(up)} is clamped or ellipsized`);
       const s = up.tagName === "BODY" ? null : style(up);
       if (!s) continue;
-      if (!inScroller && (s.overflowY === "auto" || s.overflowY === "scroll")) {
-        inScroller = true;
-        continue;
-      }
-      if (inScroller) continue;
+      // Only an ancestor that really scrolls counts as a scroller; one that merely allows it still clips like any other.
+      const scrolls = (s.overflowY === "auto" || s.overflowY === "scroll") && up.scrollHeight > up.clientHeight + 0.5;
+      const wasScroller = inScroller;
+      if (scrolls) inScroller = true;
       const r = up.getBoundingClientRect();
       const hidesX = cuts(s.overflowX) && (box.left < r.left - 0.5 || box.right > r.right + 0.5);
-      const hidesY = cuts(s.overflowY) && (box.top < r.top - 0.5 || box.bottom > r.bottom + 0.5);
+      // Past a scroller, vertical overflow is reached by scrolling; sideways overflow never is.
+      const hidesY = !scrolls && !wasScroller && cuts(s.overflowY) && (box.top < r.top - 0.5 || box.bottom > r.bottom + 0.5);
       if (hidesX || hidesY) out.push(`ancestor ${name(up)} hides part of it`);
-      if (s.maxHeight !== "none" && cuts(s.overflowY) && box.height > parseFloat(s.maxHeight)) out.push(`ancestor ${name(up)} caps its height`);
+      if (!scrolls && !wasScroller && s.maxHeight !== "none" && cuts(s.overflowY) && box.height > parseFloat(s.maxHeight)) out.push(`ancestor ${name(up)} caps its height`);
     }
     return out;
   });

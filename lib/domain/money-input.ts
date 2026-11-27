@@ -11,8 +11,9 @@ export function parseMoneyToCents(text: string): number | null {
  * `zero: 'drop'` writes whole-dollar amounts without ".00" ("$200"), for amounts the family typed.
  */
 export function formatMoney(cents: number, opts?: { zero: "keep" | "drop" }): string {
-  const sign = cents < 0 ? "-" : "";
-  const abs = Math.abs(Math.round(cents));
+  const rounded = Math.round(cents);
+  const sign = rounded < 0 ? "-" : ""; // a fraction of a cent that rounds to zero is "$0.00", never "-$0.00"
+  const abs = Math.abs(rounded);
   const dollars = Math.floor(abs / 100);
   const rest = abs % 100;
   const whole = dollars.toLocaleString("en-US");

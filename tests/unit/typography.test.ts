@@ -27,6 +27,10 @@ describe("curly", () => {
 });
 
 describe("quantityParts", () => {
+  it("never reads as zero of a unit", () => {
+    expect(quantityParts(q(0, "tsp")).lead).not.toBe("0");
+    expect(quantityParts(q(0.01, "tsp")).lead).not.toBe("0");
+  });
   it("snaps simple fractions", () => {
     expect(quantityParts(q(1.5, "cup"))).toEqual({ lead: "1½", built: null, rest: " cups" });
     expect(quantityParts(q(0.5, "cup"))).toEqual({ lead: "½", built: null, rest: " cup" });

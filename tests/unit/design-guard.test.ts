@@ -23,13 +23,14 @@ const STRING_RULES: [string, RegExp][] = [
   ["stock text size", /\btext-(xs|sm|base|lg|xl|[2-9]xl)\b/],
   ["font weight outside 400/600/700", /\bfont-(thin|light|medium|extrabold|black)\b/],
   ["arbitrary radius", /\brounded-\[/],
-  ["radius xl, 2xl or 3xl", /\brounded-(xl|2xl|3xl)\b/],
+  ["radius xl, 2xl or 3xl", /\brounded-(?:[trblse]{1,2}-)?(xl|2xl|3xl)\b/],
   ["inline-styled shadow", /\bshadow-(sm|md|lg|xl)\b/],
   ["retired color name", /\b(text|bg|border|outline|accent)-(green|green-tint|muted)\b/],
   ["raw safe-area inset", /env\(safe-area-inset/],
   ["html entity quote", /&apos;|&quot;/],
   // The one allowed bracket form is the hairline on a pinned bar: shadow-[inset_0_1px_0_var(--bk-line)].
   ["arbitrary shadow", /\bshadow-\[(?!inset_0_1px_0_var\(--bk-line\)\])/],
+  ["space-x or space-y utility (use gap)", /(?<![\w-])(?:[\w-]+:)*space-[xy]-/],
   ["dead font-heading class", /\bfont-heading\b/],
 ];
 

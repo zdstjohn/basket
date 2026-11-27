@@ -1,7 +1,11 @@
 import type { Quantity } from "@/lib/domain/types";
 import { formatQuantity } from "@/lib/domain/units";
 
-/** Straight quotes and apostrophes become curly; `3-4` gets an en dash; `...` becomes one character. */
+/**
+ * Straight quotes and apostrophes become curly; `3-4` gets an en dash; `...` becomes one character.
+ * For the app's own UI copy only: never run it on user text, dates or phone numbers (`555-1234` would read as a range),
+ * and a leading apostrophe ("'90s") comes out as an opening quote.
+ */
 export function curly(text: string): string {
   return text
     .replace(/\.\.\./g, "…")
@@ -97,6 +101,7 @@ export function quantityParts(q: Quantity): QuantityParts {
 
   if (frac < 0.02 || frac > 0.98) {
     const w = frac > 0.98 ? whole + 1 : whole;
+    if (w === 0) return fallback(q); // never "0 can" or "0 tsp"
     const text = String(w);
     if (q.kind === "count" && !q.countUnit) return { lead: text, built: null, rest: "" };
     return { lead: text, built: null, rest: unitWords(w) };

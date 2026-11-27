@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { formatMoney, parseMoneyToCents } from "@/lib/domain/money-input";
 
 describe("formatMoney", () => {
+  it("never writes a minus in front of zero", () => {
+    expect(formatMoney(-0.4)).toBe("$0.00");
+    expect(formatMoney(-150)).toBe("-$1.50");
+  });
   it("always shows cents by default", () => {
     expect(formatMoney(300)).toBe("$3.00");
     expect(formatMoney(300, { zero: "keep" })).toBe("$3.00");

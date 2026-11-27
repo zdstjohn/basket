@@ -234,6 +234,8 @@ export function ReviewScreen({
   }, [outcome]);
 
   const swapping = swapKey ? (itemOf.get(swapKey) ?? null) : null;
+  // A sheet whose item has left the review is gone: its key must not wake it up if the item comes back.
+  if (swapKey && !swapping) setSwapKey(null);
   const choiceOf = (canonical: string) => list.choices.find((c) => c.canonical === canonical);
   const sentUpcs = new Set(outcome?.kind === "unsure" ? outcome.added : []);
   const notAdded = new Set(outcome?.kind === "unsure" ? outcome.rejected.map((r) => r.key) : []);
