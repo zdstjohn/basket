@@ -330,6 +330,25 @@ describe("Sheet release details", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("a pull past 30% that wobbles 1 px back up on lift still dismisses", async () => {
+    const onClose = vi.fn();
+    render(
+      <Sheet label="x" onClose={onClose}>
+        <p>a</p>
+      </Sheet>,
+    );
+    const zone = q("[data-testid=sheet-drag]");
+    ptr(zone, "pointerdown", 100);
+    now += 200;
+    ptr(zone, "pointermove", 260); // 160 px: past 30% of 400
+    now += 20;
+    ptr(zone, "pointermove", 259); // 1 px of finger roll: -0.05 px/ms
+    now += 20;
+    ptr(zone, "pointerup", 259);
+    await settle();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("losing pointer capture abandons the drag", async () => {
     const onClose = vi.fn();
     render(

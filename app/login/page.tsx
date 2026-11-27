@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import { LoginForm } from "./LoginForm";
 import { safeNext } from "@/lib/auth/safe-next";
+
+export const metadata: Metadata = { title: "Sign in" };
 
 export default async function LoginPage({
   searchParams,
@@ -8,7 +11,7 @@ export default async function LoginPage({
 }) {
   const { next, error } = await searchParams;
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-10 pb-[var(--bk-safe-bottom)]">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-10 pb-[calc(var(--bk-safe-bottom)+40px)]">
       <h1 className="text-[30px] font-bold tracking-tight text-ink">Basket</h1>
       <p className="mt-1 text-[15px] text-muted">
         Family meals, planned and ordered.

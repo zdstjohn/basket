@@ -54,13 +54,26 @@ function firstNumber(v: Json): number | null {
 }
 
 /** The widest image that states a numeric width, else the first image. */
+/** A width as a number, or from a string such as "1600" or "1600 px", or a QuantitativeValue; 0 when it states none. */
+function pixelWidth(v: Json | undefined): number {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  if (typeof v === 'string') {
+    const n = Number.parseFloat(v.trim());
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (isObj(v)) return pixelWidth(v.value);
+  return 0;
+}
+
 function bestImage(v: Json, base?: string): string | null {
   if (Array.isArray(v)) {
     let best: { url: string; width: number } | null = null;
     for (const x of v) {
-      if (!isObj(x) || typeof x.width !== 'number' || !(x.width > 0)) continue;
+      if (!isObj(x)) continue;
+      const width = pixelWidth(x.width);
+      if (!(width > 0)) continue;
       const url = firstImage(x, base);
-      if (url && (!best || x.width > best.width)) best = { url, width: x.width };
+      if (url && (!best || width > best.width)) best = { url, width };
     }
     if (best) return best.url;
   }

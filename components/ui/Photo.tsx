@@ -78,7 +78,7 @@ export function Photo({
     const key = `${src}|${crop}`;
     if (judged.current === key) return;
     judged.current = key;
-    const verdict = photoVerdict(crop, width ?? img.naturalWidth);
+    const verdict = photoVerdict(crop, width || img.naturalWidth);
     if (verdict === "fallback") {
       setState("fallback");
       return;
@@ -100,7 +100,9 @@ export function Photo({
     else handleError();
   }, [src, handleLoad, handleError]);
 
-  const shown: PhotoState = src ? state : "fallback";
+  // A width we already know settles it before any request: too small is the fallback at once, with no download.
+  const knownFallback = width != null && photoVerdict(crop, width) === "fallback";
+  const shown: PhotoState = src && !knownFallback ? state : "fallback";
   const style = shown === "fallback" ? undefined : previewVar(preview);
   const letter = (Array.from(name.trim())[0] ?? "?").toUpperCase();
 

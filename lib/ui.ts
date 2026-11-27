@@ -15,13 +15,24 @@ export const quietLink =
 export const textInput =
   "min-h-11 w-full rounded-sm border border-line-strong bg-surface px-3 text-body text-ink";
 
+/** The class both pinned bars carry, so a toast can find the bar and rise above it. */
+export const BAR_CLASS = "bk-bar";
+
+/** The toast's bottom edge: above the nav, above any pinned bar (--bk-bar-h, 0px when none), then 8 px of air. */
+export const toastBottom = "bottom-[calc(var(--bk-nav-h)+var(--bk-bar-h,0px)+8px)]";
+
+/** The --bk-bar-h value for a pinned bar of this height; no bar (or an unmeasured one) lifts nothing. */
+export function barLift(height: number | null | undefined): string {
+  return height && height > 0 ? `${Math.ceil(height)}px` : "0px";
+}
+
 /** A bar pinned just above the bottom nav. */
 export const barAboveNav =
-  "sticky bottom-[var(--bk-nav-h)] z-10 bg-ground bk-gutter pt-2 pb-2 shadow-[inset_0_1px_0_var(--bk-line)]";
+  "bk-bar sticky bottom-[var(--bk-nav-h)] z-10 bg-ground bk-gutter pt-2 pb-2 shadow-[inset_0_1px_0_var(--bk-line)]";
 
 /** The same bar on a full screen with no bottom nav. */
 export const barBottom =
-  "sticky bottom-0 z-10 bg-ground bk-gutter pt-2 pb-[var(--bk-safe-bottom)] shadow-[inset_0_1px_0_var(--bk-line)]";
+  "bk-bar sticky bottom-0 z-10 bg-ground bk-gutter pt-2 pb-[var(--bk-safe-bottom)] shadow-[inset_0_1px_0_var(--bk-line)]";
 
 // LEGACY NAMES: deleted in Task C2
 export const primaryButton = mainAction;

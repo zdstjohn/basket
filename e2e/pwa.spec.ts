@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import sharp from "sharp";
 import { createHousehold } from "./helpers/household";
 
 // Chromium only: service workers and the manifest are checked on the Pixel 7 project.
@@ -12,14 +13,37 @@ test("manifest makes Basket installable", async ({ request }) => {
   expect(m.short_name).toBe("Basket");
   expect(m.display).toBe("standalone");
   expect(m.start_url).toBe("/week");
-  expect(m.theme_color).toBe("#F7F8F5");
-  expect(m.background_color).toBe("#F7F8F5");
+  expect(m.theme_color).toBe("#F5E6A6");
+  expect(m.background_color).toBe("#F5E6A6");
   const sizes = m.icons.map((i: { sizes: string; purpose?: string }) => `${i.sizes}:${i.purpose ?? "any"}`);
   expect(sizes).toEqual(expect.arrayContaining(["192x192:any", "512x512:any", "512x512:maskable"]));
   for (const icon of m.icons) {
     const png = await request.get(icon.src);
     expect(png.status(), icon.src).toBe(200);
     expect(png.headers()["content-type"]).toContain("image/png");
+  }
+});
+
+test("the icon is the Dipped icon: Butter above the line, radicchio below", async ({ request }) => {
+  const res = await request.get("/icons/icon-512.png");
+  const { data, info } = await sharp(await res.body()).raw().toBuffer({ resolveWithObject: true });
+  const at = (x: number, y: number) => {
+    const i = (y * info.width + x) * info.channels;
+    return [data[i], data[i + 1], data[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase();
+  };
+  expect(at(16, 16)).toBe("F5E6A6");
+  expect(at(16, 496)).toBe("4C1D3A");
+});
+
+test("the page head carries ten launch images", async ({ page }) => {
+  await page.goto("/login");
+  const links = page.locator('link[rel="apple-touch-startup-image"]');
+  await expect(links).toHaveCount(10);
+  await expect(page.locator('link[rel="apple-touch-startup-image"][media*="prefers-color-scheme: dark"]')).toHaveCount(5);
+  for (const href of await links.evaluateAll((els) => els.map((e) => e.getAttribute("href")!))) {
+    const res = await page.request.get(href);
+    expect(res.status(), href).toBe(200);
+    expect(res.headers()["content-type"]).toContain("image/png");
   }
 });
 

@@ -18,11 +18,26 @@ const sans = Figtree({
   display: "swap",
 });
 
+const SPLASH_SIZES = [
+  [1206, 2622],
+  [1320, 2868],
+  [1179, 2556],
+  [1290, 2796],
+  [1170, 2532],
+] as const;
+
+const startupImage = (["light", "dark"] as const).flatMap((look) =>
+  SPLASH_SIZES.map(([w, h]) => ({
+    url: `/splash/${look}-${w}x${h}.png`,
+    media: `(device-width: ${w / 3}px) and (device-height: ${h / 3}px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: ${look})`,
+  })),
+);
+
 export const metadata: Metadata = {
-  title: "Basket",
+  title: { default: "Basket", template: "%s · Basket" },
   description: "Family meal planning and grocery ordering.",
   icons: { apple: "/icons/apple-touch-icon.png" },
-  appleWebApp: { capable: true, title: "Basket", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Basket", statusBarStyle: "default", startupImage },
 };
 
 export const viewport: Viewport = {

@@ -18,11 +18,16 @@ const SIGNED_URL_SECONDS = 3600;
 const REUSE_MS = 50 * 60 * 1000;
 const signedLinks = new Map<string, { url: string; at: number }>();
 
+/** Browser only: on a server the map would be shared between every signed-in user's requests. */
+const canReuseLinks = (): boolean => typeof window !== 'undefined';
+
 function freshLink(path: string): string | null {
+  if (!canReuseLinks()) return null;
   const hit = signedLinks.get(path);
   return hit && Date.now() - hit.at <= REUSE_MS ? hit.url : null;
 }
 function rememberLink(path: string, url: string): void {
+  if (!canReuseLinks()) return;
   signedLinks.set(path, { url, at: Date.now() });
 }
 

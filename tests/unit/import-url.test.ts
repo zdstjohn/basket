@@ -113,6 +113,18 @@ describe('fetchRecipePage', () => {
     expect(await codeOf(fetchRecipePage('https://good.example.test/x.pdf'))).toBe('not_html');
   });
 
+  it('lets a page with no content-type through, since it is only parsed as text', async () => {
+    const bare = new Response('<p>hi</p>', { status: 200 });
+    bare.headers.delete('content-type');
+    fetchMock.mockResolvedValueOnce(bare);
+    expect(await fetchRecipePage('https://good.example.test/a')).toBe('<p>hi</p>');
+  });
+
+  it('carries the HTTP status on a failed fetch', async () => {
+    fetchMock.mockResolvedValueOnce(html('nope', {}, 404));
+    await expect(fetchRecipePage('https://good.example.test/a')).rejects.toMatchObject({ code: 'fetch_failed', status: 404 });
+  });
+
   it('maps network errors and HTTP errors to fetch_failed', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
     expect(await codeOf(fetchRecipePage('https://good.example.test/a'))).toBe('fetch_failed');
@@ -183,6 +195,18 @@ describe('fetchPublicBytes', () => {
   it('rejects a text/html reply with not_image', async () => {
     fetchMock.mockResolvedValueOnce(html('<p>hi</p>'));
     expect(await codeOf(fetchPublicBytes('https://good.example.test/a.jpg'))).toBe('not_image');
+  });
+
+  it('rejects a reply with no content-type as not_image', async () => {
+    const bare = new Response(new Blob([new Uint8Array([1, 2, 3])]), { status: 200 });
+    bare.headers.delete('content-type');
+    fetchMock.mockResolvedValueOnce(bare);
+    expect(await codeOf(fetchPublicBytes('https://good.example.test/a.jpg'))).toBe('not_image');
+  });
+
+  it('rejects image/svg+xml as not_image', async () => {
+    fetchMock.mockResolvedValueOnce(img('<svg/>', { 'content-type': 'image/svg+xml' }));
+    expect(await codeOf(fetchPublicBytes('https://good.example.test/a.svg'))).toBe('not_image');
   });
 
   it('rejects a body over maxBytes with too_large', async () => {
