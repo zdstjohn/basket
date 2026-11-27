@@ -30,7 +30,7 @@ const BASIC_MODIFIERS = new Set(
   [
     'extra', 'virgin', 'light', 'pure', 'unsalted', 'salted', 'kosher', 'sea', 'table', 'fine', 'coarse', 'ground',
     'black', 'white', 'all-purpose', 'all', 'purpose', 'granulated', 'brown', 'dark', 'powdered', 'cold', 'warm',
-    'hot', 'canola', 'vegetable', 'olive', 'neutral', 'cooking',
+    'canola', 'vegetable', 'olive', 'neutral', 'cooking',
   ].flatMap(words),
 );
 

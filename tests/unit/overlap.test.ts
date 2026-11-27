@@ -50,7 +50,7 @@ describe('pantry basics by variant', () => {
   const week = (food: string) => weekFoods([{ meal: meal('m', [[food, 'pantry']]), servings: null }], [adult], []);
   it.each([
     'extra virgin olive oil', 'unsalted butter', 'kosher salt', 'sea salt', 'ground black pepper', 'white pepper',
-    'all-purpose flour', 'brown sugar', 'cooking spray', 'cornstarch', 'pepper', 'cold water', 'warm water',
+    'all-purpose flour', 'brown sugar', 'cooking spray', 'cornstarch', 'pepper', 'cold water', 'warm water', 'hot water',
     'dark brown sugar', 'canola oil', 'granulated sugar',
   ])('%s is a basic', (food) => {
     expect(week(food)).toEqual([]);
@@ -58,7 +58,7 @@ describe('pantry basics by variant', () => {
   });
   it.each([
     'bell pepper', 'red pepper flakes', 'garlic', 'sour cream', 'flour tortillas', 'sugar snap peas', 'water chestnuts',
-    'peanut butter', 'almond butter', 'sesame oil', 'coconut oil', 'chili oil', 'butter beans', 'salt pork',
+    'peanut butter', 'almond butter', 'sesame oil', 'coconut oil', 'chili oil', 'butter beans', 'salt pork', 'hot pepper',
   ])('%s is not a basic', (food) => {
     expect(week(food)).toEqual([food]);
   });
