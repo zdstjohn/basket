@@ -60,18 +60,44 @@ describe('flags', () => {
   });
   it('names each allergy with its people when several are hit (M13)', () => {
     expect(allergyCopy(findFlags(['sliced almonds', '2 tbsp tahini'], more), more)).toEqual({
-      head: 'Tree nuts: Daughter (4) · Sesame: Grandma',
+      head: 'Tree nut allergy: Daughter (4) · Sesame allergy: Grandma',
       body: 'This recipe lists almonds and tahini. Other ingredients can have them too, so check every label.',
     });
     const dad = more.map((p) => (p.id === 'dad' ? { ...p, allergies: ['sesame'] } : p));
     expect(allergyCopy(findFlags(['sliced almonds', '2 tbsp tahini'], dad), dad)?.head)
-      .toBe('Tree nuts: Daughter (4) · Sesame: Dad, Grandma');
+      .toBe('Tree nut allergy: Daughter (4) · Sesame allergy: Dad, Grandma');
   });
   it('joins allergies typed as the same family into one', () => {
     const mix = people.map((p) => (p.id === 'dad' ? { ...p, allergies: ['almonds'] } : p));
     const flags = findFlags(['sliced almonds'], mix);
     expect(flags).toHaveLength(2);
     expect(allergyCopy(flags, mix)?.head).toBe('Tree nut allergy: Dad, Daughter (4)');
+  });
+  it('keeps the typed word for gluten and for foods that span families', () => {
+    const who = people.map((p) => (p.id === 'son' ? { ...p, allergies: ['gluten'] } : p));
+    const [f] = findFlags(['1 cup barley', '1 lb spaghetti'], who);
+    expect(f.found).toEqual(['barley', 'spaghetti']);
+    expect(flagCopy(f, who).cardHead).toBe('Gluten allergy: Son');
+    expect(flagCopy(f, who).cardBody).toBe('Lists barley and spaghetti. Check labels.');
+    expect(allergyCopy([f], who)?.body).toBe(
+      'This recipe lists barley and spaghetti. Other ingredients can have gluten in them too, so check every label.');
+  });
+  it('peanut copy names peanuts, not nuts, and has/have agrees', () => {
+    const who = people.map((p) => (p.id === 'son' ? { ...p, allergies: ['peanuts'] } : p));
+    const [f] = findFlags(['1/2 cup chopped nuts'], who);
+    expect(flagCopy(f, who).cardBody).toBe('Nuts often have peanuts. Check labels.');
+    expect(allergyCopy([f], who)?.body).toBe(
+      'This recipe lists nuts, which often have peanuts. Other ingredients can have peanuts in them too, so check every label.');
+    const [g] = findFlags(['1 cup pesto'], people);
+    expect(allergyCopy([g], people)?.body).toContain('which often has nuts');
+  });
+  it('one person listing a family and a member gets one flag', () => {
+    const who = people.map((p) => (p.id === 'daughter-4' ? { ...p, allergies: ['tree nuts', 'almonds'] } : p));
+    const flags = findFlags(['sliced almonds', 'chopped walnuts'], who);
+    expect(flags).toHaveLength(1);
+    expect(flags[0]).toMatchObject({ food: 'tree nuts', found: ['almonds', 'walnuts'], often: false });
+    const sesame = who.map((p) => (p.id === 'son' ? { ...p, allergies: ['sesame'] } : p));
+    expect(findFlags(['sliced almonds', 'tahini'], sesame)).toHaveLength(2);
   });
   it('says "often has" in the box too, alone and merged', () => {
     expect(allergyCopy(findFlags(['1/2 cup pesto'], people), people)?.body)

@@ -263,6 +263,7 @@ const compiledById = (id: string): Compiled => COMPILED.find((c) => c.family.id 
 interface Typed {
   families: Compiled[];
   extras: string[][];
+  viaAlias: boolean; // an alias with extras of its own was used ("gluten")
 }
 
 /**
@@ -276,6 +277,7 @@ function typedFamilies(food: string): Typed {
   const taken = typed.map(() => false);
   const families: Compiled[] = [];
   const extras: string[][] = [];
+  let viaAlias = false;
   const add = (c: Compiled): void => { if (!families.includes(c)) families.push(c); };
   const aliases = Object.keys(ALIASES)
     .map((k) => ({ k, phrase: k.split(' ') }))
@@ -285,7 +287,7 @@ function typedFamilies(food: string): Typed {
     if (at.length === 0) continue;
     for (const start of at) for (let i = 0; i < phrase.length; i++) taken[start + i] = true;
     ALIASES[k].forEach((id) => add(compiledById(id)));
-    for (const e of EXTRAS[k] ?? []) extras.push(words(e));
+    for (const e of EXTRAS[k] ?? []) { extras.push(words(e)); viaAlias = true; }
   }
   for (const id of ALLERGEN_IDS) {
     const c = compiledById(id);
@@ -299,12 +301,26 @@ function typedFamilies(food: string): Typed {
     if ([...names, ...c.members].some((phrase) => findPhrase(typed, phrase, blank).length > 0)) add(c);
   }
   families.sort((x, y) => ALLERGEN_IDS.indexOf(x.family.id) - ALLERGEN_IDS.indexOf(y.family.id));
-  return { families, extras };
+  return { families, extras, viaAlias };
 }
 
 /** The family a food belongs to by any of its names: plural, label or member, singular or plural. */
 export function familyFor(food: string): Family | null {
   return (stand(food, true) ?? typedFamilies(food).families[0] ?? null)?.family ?? null;
+}
+
+/**
+ * Every family a food stands for: one for a family name or (wide) a member, several for a typed phrase like
+ * "eggs and dairy". `viaAlias` is true when the food reached its families through an alias that brings extra
+ * foods of its own ("gluten": barley, rye), so callers keep the typed word.
+ */
+export function familiesFor(food: string, opts?: { wide?: boolean }): { families: Family[]; viaAlias: boolean } {
+  const wide = opts?.wide === true;
+  const c = stand(food, wide);
+  if (c) return { families: [c.family], viaAlias: false };
+  if (!wide) return { families: [], viaAlias: false };
+  const t = typedFamilies(food);
+  return { families: t.families.map((x) => x.family), viaAlias: t.viaAlias };
 }
 
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);

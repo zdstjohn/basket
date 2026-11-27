@@ -1,4 +1,4 @@
-import { coversLine, familyFor, matchFood } from './families';
+import { familiesFor, matchFood } from './families';
 import type { Meal, Person } from './types';
 import { singular } from './words';
 
@@ -49,9 +49,35 @@ function hitsFor(food: string, ingredients: string[], wide: boolean): Hit[] {
   return out;
 }
 
+interface Built { flag: Flag; first: number; hits: Hit[]; indexes: Set<number> }
+
+const sameIds = (a: Person[], b: Person[]): boolean =>
+  a.length === b.length && a.every((p) => b.some((o) => o.id === p.id));
+
+/** Flags for the same people whose foods share a family ("tree nuts" and "almonds") become one, keeping the first food. */
+function mergeSame(list: Built[], wide: boolean): Built[] {
+  const out: Built[] = [];
+  for (const b of list) {
+    const ids = familiesFor(b.flag.food, { wide }).families.map((f) => f.id);
+    const twin = out.find((o) => sameIds(o.flag.people, b.flag.people)
+      && familiesFor(o.flag.food, { wide }).families.some((f) => ids.includes(f.id)));
+    if (!twin) { out.push(b); continue; }
+    const hits = [...twin.hits, ...b.hits].sort((x, y) => x.index - y.index);
+    twin.hits = hits;
+    twin.first = hits[0].index;
+    twin.indexes = new Set(hits.map((h) => h.index));
+    twin.flag = {
+      ...twin.flag,
+      found: [...new Set(hits.map((h) => h.found))],
+      often: hits.every((h) => h.often),
+    };
+  }
+  return out;
+}
+
 /** Allergies first, then dislikes; within each, recipe order of the first hit. One flag per (kind, food). */
 export function findFlags(ingredients: string[], people: Person[]): Flag[] {
-  const build = (kind: Flag['kind']): { flag: Flag; first: number; indexes: Set<number> }[] => {
+  const build = (kind: Flag['kind']): Built[] => {
     const groups = new Map<string, { food: string; people: Person[] }>();
     for (const p of people) {
       for (const typed of (kind === 'allergy' ? p.allergies : p.dislikes) ?? []) {
@@ -62,7 +88,7 @@ export function findFlags(ingredients: string[], people: Person[]): Flag[] {
         groups.set(key, g);
       }
     }
-    const out: { flag: Flag; first: number; indexes: Set<number> }[] = [];
+    const out: Built[] = [];
     for (const g of groups.values()) {
       const hits = hitsFor(g.food, ingredients, kind === 'allergy');
       if (hits.length === 0) continue;
@@ -75,10 +101,11 @@ export function findFlags(ingredients: string[], people: Person[]): Flag[] {
           people: g.people,
         },
         first: hits[0].index,
+        hits,
         indexes: new Set(hits.map((h) => h.index)),
       });
     }
-    return out.sort((a, b) => a.first - b.first);
+    return mergeSame(out, kind === 'allergy').sort((a, b) => a.first - b.first);
   };
 
   const allergies = build('allergy');
@@ -125,20 +152,23 @@ interface AllergyWords {
   x: string; // what other ingredients "can have in them": 'nuts', 'milk'
 }
 
-// A typed allergy that spans several families ("eggs and dairy") keeps the words the person typed.
-const spansFamilies = (food: string): boolean => (coversLine(food, { wide: true })?.match(/ covers /g) ?? []).length > 1;
-
+// A food that spans several families ("eggs and dairy"), or reached them through an alias with extras of its
+// own ("gluten"), keeps the words the person typed.
 function allergyWords(food: string): AllergyWords {
-  const fam = spansFamilies(food) ? null : familyFor(food);
-  if (!fam) return { key: food, label: food, plural: food, x: food };
-  const nuts = fam.id === 'tree_nut' || fam.id === 'peanut';
-  return { key: fam.id, label: fam.label, plural: fam.plural, x: nuts ? 'nuts' : fam.label };
+  const { families, viaAlias } = familiesFor(food, { wide: true });
+  if (families.length !== 1 || viaAlias) return { key: food, label: food, plural: food, x: food };
+  const fam = families[0];
+  const x = fam.id === 'tree_nut' ? 'nuts' : fam.id === 'peanut' ? 'peanuts' : fam.label;
+  return { key: fam.id, label: fam.label, plural: fam.plural, x };
 }
 
-const pronounFor = (f: Flag): 'it' | 'them' => {
-  const last = (f.found[0] ?? '').split(' ').pop() ?? '';
-  return last !== '' && singular(last) !== last ? 'them' : 'it';
+const isPlural = (text: string): boolean => {
+  const last = text.split(' ').pop() ?? '';
+  return last !== '' && singular(last) !== last;
 };
+const verb = (texts: string[]): 'has' | 'have' => (texts.length > 1 || isPlural(texts[0] ?? '') ? 'have' : 'has');
+
+const pronounFor = (f: Flag): 'it' | 'them' => (isPlural(f.found[0] ?? '') ? 'them' : 'it');
 
 const peopleList = (who: Person[], people: Person[]): string => who.map((p) => personLabel(p, people)).join(', ');
 
@@ -173,16 +203,16 @@ export function allergyCopy(flags: Flag[], people: Person[]): { head: string; bo
     const often = g.entries.filter((e) => e.often).length;
     let lists: string;
     if (often === g.entries.length) {
-      lists = `${joinAnd(texts)}, which often ${texts.length > 1 ? 'have' : 'has'} ${g.w.x}`;
+      lists = `${joinAnd(texts)}, which often ${verb(texts)} ${g.w.x}`;
     } else if (often === 0) {
       lists = joinAnd(texts);
     } else {
-      lists = joinAnd(g.entries.map((e) => (e.often ? `${e.text} (often has ${g.w.x})` : e.text)));
+      lists = joinAnd(g.entries.map((e) => (e.often ? `${e.text} (often ${verb([e.text])} ${g.w.x})` : e.text)));
     }
     return { head, body: `This recipe lists ${lists}. Other ingredients can have ${g.w.x} in them too, ${check}` };
   }
-  const head = groups.map((g) => `${capital(g.w.plural)}: ${peopleList(g.who, people)}`).join(' · ');
-  const lists = groups.flatMap((g) => g.entries.map((e) => (e.often ? `${e.text} (often has ${g.w.x})` : e.text)));
+  const head = groups.map((g) => `${capital(g.w.label)} allergy: ${peopleList(g.who, people)}`).join(' · ');
+  const lists = groups.flatMap((g) => g.entries.map((e) => (e.often ? `${e.text} (often ${verb([e.text])} ${g.w.x})` : e.text)));
   return { head, body: `This recipe lists ${joinAnd(lists)}. Other ingredients can have them too, ${check}` };
 }
 
@@ -192,7 +222,7 @@ export function flagCopy(f: Flag, people: Person[], amount?: string): FlagCopy {
     const w = allergyWords(f.food);
     const box = allergyCopy([f], people) as { head: string; body: string };
     const cardBody = f.often
-      ? `${capital(joinAnd(f.found))} often ${f.found.length > 1 ? 'have' : 'has'} ${w.plural}. Check labels.`
+      ? `${capital(joinAnd(f.found))} often ${verb(f.found)} ${w.plural}. Check labels.`
       : `Lists ${joinAnd(f.found)}. Check labels.`;
     return { cardHead: box.head, cardBody, head: box.head, body: box.body, pronoun };
   }
