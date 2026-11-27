@@ -194,7 +194,7 @@ export async function fetchGuarded(
         throw new ImportError('fetch_failed', `http ${res.status}`);
       }
       const type = res.headers.get('content-type');
-      if (type && !opts.okType(type)) {
+      if (!type || !opts.okType(type)) {
         await res.body?.cancel().catch(() => {});
         throw new ImportError(opts.wrongType);
       }
@@ -232,7 +232,7 @@ export async function fetchPublicBytes(
 ): Promise<Uint8Array> {
   return fetchGuarded(url, {
     accept: 'image/*',
-    okType: (t) => /^image\//i.test(t.trim()),
+    okType: (t) => /^image\//i.test(t.trim()) && !/^image\/svg/i.test(t.trim()),
     wrongType: 'not_image',
     timeoutMs: opts.timeoutMs ?? 5000,
     maxBytes: opts.maxBytes ?? 8 * 1024 * 1024,

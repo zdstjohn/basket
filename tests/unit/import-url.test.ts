@@ -185,6 +185,18 @@ describe('fetchPublicBytes', () => {
     expect(await codeOf(fetchPublicBytes('https://good.example.test/a.jpg'))).toBe('not_image');
   });
 
+  it('rejects a reply with no content-type as not_image', async () => {
+    const bare = new Response(new Blob([new Uint8Array([1, 2, 3])]), { status: 200 });
+    bare.headers.delete('content-type');
+    fetchMock.mockResolvedValueOnce(bare);
+    expect(await codeOf(fetchPublicBytes('https://good.example.test/a.jpg'))).toBe('not_image');
+  });
+
+  it('rejects image/svg+xml as not_image', async () => {
+    fetchMock.mockResolvedValueOnce(img('<svg/>', { 'content-type': 'image/svg+xml' }));
+    expect(await codeOf(fetchPublicBytes('https://good.example.test/a.svg'))).toBe('not_image');
+  });
+
   it('rejects a body over maxBytes with too_large', async () => {
     fetchMock.mockResolvedValueOnce(img(new Uint8Array(100)));
     expect(await codeOf(fetchPublicBytes('https://good.example.test/a.jpg', { maxBytes: 10 }))).toBe('too_large');
