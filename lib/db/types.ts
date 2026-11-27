@@ -142,6 +142,7 @@ export type Database = {
         Row: {
           ai_cap_cents: number
           budget_cents: number
+          busy_days: string[]
           category_store: Json
           created_at: string
           cushion_cents: number
@@ -158,6 +159,7 @@ export type Database = {
         Insert: {
           ai_cap_cents?: number
           budget_cents?: number
+          busy_days?: string[]
           category_store?: Json
           created_at?: string
           cushion_cents?: number
@@ -174,6 +176,7 @@ export type Database = {
         Update: {
           ai_cap_cents?: number
           budget_cents?: number
+          busy_days?: string[]
           category_store?: Json
           created_at?: string
           cushion_cents?: number
@@ -733,6 +736,7 @@ export type Database = {
           day: string
           household_id: string
           id: string
+          leftover_of: string | null
           meal_id: string
           servings_override: number | null
           slot: string
@@ -744,6 +748,7 @@ export type Database = {
           day: string
           household_id: string
           id?: string
+          leftover_of?: string | null
           meal_id: string
           servings_override?: number | null
           slot: string
@@ -755,6 +760,7 @@ export type Database = {
           day?: string
           household_id?: string
           id?: string
+          leftover_of?: string | null
           meal_id?: string
           servings_override?: number | null
           slot?: string
@@ -767,6 +773,13 @@ export type Database = {
             columns: ["household_id"]
             isOneToOne: false
             referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "week_meals_leftover_of_fkey"
+            columns: ["leftover_of"]
+            isOneToOne: true
+            referencedRelation: "week_meals"
             referencedColumns: ["id"]
           },
           {
@@ -787,18 +800,21 @@ export type Database = {
       }
       weeks: {
         Row: {
+          busy_days: string[]
           created_at: string
           household_id: string
           id: string
           week_start: string
         }
         Insert: {
+          busy_days?: string[]
           created_at?: string
           household_id: string
           id?: string
           week_start: string
         }
         Update: {
+          busy_days?: string[]
           created_at?: string
           household_id?: string
           id?: string

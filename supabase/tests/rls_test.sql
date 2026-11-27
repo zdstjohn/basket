@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(149);
+select plan(178);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -217,6 +217,101 @@ reset role;
 
 select is((select used_by from public.invites where token = (select v from t_kv where k = 'TOKEN_A')), 'cccccccc-0000-4000-8000-00000000000c'::uuid, 'the accepted invite is marked used by C');
 select is((select count(*)::int from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HA')), 2, 'A''s delete attempt left HA ai_usage intact');
+
+-- ---------------------------------------------------------------------------
+-- Busy nights and linked leftover nights (0010)
+-- ---------------------------------------------------------------------------
+create function pg_temp.rows_changed(q text) returns int language plpgsql as $$
+declare n int;
+begin
+  execute q;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+grant execute on function pg_temp.rows_changed(text) to public;
+
+insert into public.meals (household_id, name) values ((select v::uuid from t_kv where k = 'HA'), 'M-A2');
+insert into t_kv select 'M_A2', id::text from public.meals where name = 'M-A2';
+insert into public.weeks (household_id, week_start) values ((select v::uuid from t_kv where k = 'HA'), '2026-12-06');
+insert into t_kv select 'W_A2', id::text from public.weeks where week_start = '2026-12-06';
+insert into t_kv select 'MON_A', id::text from public.week_meals where week_id = (select v::uuid from t_kv where k = 'W_A') and day = 'mon';
+insert into t_kv select 'MON_B', id::text from public.week_meals where week_id = (select v::uuid from t_kv where k = 'W_B') and day = 'mon';
+
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+
+select is(pg_temp.rows_changed($q$update public.households set busy_days = array['tue'] where id = (select v::uuid from t_kv where k = 'HA')$q$), 1, 'A sets busy_days on HA');
+select is((select busy_days from public.households where id = (select v::uuid from t_kv where k = 'HA')), array['tue'], 'HA busy_days reads back');
+select is(pg_temp.rows_changed($q$update public.households set busy_days = array['tue'] where id = (select v::uuid from t_kv where k = 'HB')$q$), 0, 'A changes no HB household row');
+reset role;
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is((select busy_days from public.households where id = (select v::uuid from t_kv where k = 'HB')), '{}'::text[], 'HB busy_days is still empty');
+reset role;
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select throws_ok($q$update public.households set busy_days = array['someday'] where id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'an unknown day violates the household check');
+select throws_ok($q$update public.weeks set busy_days = array['someday'] where id = (select v::uuid from t_kv where k = 'W_A')$q$ , '23514', null, 'an unknown day violates the week check');
+select throws_ok($q$update public.households set busy_days = array['sun','mon','tue','wed','thu','fri','sat','sun'] where id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'eight busy days violate the check');
+select is(pg_temp.rows_changed($q$update public.weeks set busy_days = array['thu'] where id = (select v::uuid from t_kv where k = 'W_A')$q$), 1, 'A sets busy_days on an HA week');
+select is(pg_temp.rows_changed($q$update public.weeks set busy_days = array['thu'] where id = (select v::uuid from t_kv where k = 'W_B')$q$), 0, 'A changes no HB week');
+
+select lives_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'))$q$, 'A adds a leftovers night');
+reset role;
+insert into t_kv select 'LEFT_A', id::text from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A');
+select pg_temp.act_as('cccccccc-0000-4000-8000-00000000000c');
+select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 1, 'C reads the leftovers night');
+reset role;
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select throws_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'thu', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'))$q$, '23505', null, 'a cooking night gets one leftovers night');
+select throws_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'thu', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_B'))$q$, '23514', null, 'A cannot link leftovers to an HB night');
+select throws_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'thu', 'dinner', (select v::uuid from t_kv where k = 'M_A2'), 0, (select v::uuid from t_kv where k = 'MON_A'))$q$, '23514', null, 'leftovers must be the same meal as the cooking night');
+select throws_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A2'), 'thu', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'))$q$, '23514', null, 'leftovers must be in the same week as the cooking night');
+select throws_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'fri', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'LEFT_A'))$q$, '23514', null, 'leftovers cannot follow a leftovers night');
+select throws_ok($q$update public.week_meals set leftover_of = id where id = (select v::uuid from t_kv where k = 'MON_A')$q$, '23514', null, 'a night cannot be its own leftovers');
+reset role;
+select throws_ok($q$insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HB'), (select v::uuid from t_kv where k = 'W_B'), 'thu', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'))$q$, null, null, 'the superuser cannot cross households either');
+
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+update public.week_meals set meal_id = (select v::uuid from t_kv where k = 'M_A2') where id = (select v::uuid from t_kv where k = 'MON_A');
+select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 0, 'changing the cooking meal drops its leftovers night');
+update public.week_meals set meal_id = (select v::uuid from t_kv where k = 'M_A') where id = (select v::uuid from t_kv where k = 'MON_A');
+
+insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'));
+update public.week_meals set meal_id = (select v::uuid from t_kv where k = 'M_A2'), servings_override = null where day = 'wed' and week_id = (select v::uuid from t_kv where k = 'W_A');
+select is((select count(*)::int from public.week_meals where day = 'wed' and week_id = (select v::uuid from t_kv where k = 'W_A') and meal_id = (select v::uuid from t_kv where k = 'M_A2')), 1, 'a different dinner on a leftovers night stays');
+select is((select leftover_of from public.week_meals where day = 'wed' and week_id = (select v::uuid from t_kv where k = 'W_A')), null, 'and becomes an ordinary dinner');
+
+-- The cooking night's servings: doubling keeps the leftovers night, lowering or clearing cancels it.
+delete from public.week_meals where day = 'wed' and week_id = (select v::uuid from t_kv where k = 'W_A');
+insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'));
+update public.week_meals set servings_override = 7.6 where id = (select v::uuid from t_kv where k = 'MON_A');
+select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 1, 'doubling the cooking night keeps its leftovers night');
+update public.week_meals set servings_override = 5.8 where id = (select v::uuid from t_kv where k = 'MON_A');
+select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 0, 'lowering the cooking night servings cancels its leftovers night');
+insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'wed', 'dinner', (select v::uuid from t_kv where k = 'M_A'), 0, (select v::uuid from t_kv where k = 'MON_A'));
+update public.week_meals set servings_override = null where id = (select v::uuid from t_kv where k = 'MON_A');
+select is((select count(*)::int from public.week_meals where leftover_of = (select v::uuid from t_kv where k = 'MON_A')), 0, 'clearing the cooking night servings cancels its leftovers night');
+
+insert into public.week_meals (household_id, week_id, day, slot, meal_id) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'tue', 'dinner', (select v::uuid from t_kv where k = 'M_A'));
+insert into public.week_meals (household_id, week_id, day, slot, meal_id, servings_override, leftover_of)
+  select household_id, week_id, 'thu', 'dinner', meal_id, 0, id from public.week_meals where day = 'tue' and week_id = (select v::uuid from t_kv where k = 'W_A');
+delete from public.week_meals where day = 'tue' and week_id = (select v::uuid from t_kv where k = 'W_A');
+select is((select count(*)::int from public.week_meals where day = 'thu' and week_id = (select v::uuid from t_kv where k = 'W_A')), 0, 'deleting a cooking night deletes its leftovers night');
+reset role;
+
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is((select count(*)::int from public.week_meals where leftover_of is not null), 0, 'B sees no leftovers rows');
+reset role;
+select pg_temp.act_as(null);
+select throws_ok($q$select busy_days from public.weeks$q$, '42501', null, 'anon cannot read weeks.busy_days');
+reset role;
+select ok(not has_function_privilege('authenticated', 'public.week_meals_leftover_check()', 'execute'), 'the leftover check function is not callable');
+select ok(not has_function_privilege('authenticated', 'public.week_meals_leftover_tidy()', 'execute'), 'the leftover tidy function is not callable');
+
+-- Put the household back as the later sections expect it.
+delete from public.week_meals where household_id = (select v::uuid from t_kv where k = 'HA') and day <> 'mon';
+delete from public.weeks where id = (select v::uuid from t_kv where k = 'W_A2');
+delete from public.meals where id = (select v::uuid from t_kv where k = 'M_A2');
+update public.households set busy_days = '{}' where id = (select v::uuid from t_kv where k = 'HA');
+update public.weeks set busy_days = '{}' where id = (select v::uuid from t_kv where k = 'W_A');
 
 -- ---------------------------------------------------------------------------
 -- Fred Meyer products and cart (0006)
