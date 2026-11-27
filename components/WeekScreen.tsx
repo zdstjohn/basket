@@ -64,7 +64,9 @@ export function WeekScreen({ household }: { household: Household }) {
   const [openDay, setOpenDay] = useState<Day | null>(null);
   // The sheet opened by its photo growing, so it does not also slide in, and Close shrinks the photo back.
   const [grown, setGrown] = useState(false);
-  const morphing = useRef(false);
+  const pending = useRef(false); // a tap is waiting for its transition to swap the page
+  const opening = useRef(false); // the open transition is still playing
+  const flight = useRef(0); // which transition is the latest
   // Keys (the hero, or a day) that play the open reveal, with their place in the stagger; emptied as each finishes.
   const [reveal, setReveal] = useState<ReadonlyMap<string, number>>(new Map());
   // Days whose tile is settling into place right now.
@@ -216,55 +218,68 @@ export function WeekScreen({ household }: { household: Household }) {
 
   /** Opens a dinner: its photo grows into the sheet where the browser can do that, otherwise the sheet slides up. */
   async function openDinner(d: Day) {
-    if (openDay || morphing.current) return;
+    // A second tap before the sheet is there (a double tap) does nothing; a tap while a transition plays is still a tap.
+    if (open || pending.current) return;
     const from = photoBoxOf(d);
     if (!from || prefersReducedMotion() || !supportsViewTransitions()) {
       setGrown(false);
       setOpenDay(d);
       return;
     }
-    morphing.current = true;
+    const id = ++flight.current;
+    pending.current = true;
+    opening.current = true;
     try {
       await morph({
         from,
         to: () => document.querySelector<HTMLElement>("[data-sheet-photo]"),
-        update: () =>
+        update: () => {
           flushSync(() => {
             setGrown(true);
             setOpenDay(d);
-          }),
+          });
+          pending.current = false;
+        },
       });
     } finally {
-      morphing.current = false;
-      clearPhotoNames();
+      pending.current = false;
+      if (flight.current === id) {
+        opening.current = false;
+        clearPhotoNames();
+      }
     }
   }
 
-  /** Close on a sheet the photo grew into: the photo shrinks back to its tile. A tap while a morph runs just closes. */
+  /** Close on a sheet the photo grew into: the photo shrinks back to its tile. A tap while the photo is still growing just closes. */
   async function closeDinner() {
     const d = openDay;
-    if (!d) return;
-    if (morphing.current) {
+    if (!d || pending.current) return;
+    if (opening.current) {
       setOpenDay(null);
       setGrown(false);
       clearPhotoNames();
       return;
     }
-    morphing.current = true;
+    const id = ++flight.current;
+    pending.current = true;
     try {
       await morph({
         from: document.querySelector<HTMLElement>("[data-sheet-photo]"),
         to: () => photoBoxOf(d),
-        update: () =>
+        update: () => {
           flushSync(() => {
             setOpenDay(null);
             setGrown(false);
-          }),
+          });
+          pending.current = false;
+        },
       });
     } finally {
-      morphing.current = false;
-      clearPhotoNames();
-      document.querySelector<HTMLElement>(`[data-testid="day-row-${d}"] button`)?.focus({ preventScroll: true });
+      pending.current = false;
+      if (flight.current === id) {
+        clearPhotoNames();
+        document.querySelector<HTMLElement>(`[data-testid="day-row-${d}"] button`)?.focus({ preventScroll: true });
+      }
     }
   }
 
