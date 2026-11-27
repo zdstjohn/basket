@@ -497,6 +497,7 @@ export type Database = {
       people: {
         Row: {
           age: number | null
+          allergies?: string[] | null
           appetite: number
           created_at: string
           diet: string
@@ -508,6 +509,7 @@ export type Database = {
         }
         Insert: {
           age?: number | null
+          allergies?: string[] | null
           appetite?: number
           created_at?: string
           diet?: string
@@ -519,6 +521,7 @@ export type Database = {
         }
         Update: {
           age?: number | null
+          allergies?: string[] | null
           appetite?: number
           created_at?: string
           diet?: string

@@ -276,6 +276,16 @@ describe('food families', () => {
   it.each([
     ['milk', 'whole or oat milk'], ['milk', 'skim or almond milk'], ['milk', 'low-fat or coconut milk'],
     ['milk', "cow's or oat milk"], ['wheat', 'all-purpose or almond flour'], ['wheat', 'white or rice flour'],
+    ['milk', '1 cup 2% or oat milk'], ['milk', '1 cup 1% or almond milk'], ['milk', '1 cup nonfat or oat milk'],
+    ['milk', '1 cup lowfat or soy milk'], ['milk', '1 cup 2 % or oat milk'],
   ])('%s is still found in "%s"', (food, line) => expect(matchFood(food, line, { wide: true })).not.toBeNull());
+  it('a plain "or" still lets the plant milk through', () => {
+    expect(matchFood('milk', '1 cup oat or almond milk', { wide: true })).toBeNull();
+  });
+  it('reports za’atar as written, not "atar"', () => {
+    expect(matchFood('sesame', '1 tbsp za\'atar')).toEqual({ found: 'za atar', often: true });
+    expect(matchFood('sesame', '1 tbsp za’atar')).toEqual({ found: 'za atar', often: true });
+    expect(matchFood('sesame', '1 tbsp zaatar')).toEqual({ found: 'zaatar', often: true });
+  });
   it('chillies is chili', () => expect(words('2 red chillies')).toEqual(['red', 'chili']));
 });

@@ -7,6 +7,7 @@ export interface Person {
   diet: Diet;
   appetite: number;
   dislikes: string[];
+  allergies?: string[]; // optional on purpose: read as `?? []` (cached lists and old rows have none)
 }
 
 export type Role =

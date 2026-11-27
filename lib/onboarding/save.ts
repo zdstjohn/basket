@@ -42,6 +42,7 @@ export async function saveOnboarding(
         diet: p.diet,
         appetite: p.appetite,
         dislikes: p.dislikes,
+        allergies: p.allergies ?? [],
         sort,
       })),
     );

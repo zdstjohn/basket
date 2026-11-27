@@ -23,6 +23,7 @@ function toPerson(row: PersonRow): Person {
     diet: row.diet as Diet,
     appetite: Number(row.appetite),
     dislikes: row.dislikes,
+    allergies: row.allergies ?? [],
   };
 }
 

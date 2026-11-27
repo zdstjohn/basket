@@ -137,7 +137,7 @@ export const FAMILIES: readonly Family[] = [
     id: 'sesame', label: 'sesame', plural: 'sesame',
     members: ['sesame', 'tahini', 'tehina', 'halva', 'halvah', 'gomasio', 'benne'],
     often: [
-      'zaatar', 'furikake', 'dukkah', 'everything but the bagel', 'hummus', 'baba ghanoush', 'atar',
+      'zaatar', 'za atar', 'furikake', 'dukkah', 'everything but the bagel', 'hummus', 'baba ghanoush',
       'everything bagel',
     ],
     not: [],
@@ -349,10 +349,12 @@ function longestRun(raw: string[], marked: boolean[]): string {
 }
 
 // A word before "or" that makes the food after it a plain one ("whole or oat milk", "all-purpose or almond flour").
-// "low-fat" and "cow's" reach us as "fat" and "s".
-const OR_KEEPS: ReadonlySet<string> = new Set(
-  ['whole', 'skim', 'fat', 'dairy', 'regular', 'cow', 's', 'plain', 'purpose', 'white', 'wheat'],
-);
+// "low-fat" and "cow's" reach us as "fat" and "s". A number or percentage before "or" ("2% or oat milk") is
+// turned into "regular" first, because rawWords drops digits.
+const OR_KEEPS: ReadonlySet<string> = new Set([
+  'whole', 'skim', 'fat', 'nonfat', 'lowfat', 'dairy', 'regular', 'cow', 's', 'plain', 'purpose', 'white', 'wheat',
+]);
+const NUMBER_BEFORE_OR = /\d+(?:[.,/]\d+)?\s*%?\s+or\s/g;
 
 function matchExact(raw: string[], tokens: string[], phrase: string[]): FoodHit | null {
   const marked = tokens.map(() => false);
@@ -395,7 +397,7 @@ function matchFamily(c: Compiled, raw: string[], tokens: string[]): FoodHit | nu
  */
 export function matchFood(food: string, ingredient: string, opts?: { wide?: boolean }): FoodHit | null {
   const wide = opts?.wide === true;
-  const raw = rawWords(ingredient);
+  const raw = rawWords(ingredient.replace(NUMBER_BEFORE_OR, 'regular or '));
   const tokens = raw.map(singular);
   const c = stand(food, wide);
   if (c) return matchFamily(c, raw, tokens);
