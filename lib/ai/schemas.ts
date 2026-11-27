@@ -99,6 +99,24 @@ export const EstimatesBodySchema = z.object({
   store: z.enum(['fred_meyer', 'amazon', 'costco']),
 });
 
+/** Send products to the Fred Meyer cart. `quantity` is the wanted total for that product; prices come from the server's cache. */
+export const CartBodySchema = z.object({
+  weekId: z.string().uuid(),
+  modality: z.enum(['PICKUP', 'DELIVERY']),
+  lines: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(120),
+        upc: z.string().regex(/^\d{13}$/),
+        quantity: z.number().int().min(1).max(99),
+      }),
+    )
+    .min(1)
+    .max(150)
+    .refine((l) => new Set(l.map((x) => x.upc)).size === l.length, 'each product once'),
+  resend: z.boolean(),
+});
+
 /** What the model sees in a photo of a dish. */
 export const DishGuessSchema = z.object({
   isFood: z.boolean(),
