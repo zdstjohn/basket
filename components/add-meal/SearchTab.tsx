@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 import { isMostLoved, ratingLine } from "@/lib/recipes/search/loved";
+import { sharesLine, sortByOverlap } from "@/lib/recipes/search/overlap";
 import { focusRing } from "@/lib/ui";
 import { formatMinutes } from "@/lib/week/format";
 import { messageFor, searchRecipes, type SearchResult } from "./api";
+import { loadSort, saveSort, SortControl, type SortMode } from "./SortControl";
 import { DishCard, FindMyDishButton, lookUpDish, type DishState } from "./FindMyDish";
 
 const SOURCES: { id: RecipeSource; label: string }[] = [
@@ -20,11 +22,12 @@ function metaParts(o: RecipeOption, first: boolean) {
   return { loved: first && !!rating && isMostLoved(o), line: [rating, minutes].filter(Boolean).join(" · ") };
 }
 
-function MetaLine({ loved, line }: { loved: boolean; line: string }) {
+function MetaLine({ loved, line, shares }: { loved: boolean; line: string; shares: string | null }) {
   return (
     <>
       {loved && <span data-testid="result-loved" className="mt-0.5 block text-[13px] font-semibold text-[#1F7A4D]">Most loved</span>}
       {line && <span data-testid="result-meta" className="mt-0.5 block truncate text-[13px] text-[#4A544F]">{line}</span>}
+      {shares && <span data-testid="result-shares" className="mt-0.5 block break-words text-[13px] font-medium text-[#1F7A4D]">{shares}</span>}
     </>
   );
 }
@@ -36,6 +39,7 @@ export function SearchTab({
   source,
   onSource,
   hideResults,
+  week,
   picking,
   onPick,
   onSearchStart,
@@ -46,6 +50,8 @@ export function SearchTab({
   source: RecipeSource;
   onSource: (s: RecipeSource) => void;
   hideResults: boolean;
+  /** Foods on this week's list from the other planned meals; null until known. */
+  week: { foods: string[]; otherMeals: number } | null;
   picking: boolean;
   onPick: (o: RecipeOption) => void;
   onSearchStart: () => void;
@@ -56,7 +62,14 @@ export function SearchTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dish, setDish] = useState<DishState | null>(null);
+  const [sort, setSort] = useState<SortMode>("loved");
   const thumbUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    // The remembered choice is read after the page loads (it lives in this browser session).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSort(loadSort());
+  }, []);
 
   useEffect(() => () => {
     if (thumbUrl.current) URL.revokeObjectURL(thumbUrl.current);
@@ -112,7 +125,13 @@ export function SearchTab({
     }
   }
 
-  const options = result?.options ?? [];
+  const found = result?.options ?? [];
+  const foods = week?.foods ?? [];
+  const noOthers = week !== null && week.otherMeals === 0;
+  // Fits this week reorders by shared foods; with nothing to share it is the same order as Most loved.
+  const ranked = sortByOverlap(found, foods);
+  const shown = sort === "fits" ? ranked : found.map((option) => ({ option, shared: ranked.find((r) => r.option === option)?.shared ?? [] }));
+  const options = shown.map((r) => r.option);
   const showsSpoonacular = options.some((o) => o.source === "spoonacular");
 
   return (
@@ -207,15 +226,28 @@ export function SearchTab({
               {options.length === 0 ? (
                 <p className="text-[15px] text-muted">No recipes found on our sites. Try other words, or paste a recipe.</p>
               ) : (
+                <>
+                <SortControl
+                  value={sort}
+                  onChange={(m) => {
+                    setSort(m);
+                    saveSort(m);
+                  }}
+                />
+                {sort === "fits" && noOthers && (
+                  <p data-testid="fits-empty" className="mb-2.5 text-sm text-muted">Add another dinner first to see what fits</p>
+                )}
                 <ul className="flex flex-col gap-2">
-                  {options.map((o, index) => {
-                    const m = metaParts(o, index === 0);
+                  {shown.map(({ option: o, shared }) => {
+                    // The badge stays with the most-loved pick, wherever the sort puts it.
+                    const m = metaParts(o, o === found[0]);
+                    const shares = sharesLine(shared);
                     return (
                     <li key={o.url}>
                       <button
                         type="button"
                         data-testid="result-card"
-                        aria-label={`${o.title} · ${o.site}${m.loved ? ", Most loved" : ""}${m.line ? `, ${m.line}` : ""}`}
+                        aria-label={`${o.title} · ${o.site}${m.loved ? ", Most loved" : ""}${m.line ? `, ${m.line}` : ""}${shares ? `, ${shares}` : ""}`}
                         disabled={picking}
                         onClick={() => onPick(o)}
                         className={`flex min-h-[88px] w-full items-center gap-3 rounded-2xl border border-line bg-white p-2.5 text-left disabled:opacity-60 ${focusRing}`}
@@ -228,13 +260,14 @@ export function SearchTab({
                           <span data-testid="result-site" className="mt-0.5 block text-[13px] text-muted">
                             {o.site}
                           </span>
-                          <MetaLine loved={m.loved} line={m.line} />
+                          <MetaLine loved={m.loved} line={m.line} shares={shares} />
                         </span>
                       </button>
                     </li>
                     );
                   })}
                 </ul>
+                </>
               )}
               {showsSpoonacular && (
                 <p className="mt-3 text-[13px]">

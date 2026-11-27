@@ -11,14 +11,16 @@ import { FavoritesBrowser } from "@/components/FavoritesBrowser";
 import type { RecipeDraft } from "@/lib/ai/schemas";
 import { createBrowserClient } from "@/lib/db/client";
 import { updateHousehold, listPeople } from "@/lib/db/queries/household";
-import { saveMeal, setMealPhoto } from "@/lib/db/queries/meals";
-import { getOrCreateWeek, setWeekMeal } from "@/lib/db/queries/weeks";
+import { listAlwaysHave } from "@/lib/db/queries/list";
+import { getMeals, saveMeal, setMealPhoto, toMeal } from "@/lib/db/queries/meals";
+import { findWeek, getOrCreateWeek, listWeekMeals, setWeekMeal } from "@/lib/db/queries/weeks";
 import type { Household, MealRow } from "@/lib/db/rows";
-import type { Person } from "@/lib/domain/types";
+import type { Meal, Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts";
 import { parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
+import { weekFoods } from "@/lib/recipes/search/overlap";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 import { bigGreenLink, focusRing, stickyBottom } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
@@ -49,6 +51,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
+  const [others, setOthers] = useState<{ entries: { meal: Meal; servings: number | null }[]; alwaysHave: string[] } | null>(null);
   const savedMealId = useRef<string | null>(null);
 
   const key = weekStart ? `add-meal:${weekStart}:${day}:${slot}` : null;
@@ -74,6 +77,39 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     /* eslint-enable react-hooks/set-state-in-effect */
     void listPeople(sb, household.id).then(setPeople, () => setError("We couldn't load your household. Try again."));
   }, [sb, household.id, household.week_start, household.time_zone, day, slot]);
+
+  // The other dinners already planned this week (not the one being added or replaced), for "Fits this week".
+  useEffect(() => {
+    if (!weekStart) return;
+    let alive = true;
+    (async () => {
+      const week = await findWeek(sb, household.id, weekStart);
+      const rows = week ? (await listWeekMeals(sb, week.id)).filter((r) => !(r.day === day && r.slot === slot)) : [];
+      const [meals, alwaysHave] = await Promise.all([
+        getMeals(sb, [...new Set(rows.map((r) => r.meal_id))]),
+        listAlwaysHave(sb, household.id),
+      ]);
+      const byId = new Map(meals.map((m) => [m.id, m]));
+      const entries = rows.flatMap((r) => {
+        const m = byId.get(r.meal_id);
+        return m ? [{ meal: toMeal(m), servings: r.servings_override === null ? null : Number(r.servings_override) }] : [];
+      });
+      if (alive) setOthers({ entries, alwaysHave });
+    })().catch(() => {
+      // Without the week, "Fits this week" just keeps the most-loved order.
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sb, household.id, weekStart, day, slot]);
+
+  const week = useMemo(
+    () =>
+      others && people.length > 0
+        ? { foods: weekFoods(others.entries, people, others.alwaysHave), otherMeals: others.entries.length }
+        : null,
+    [others, people],
+  );
 
   useEffect(() => {
     if (!key || !restored) return;
@@ -216,6 +252,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
           source={source}
           onSource={changeSource}
           hideResults={!!draft}
+          week={week}
           picking={picking}
           onPick={(o) => void pick(o)}
           onSearchStart={startOver}

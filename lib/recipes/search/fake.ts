@@ -16,7 +16,7 @@ const SITES: Record<string, RecipeOption[]> = {
     },
     {
       ...base, source: 'sites', url: 'https://www.budgetbytes.com/fake-taco-bowls', site: 'Budget Bytes',
-      title: 'Easy taco bowls', image: img('taco-bowls'), ingredients: ['1 lb ground turkey', '1 cup rice'],
+      title: 'Easy taco bowls', image: img('taco-bowls'), ingredients: ['1 lb ground beef', '1 cup rice', '1 cup cooked chicken'],
     },
   ],
   'beef stew': [
