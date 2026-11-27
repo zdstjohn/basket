@@ -1,4 +1,5 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 import { generateObject, NoObjectGeneratedError } from 'ai';
 import { z } from 'zod';
 import { fakeIdentify } from './fake';
@@ -53,7 +54,7 @@ export async function identifyDish(
   opts: { onUsage?: (u: UsageReport) => void } = {},
 ): Promise<DishGuess> {
   const model = getModel('parse');
-  if (process.env.AI_FAKE === '1') {
+  if (fakeOn('AI_FAKE')) {
     const usage = { inputTokens: 100, outputTokens: 50 };
     opts.onUsage?.({ model, ...usage });
     const parsed = LooseGuessSchema.safeParse(fakeIdentify(image.base64));

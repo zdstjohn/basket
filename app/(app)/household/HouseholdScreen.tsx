@@ -23,6 +23,12 @@ import { PersonEditor, type PersonDraft } from "./PersonEditor";
 
 const NEW_PERSON: PersonDraft = { name: "", age: 0, diet: "none", appetite: 1, dislikes: [] };
 
+const FM_NOTICES = {
+  connected: "Fred Meyer is connected.",
+  denied: "Fred Meyer wasn't connected.",
+  failed: "That didn't work. Try connecting again.",
+} as const;
+
 const STORES = [
   { label: "Fred Meyer", detail: "Pickup and delivery" },
   { label: "Amazon", detail: "Saved items" },
@@ -35,6 +41,9 @@ export function HouseholdScreen({
   memberCount,
   isOwner,
   krogerEnabled,
+  cartEnabled,
+  fredMeyerConnected,
+  fredMeyerNotice,
 }: {
   household: Household;
   initialPeople: Person[];
@@ -42,6 +51,11 @@ export function HouseholdScreen({
   isOwner: boolean;
   /** Whether Fred Meyer shelf prices can be looked up on this server. */
   krogerEnabled: boolean;
+  /** Whether people can connect their own Fred Meyer account here. */
+  cartEnabled: boolean;
+  fredMeyerConnected: boolean;
+  /** How the last connect attempt ended, from the `fm` address parameter. */
+  fredMeyerNotice: "connected" | "denied" | "failed" | null;
 }) {
   const sb = useRef(createBrowserClient()).current;
   const [people, setPeople] = useState(initialPeople);
@@ -56,6 +70,23 @@ export function HouseholdScreen({
   const linkInput = useRef<HTMLInputElement>(null);
   const [fredMeyer, setFredMeyer] = useState(household.kroger_location_name);
   const [picking, setPicking] = useState(false);
+  const [connected, setConnected] = useState(fredMeyerConnected);
+  const [fmNotice, setFmNotice] = useState(fredMeyerNotice);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  async function disconnectFredMeyer() {
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/kroger/disconnect", { method: "POST" });
+      if (res.status !== 204) throw new Error("disconnect failed");
+      setConnected(false);
+      setFmNotice(null);
+    } catch {
+      setFmNotice("failed");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   async function chooseFredMeyer(s: StoreChoice) {
     await updateHousehold(sb, household.id, { kroger_location_id: s.id, kroger_location_name: s.name });
@@ -242,6 +273,34 @@ export function HouseholdScreen({
               </li>
             );
           })}
+          {cartEnabled && (
+            <li className={divider}>
+              <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-medium">Fred Meyer account</span>
+                  <span className="block text-xs text-muted">
+                    {connected
+                      ? "Connected"
+                      : "You'll sign in on Fred Meyer's own page. Basket never sees your password."}
+                  </span>
+                </span>
+                {connected ? (
+                  <button type="button" onClick={disconnectFredMeyer} disabled={disconnecting} className={pillButton}>
+                    Disconnect
+                  </button>
+                ) : (
+                  <a href="/api/kroger/connect?next=/household" className={pillButton}>
+                    Connect
+                  </a>
+                )}
+              </div>
+              {fmNotice && (
+                <p role="status" className="px-3.5 pb-3 text-[13px] text-ink">
+                  {FM_NOTICES[fmNotice]}
+                </p>
+              )}
+            </li>
+          )}
           <li className={`${divider}`}>
             <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
               <span className="min-w-0 flex-1">

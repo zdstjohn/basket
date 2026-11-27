@@ -1,4 +1,5 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 
 export class KrogerNotConfigured extends Error {
   constructor() {
@@ -7,7 +8,7 @@ export class KrogerNotConfigured extends Error {
   }
 }
 
-export const isKrogerFake = (): boolean => process.env.KROGER_FAKE === '1';
+export const isKrogerFake = (): boolean => fakeOn('KROGER_FAKE');
 
 /** Whether Kroger calls can be made at all: credentials are set, or the fixtures stand in (KROGER_FAKE=1). */
 export const isKrogerConfigured = (): boolean =>

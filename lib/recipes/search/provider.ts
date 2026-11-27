@@ -1,3 +1,4 @@
+import { fakeOn } from '@/lib/fake';
 import type { IngredientLine } from '@/lib/domain/types';
 
 export type RecipeSource = 'sites' | 'spoonacular';
@@ -37,7 +38,7 @@ export class SourceLimitError extends Error {
 
 /** The web search provider: the fixture one under RECIPE_SEARCH_FAKE=1, otherwise Brave. */
 export async function getWebSearch(): Promise<WebSearchProvider> {
-  if (process.env.RECIPE_SEARCH_FAKE === '1') {
+  if (fakeOn('RECIPE_SEARCH_FAKE')) {
     const { fakeWebSearch } = await import('./fake');
     return fakeWebSearch;
   }

@@ -1,4 +1,5 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 import { generateObject, NoObjectGeneratedError } from 'ai';
 import type { z } from 'zod';
 import { fakeGenerate, type AiTask } from './fake';
@@ -8,7 +9,7 @@ export const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
 /** The Vercel AI Gateway model id used for parsing and estimating. */
 export function getModel(kind: 'parse'): string {
   void kind;
-  return process.env.AI_FAKE === '1' ? 'fake' : (process.env.AI_MODEL_PARSE || DEFAULT_MODEL);
+  return fakeOn('AI_FAKE') ? 'fake' : (process.env.AI_MODEL_PARSE || DEFAULT_MODEL);
 }
 
 /** The model's answer could not be read as the expected shape. */
@@ -43,7 +44,7 @@ export interface GenerateResult<T> {
 /** One structured model call. Throws UnreadableError when the output does not fit `schema`. */
 export async function generateStructured<T>(args: GenerateArgs<T>): Promise<GenerateResult<T>> {
   const model = getModel('parse');
-  if (process.env.AI_FAKE === '1') {
+  if (fakeOn('AI_FAKE')) {
     const parsed = args.schema.safeParse(fakeGenerate(args.task, args.prompt));
     if (!parsed.success) {
       const usage = { inputTokens: 100, outputTokens: 50 };

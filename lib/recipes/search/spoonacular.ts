@@ -1,4 +1,5 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 import type { IngredientLine, Role } from '@/lib/domain/types';
 import { httpUrl } from '../url';
 import { clampOption } from './clamp';
@@ -66,7 +67,7 @@ function toOption(r: SpoonResult): RecipeOption | null {
 }
 
 export async function searchSpoonacular(query: string): Promise<RecipeOption[]> {
-  if (process.env.RECIPE_SEARCH_FAKE === '1') return fakeSpoonacular(query);
+  if (fakeOn('RECIPE_SEARCH_FAKE')) return fakeSpoonacular(query);
   const key = process.env.SPOONACULAR_API_KEY;
   if (!key) throw new Error('SPOONACULAR_API_KEY is not set');
   const url = new URL('https://api.spoonacular.com/recipes/complexSearch');

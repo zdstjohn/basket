@@ -1,4 +1,5 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 import { fetchRecipePage } from '../import-url';
 import { extractRecipeJsonLd } from '../jsonld';
 import { siteForHost } from '../sites';
@@ -36,7 +37,7 @@ async function toOption(hit: { url: string; title: string }, siteName: string): 
 }
 
 export async function searchSites(query: string): Promise<RecipeOption[]> {
-  if (process.env.RECIPE_SEARCH_FAKE === '1') return fakeSiteOptions(query).slice(0, MAX_OPTIONS);
+  if (fakeOn('RECIPE_SEARCH_FAKE')) return fakeSiteOptions(query).slice(0, MAX_OPTIONS);
   const hits = await (await getWebSearch()).search(`${query} recipe`, 20);
   const candidates: { hit: { url: string; title: string }; site: string }[] = [];
   for (const hit of hits) {
