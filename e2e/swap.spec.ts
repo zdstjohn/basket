@@ -177,3 +177,46 @@ test("typing .99 saves 99 cents", async ({ page }) => {
   // The list paints its offline copy first, so wait for the fresh value.
   await expect(row(page, "Corn tortillas").getByTestId("row-total")).toHaveText("$0.99");
 });
+
+test("the choice is saved at the tap, a second tap during the exit does nothing, and focus returns to the row", async ({ page }) => {
+  await createHousehold(page);
+  await chooseStore(page);
+  await addTacos(page);
+  const beans = row(page, "Black beans");
+  await expect(beans.getByTestId("row-count")).toBeVisible();
+  const firstName = (await beans.locator(".line-clamp-1").innerText()).split(" · ")[0];
+  const sheet = await openSwap(page);
+  const options = sheet.getByTestId("swap-option").filter({ hasNotText: firstName });
+  expect(await options.count()).toBeGreaterThanOrEqual(1);
+  const pick = options.first();
+  const pickName = (await pick.locator(".line-clamp-2").innerText()).trim();
+  const others = sheet.getByTestId("swap-option").filter({ hasNotText: pickName });
+
+  // Note when the first write leaves the page and when the dialog is gone.
+  await page.evaluate(() => {
+    const w = window as unknown as { __write?: number; __gone?: number };
+    const orig = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+      if (method !== "GET" && w.__write === undefined) w.__write = performance.now();
+      return orig(input, init);
+    };
+    new MutationObserver(() => {
+      if (!document.querySelector("dialog[open]") && w.__gone === undefined) w.__gone = performance.now();
+    }).observe(document.body, { childList: true, subtree: true, attributes: true });
+  });
+  await pick.click();
+  // A second tap while the sheet leaves (the panel is inert and the rows are disabled): nothing happens.
+  await others.first().evaluate((el) => (el as HTMLElement).click());
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const times = await page.evaluate(() => {
+    const w = window as unknown as { __write?: number; __gone?: number };
+    return { write: w.__write ?? null, gone: w.__gone ?? null };
+  });
+  expect(times.write, "no write was made").not.toBeNull();
+  expect(times.gone, "the dialog never closed").not.toBeNull();
+  expect(times.write!, "the choice was written before the dialog was gone").toBeLessThan(times.gone!);
+  await expect(beans).toContainText(pickName);
+  // The first tap won, and focus is back on the row's button.
+  await expect(beans.getByRole("button", { name: /Black beans/ })).toBeFocused();
+});

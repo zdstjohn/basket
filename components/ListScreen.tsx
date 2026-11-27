@@ -372,12 +372,10 @@ export function ListScreen({ household }: { household: Household }) {
           busy={swapBusy}
           onClose={() => setSwapKey(null)}
           onChoose={(upc) => {
-            setSwapKey(null);
             void run(() => list.chooseProduct(swapping, upc));
           }}
           onSearch={(term) => whileBusy(() => list.searchWith(swapping, term), true)}
           onReset={() => {
-            setSwapKey(null);
             void run(() => list.resetChoice(swapping));
           }}
         />
