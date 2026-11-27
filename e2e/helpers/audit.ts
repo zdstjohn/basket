@@ -35,7 +35,12 @@ export async function audit(page: Page): Promise<Problem[]> {
       if (box.width < 44 || box.height < 44) {
         problems.push({ what: "target under 44px", detail: `${describe(el)} ${Math.round(box.width)}x${Math.round(box.height)}` });
       }
-      if (box.right > window.innerWidth + 0.5 || box.left < -0.5) {
+      // A control inside a row that scrolls sideways (the Favorites filters) is reached by scrolling that row.
+      let scroller: HTMLElement | null = el.parentElement;
+      while (scroller && scroller !== document.body && !["auto", "scroll"].includes(getComputedStyle(scroller).overflowX)) scroller = scroller.parentElement;
+      const sr = scroller && scroller !== document.body ? scroller.getBoundingClientRect() : null;
+      const inScroller = !!sr && sr.left >= -0.5 && sr.right <= window.innerWidth + 0.5;
+      if (!inScroller && (box.right > window.innerWidth + 0.5 || box.left < -0.5)) {
         problems.push({ what: "target off screen sideways", detail: describe(el) });
       }
     }
