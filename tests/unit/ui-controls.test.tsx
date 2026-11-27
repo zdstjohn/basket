@@ -369,3 +369,21 @@ describe("round 1 fixes", () => {
     expect(a.textContent).toBe("Plan");
   });
 });
+
+describe("Button accessible name", () => {
+  // Text content with aria-hidden parts left out (the part of name-from-content this app relies on).
+  function nameOf(el: Element): string {
+    let out = "";
+    el.childNodes.forEach((n) => {
+      if (n.nodeType === Node.TEXT_NODE) out += n.textContent;
+      else if (n instanceof Element && n.getAttribute("aria-hidden") !== "true" && n.getAttribute("role") !== "status") out += nameOf(n);
+    });
+    return out;
+  }
+  it("is busyLabel while busy and the children otherwise", () => {
+    render(<Button variant="main" busy busyLabel="Saving…">Save</Button>);
+    expect(nameOf(q("button"))).toBe("Saving…");
+    render(<Button variant="main" busyLabel="Saving…">Save</Button>);
+    expect(nameOf(q("button"))).toBe("Save");
+  });
+});

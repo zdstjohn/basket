@@ -38,8 +38,10 @@ export function Button({ variant, busy, busyLabel, className, children, disabled
         {...rest}
       >
         {busy && busyLabel ? (
-          <span className="grid" aria-hidden="true">
-            <span className="invisible col-start-1 row-start-1 flex items-center justify-center gap-2">{children}</span>
+          <span className="grid">
+            <span className="invisible col-start-1 row-start-1 flex items-center justify-center gap-2" aria-hidden="true">
+              {children}
+            </span>
             <span className="col-start-1 row-start-1 flex items-center justify-center gap-2">{busyLabel}</span>
           </span>
         ) : (
