@@ -1,3 +1,5 @@
+import { TriangleAlert } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import { allergyCopy, findFlags, flagCopy, ingredientNames, type Flag } from "@/lib/domain/flags";
 import type { Meal, Person } from "@/lib/domain/types";
 import type { RecipeOption } from "@/lib/recipes/search/provider";
@@ -52,32 +54,33 @@ export function cardFlagText(src: RecipeOption | Meal, people: Person[]): string
     .join("");
 }
 
-function WarningIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">
-      <path d="M12 3.5l9.5 16.5h-19z" />
-      <path d="M12 10v4.5M12 17.6h.01" />
-    </svg>
-  );
-}
-
 /** The allergy line and the first won't-eat line under a card's other lines. Made of spans, so it can sit inside a button. */
-export function FlagLines({ flags, people }: { flags: Flag[]; people: Person[] }) {
+export function FlagLines({ flags, people, onPhoto = false }: { flags: Flag[]; people: Person[]; onPhoto?: boolean }) {
   const lines = linesFor(flags, people);
   if (lines.length === 0) return null;
   return (
-    <span className="mt-1.5 flex flex-col gap-1 border-t border-[#F0F2EF] pt-1.5">
+    <span className={`mt-2 flex flex-col gap-1 ${onPhoto ? "" : "border-t border-line pt-2"}`}>
       {lines.map((l) =>
         l.kind === "allergy" ? (
-          <span key="allergy" data-testid="result-flag" data-kind="allergy" className="flex gap-1.5 break-words text-[13px] text-ink">
-            <span className="mt-px flex text-[#A6261B]"><WarningIcon /></span>
+          <span
+            key="allergy"
+            data-testid="result-flag"
+            data-kind="allergy"
+            className={`flex items-start gap-2 break-words text-label font-semibold ${onPhoto ? "text-on-photo" : "text-error"}`}
+          >
+            <Icon icon={TriangleAlert} size={18} />
             <span className="min-w-0">
-              <span className="block font-semibold text-[#A6261B]">{l.head}</span>
+              <span className="block">{l.head}</span>
               {l.body}
             </span>
           </span>
         ) : (
-          <span key="dislike" data-testid="result-flag" data-kind="dislike" className="block break-words text-[13px] text-ink">
+          <span
+            key="dislike"
+            data-testid="result-flag"
+            data-kind="dislike"
+            className={`block break-words text-label ${onPhoto ? "text-on-photo" : "text-ink-soft"}`}
+          >
             {l.body}
           </span>
         ),

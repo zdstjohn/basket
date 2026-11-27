@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createHousehold, FAMILY, type PersonInput } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
+import { setLook } from "./helpers/look";
 
 // Requests from a worker-controlled page can skip page.route on WebKit; keep parity with the other add-meal specs.
 test.use({ serviceWorkers: "block" });
@@ -202,3 +203,47 @@ test("a won't-eat can be left out or swapped for one person, and the list follow
   await page.goto("/list");
   await expect(page.getByTestId("list-row").filter({ hasText: "zucchini" })).toBeVisible();
 });
+
+const PILAF = /^Broccolini quinoa pilaf with toasted almonds · Example Kitchen/;
+
+for (const look of ["light", "dark"] as const) {
+  test(`an allergy line is never clipped, in either look, at 360 px (${look})`, async ({ page }) => {
+    await setLook(page, look);
+    await createHousehold(page, `family-flags-clip-${look}`, WITH_LISTS);
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto("/week/add?day=thu&slot=dinner");
+    await searchFor(page, "soup");
+    const pilaf = page.getByRole("button", { name: PILAF });
+    const line = pilaf.getByTestId("result-flag");
+    await expect(line).toBeVisible();
+
+    const unclipped = (el: Element) => {
+      const style = getComputedStyle(el);
+      return {
+        tall: el.scrollHeight <= el.clientHeight,
+        wide: el.scrollWidth <= el.clientWidth,
+        clamp: style.getPropertyValue("-webkit-line-clamp") || "none",
+        overflow: style.textOverflow,
+      };
+    };
+    expect(await line.evaluate(unclipped)).toEqual({ tall: true, wide: true, clamp: "none", overflow: "clip" });
+
+    await pilaf.click();
+    const box = page.getByTestId("allergy-box");
+    await expect(box).toBeVisible();
+    expect(await box.evaluate(unclipped)).toEqual({ tall: true, wide: true, clamp: "none", overflow: "clip" });
+  });
+
+  test(`the allergy box has an edge and an icon in both looks (${look})`, async ({ page }) => {
+    await setLook(page, look);
+    await createHousehold(page, `family-flags-edge-${look}`, WITH_LISTS);
+    await page.goto("/week/add?day=thu&slot=dinner");
+    await searchFor(page, "soup");
+    await page.getByRole("button", { name: PILAF }).click();
+    const box = page.getByTestId("allergy-box");
+    await expect(box).toBeVisible();
+    const edge = await box.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth));
+    expect(edge).toBeGreaterThanOrEqual(1);
+    await expect(box.locator("svg.lucide-triangle-alert")).toHaveCount(1);
+  });
+}
