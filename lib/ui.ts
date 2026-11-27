@@ -33,11 +33,3 @@ export const barAboveNav =
 /** The same bar on a full screen with no bottom nav. */
 export const barBottom =
   "bk-bar sticky bottom-0 z-10 bg-ground bk-gutter pt-2 pb-[var(--bk-safe-bottom)] shadow-[inset_0_1px_0_var(--bk-line)]";
-
-// LEGACY NAMES: deleted in Task C2
-export const primaryButton = mainAction;
-export const bigGreenLink = mainAction;
-export const pillButton = ghostButton;
-export const stickyAboveNav = barAboveNav;
-export const stickyBottom = barBottom;
-export const focusRing = "";

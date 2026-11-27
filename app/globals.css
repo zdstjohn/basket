@@ -228,11 +228,6 @@
   --ease-out: var(--bk-ease-out);
   --ease-snap: var(--bk-spring-snap);
   --ease-settle: var(--bk-spring-settle);
-
-  /* LEGACY ALIASES: deleted in Task C2 */
-  --color-green: var(--bk-accent);
-  --color-green-tint: var(--bk-sunk);
-  --color-muted: var(--bk-ink-soft);
 }
 
 /* ---- Base rules every screen inherits ---- */
@@ -247,8 +242,6 @@ body {
   quotes: "\201C" "\201D" "\2018" "\2019";
   padding: 0;
 }
-/* A screen that renders a [data-bk-header] owns its own top inset; every other screen keeps it from here. Task C2 deletes this rule. */
-body:not(:has([data-bk-header])) { padding-top: var(--bk-safe-top); }
 .bk-price { font-feature-settings: var(--bk-num-price); font-variant-numeric: tabular-nums; }
 /* Put .bk-qty on the number alone (<span class="bk-qty">1/8</span> cup). On a whole line, frac also shrinks ordinary digits. */
 .bk-qty { font-feature-settings: var(--bk-num-qty); font-variant-numeric: diagonal-fractions; }

@@ -125,5 +125,3 @@ export function storeSearchUrl(store: 'amazon' | 'costco', canonical: string): s
   const q = encodeURIComponent(canonical);
   return store === 'amazon' ? `https://www.amazon.com/s?k=${q}` : `https://www.costco.com/CatalogSearch?keyword=${q}`;
 }
-
-export const formatPrice = (cents: number): string => `$${(cents / 100).toFixed(2)}`;

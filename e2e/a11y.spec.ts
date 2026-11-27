@@ -8,8 +8,8 @@ test("the tab bar draws only Lucide icons", async ({ page }) => {
   await expect(nav.locator("svg:not(.lucide)")).toHaveCount(0);
 });
 
-// Every tab says where you are in the browser's title and the screen reader's page name. Passes once the screens set their titles.
-test.fixme("document.title differs between the four tabs (enabled in C2)", async ({ page }) => {
+// Every tab says where you are in the browser's title and the screen reader's page name.
+test("document.title differs between the four tabs", async ({ page }) => {
   await createHousehold(page, "a11y-title");
   const nav = page.getByRole("navigation", { name: "Main" });
   const titles: string[] = [];

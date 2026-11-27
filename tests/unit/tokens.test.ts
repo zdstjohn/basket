@@ -63,7 +63,6 @@ describe("globals.css structure", () => {
   it("names the fonts through next/font variables and keeps the legacy aliases marked", () => {
     expect(css).toContain("var(--font-gloock)");
     expect(css).toContain("var(--font-figtree)");
-    expect(css).toContain("LEGACY ALIASES: deleted in Task C2");
     expect(css).toMatch(/--bk-nav-h:\s*calc\(3rem \+ var\(--bk-safe-bottom\)\)/);
   });
 });

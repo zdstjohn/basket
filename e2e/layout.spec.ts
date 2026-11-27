@@ -73,18 +73,8 @@ for (const variant of VARIANTS) {
       // Text that cannot be measured (an image or gradient behind it included) must sit inside a data-on-photo container
       // (which the audit skips, and which only allowlisted components may set) or it fails.
       const unmeasured = skipped;
-      if (screen.contrastPending) {
-        const worklist = [
-          ...weak.map((p) => `${p.ratio.toFixed(2)} "${p.text}" ${p.fg} on ${p.bg}`),
-          ...unmeasured.map((k) => `unmeasured "${k.text}": ${k.reason}`),
-        ];
-        if (worklist.length) {
-          testInfo.annotations.push({ type: "contrast-pending", description: `${screen.name}: ${weak.length} pair(s) under ${MIN_CONTRAST}, ${unmeasured.length} unmeasured\n${worklist.join("\n")}` });
-        }
-      } else {
-        for (const p of weak) found.push(`${where}: contrast ${p.ratio.toFixed(2)} for "${p.text}" (${p.fg} on ${p.bg})`);
-        for (const k of unmeasured) found.push(`${where}: contrast not measurable for "${k.text}": ${k.reason}`);
-      }
+      for (const p of weak) found.push(`${where}: contrast ${p.ratio.toFixed(2)} for "${p.text}" (${p.fg} on ${p.bg})`);
+      for (const k of unmeasured) found.push(`${where}: contrast not measurable for "${k.text}": ${k.reason}`);
       await page.screenshot({ path: `${shots}/layout-${screen.name}-${tag}.png`, fullPage: true });
     };
 

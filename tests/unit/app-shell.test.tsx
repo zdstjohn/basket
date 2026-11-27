@@ -109,8 +109,9 @@ describe("BottomNav", () => {
 
 describe("globals.css safe areas", () => {
   const css = readFileSync("app/globals.css", "utf8");
-  it("keeps the top inset on the body only for screens without their own header", () => {
-    expect(css).toMatch(/body:not\(:has\(\[data-bk-header\]\)\)\s*\{\s*padding-top:\s*var\(--bk-safe-top\);\s*\}/);
+  it("leaves the top inset to each screen's header (and the loading shell)", () => {
+    expect(css).not.toMatch(/body:not\(:has/);
+    expect(readFileSync("app/(app)/loading.tsx", "utf8")).toContain("pt-[var(--bk-safe-top)]");
     const body = /^body\s*\{([\s\S]*?)\n\}/m.exec(css)![1];
     expect(body).toMatch(/padding:\s*0;/);
     expect(body).not.toMatch(/env\(safe-area-inset/);

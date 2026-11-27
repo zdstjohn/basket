@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MealThumb } from "@/components/MealThumb";
+import { Photo } from "@/components/ui/Photo";
 import { VerdictSheet } from "@/components/verdicts/VerdictSheet";
 import type { Ask } from "@/components/verdicts/useDinnerToAsk";
 import { saveVerdict, skipVerdict } from "@/lib/db/queries/verdicts";
@@ -165,7 +165,7 @@ export function VerdictCard({
         className="mx-4 mt-3 flex flex-col gap-3 rounded-md bg-surface p-3"
       >
         <div className="flex items-start gap-3">
-          <MealThumb src={photo} className="size-12 rounded-sm" />
+          <Photo src={photo} name={meal.name} crop="thumb" className="w-12 shrink-0 rounded-sm" />
           <div className="min-w-0 flex-1">
             <p className="text-body text-ink">How was {dayName}’s dinner?</p>
             <p className="text-body font-semibold text-ink">{meal.name}</p>

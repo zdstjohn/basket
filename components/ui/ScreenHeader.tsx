@@ -4,7 +4,7 @@ import { IconButton } from "./Button";
 
 /**
  * The top of a screen: an optional back or close button, the title, an action on the right, then anything that belongs under the title.
- * A screen that renders this owns its own top inset (see the body rule in globals.css).
+ * It owns the screen's top inset.
  */
 export function ScreenHeader({
   title,

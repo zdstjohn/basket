@@ -5,12 +5,10 @@ import { describe, expect, it } from "vitest";
 
 /**
  * The style guard (premium pass). Every .ts and .tsx under app/ and components/, plus lib/ui.ts,
- * must follow the design values unless it is on one of the legacy lists in tests/unit/design-legacy.
- * A task that restyles a file removes it from its stream's list in the same commit; lists only shrink.
+ * must follow the design values. There are no exemption lists.
  */
 
 const ROOT = process.cwd();
-const LISTS = ["shared", "a", "b", "later"] as const;
 const ROUND_OK = ["components/ui/RadioRows.tsx", "components/ui/Switch.tsx", "components/PersonRow.tsx"];
 
 const SPACING_OK = new Set(["0", "0.5", "1", "2", "2.5", "3", "4", "6", "8", "12", "16", "px", "auto"]);
@@ -155,18 +153,7 @@ function violationsOfText(file: string, text: string): string[] {
   return [...found].sort();
 }
 
-function readList(name: string): string[] {
-  const path = join(ROOT, "tests/unit/design-legacy", `${name}.txt`);
-  if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l !== "");
-}
-
 const files = scanned();
-const lists = Object.fromEntries(LISTS.map((n) => [n, readList(n)])) as Record<(typeof LISTS)[number], string[]>;
-const legacy = new Set(LISTS.flatMap((n) => lists[n]));
 const violations = new Map(files.map((f) => [f, violationsOf(f)]));
 
 describe("spacing rule", () => {
@@ -218,39 +205,20 @@ describe("class flags", () => {
 });
 
 describe("design guard", () => {
-  it("every file not on a legacy list follows the design values", () => {
+  it("every file follows the design values", () => {
     const failures = files
-      .filter((f) => !legacy.has(f))
       .filter((f) => violations.get(f)!.length > 0)
       .map((f) => `${f}: ${violations.get(f)!.join("; ")}`);
     expect(failures).toEqual([]);
   });
 
-  it("a legacy list entry still exists and still fails (lists only shrink)", () => {
-    const stale: string[] = [];
-    for (const name of LISTS) {
-      for (const f of lists[name]) {
-        if (!files.includes(f)) stale.push(`${name}.txt: ${f} is not a scanned file any more`);
-        else if (violations.get(f)!.length === 0) stale.push(`${name}.txt: ${f} passes now; remove it`);
-      }
-    }
-    expect(stale).toEqual([]);
+  it("the old style aliases are gone", () => {
+    expect(readFileSync(join(ROOT, "app/globals.css"), "utf8")).not.toMatch(/LEGACY ALIASES/);
+    expect(readFileSync(join(ROOT, "lib/ui.ts"), "utf8")).not.toMatch(/LEGACY NAMES/);
   });
 
-  it("no path is on two lists, or twice on one", () => {
-    const seen = new Map<string, string>();
-    const doubles: string[] = [];
-    for (const name of LISTS) {
-      for (const f of lists[name]) {
-        if (seen.has(f)) doubles.push(`${f} is on ${seen.get(f)}.txt and ${name}.txt`);
-        else seen.set(f, name);
-      }
-    }
-    expect(doubles).toEqual([]);
-  });
-
-  it("lists are sorted, so merges stay small", () => {
-    for (const name of LISTS) expect(lists[name], `${name}.txt`).toEqual([...lists[name]].sort());
+  it("there are no guard lists any more", () => {
+    expect(existsSync(join(ROOT, "tests/unit/design-legacy"))).toBe(false);
   });
 });
 
