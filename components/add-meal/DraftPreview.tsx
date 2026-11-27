@@ -1,7 +1,10 @@
 "use client";
 
+import { AllergyBox } from "@/components/flags/AllergyBox";
 import { MealThumb } from "@/components/MealThumb";
 import type { RecipeDraft } from "@/lib/ai/schemas";
+import { familiesFor, matchFood } from "@/lib/domain/families";
+import { findFlags, ingredientNames, type Flag } from "@/lib/domain/flags";
 import { householdServings } from "@/lib/domain/portions";
 import { scaleMeal } from "@/lib/domain/scaling";
 import type { Meal, Person } from "@/lib/domain/types";
@@ -24,6 +27,16 @@ export function draftAsMeal(draft: RecipeDraft): Meal {
     everyoneVegetarian: false,
     isFavorite: false,
   };
+}
+
+/** "tree nut" for a line an allergy flag names, from the family it belongs to (or the typed word); null when none does. */
+export function allergyLabel(canonical: string, allergies: Flag[]): string | null {
+  for (const f of allergies) {
+    if (!matchFood(f.food, canonical, { wide: true })) continue;
+    const { families, viaAlias } = familiesFor(f.food, { wide: true });
+    return families.length === 1 && !viaAlias ? families[0].label : f.food;
+  }
+  return null;
 }
 
 /** What the recipe becomes for this household: photo, scaled ingredients and the vegetarian swap. */
@@ -54,6 +67,8 @@ export function DraftPreview({
   const protein = meal.ingredients.find((i) => i.role === "meat" || i.role === "fish");
   const swapNames = joinNames(skipping);
   const swapLabel = skipping.length === 1 ? `${swapNames}'s portion` : swapNames;
+  const flags = findFlags(ingredientNames(meal), people);
+  const allergies = flags.filter((f) => f.kind === "allergy");
   const shownPhoto = photoSrc ?? draft.photo?.url ?? null;
 
   return (
@@ -126,11 +141,13 @@ export function DraftPreview({
               {lines.map((l, i) => {
                 // scaleMeal adds the swap as the last line whenever someone is skipping the meat.
                 const isSwap = !!draft.vegSwap && skipping.length > 0 && i === lines.length - 1;
+                const allergen = allergyLabel(l.canonical, allergies);
                 return (
                   <li key={`${l.canonical}-${i}`} className="flex justify-between gap-3 border-t border-[#F0F2EF] py-[7px] text-sm">
-                    <span>
+                    <span className={allergen ? "font-semibold text-[#A6261B]" : undefined}>
                       {cap(l.canonical)}
                       {isSwap ? ` (${swapNames})` : ""}
+                      {allergen ? ` · ${allergen}` : ""}
                     </span>
                     <span className="whitespace-nowrap text-[#4A544F]">{formatQuantityRoundedUp(l.qty)}</span>
                   </li>
@@ -166,6 +183,7 @@ export function DraftPreview({
           </div>
         </section>
       )}
+      <AllergyBox flags={flags} people={people} />
     </>
   );
 }
