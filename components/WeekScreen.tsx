@@ -250,7 +250,7 @@ export function WeekScreen({ household }: { household: Household }) {
             // a tile or an open row), so the columns read down the left, then down the right.
             <div ref={boardRef} className="columns-2 gap-2">
               {cells.map((d) => (
-                <div key={d} data-testid={`day-row-${d}`} data-flip-key={d} className={`mb-2 break-inside-avoid ${d === tonight && !forDay(d) ? "col-span-all" : ""}`}>
+                <div key={d} data-testid={`day-row-${d}`} data-flip-key={d} className={`mb-2 break-inside-avoid ${d === tonight && !forDay(d) ? "[column-span:all]" : ""}`}>
                   {tile(d)}
                 </div>
               ))}
