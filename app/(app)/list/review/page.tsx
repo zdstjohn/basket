@@ -7,14 +7,14 @@ import { isCartConfigured } from "@/lib/kroger/oauth";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ fm?: string | string[] }> }) {
   const { fm } = await searchParams;
-  const household = await getMyHouseholdOnce();
-  if (!household) redirect("/onboarding");
-  if (!household.kroger_location_id) redirect("/list");
   const sb = await createServerClient();
   const {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login");
+  const household = await getMyHouseholdOnce();
+  if (!household) redirect("/onboarding");
+  if (!household.kroger_location_id) redirect("/list");
 
   const cartEnabled = isCartConfigured();
   let link: { connected: boolean; profileId: string | null } = { connected: false, profileId: null };

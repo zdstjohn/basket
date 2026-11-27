@@ -236,8 +236,12 @@ test("what the family is told when a send does not simply work", async ({ page }
   await expect(first).toContainText("Sent");
   await expect(lineNamed(page, secondName)).toContainText("Not added");
 
-  // A resend leaves out what was added.
+  // A retry after an unsure send asks first, and sends nothing until it is confirmed. It leaves out what was added.
   await sendButton(page).click();
+  const warning = page.getByRole("dialog", { name: "Send these again" });
+  await expect(warning.getByText("This adds them a second time. Fred Meyer can't tell Basket what's already in your cart.")).toBeVisible();
+  expect(bodies).toHaveLength(2);
+  await warning.getByRole("button", { name: "Add again" }).click();
   await expect(result).toContainText("Added.");
   expect(bodies[2].resend).toBe(true);
   expect(bodies[2].lines.map((l) => l.upc)).not.toContain(firstUpc);

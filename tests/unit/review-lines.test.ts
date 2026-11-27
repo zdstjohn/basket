@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ListItem } from '@/lib/domain/list';
-import type { CartSend } from '@/lib/domain/cart';
+import { cartDiff, type CartSend } from '@/lib/domain/cart';
 import type { Offer, Recommendation } from '@/lib/domain/packages';
 import {
   FRED_MEYER_CART_URL,
   lastSendNote,
+  otherCartNote,
   resendScope,
+  sendPlan,
   reviewLines,
   SENT_CHECK_ADVICE,
   sentAtText,
@@ -129,5 +131,62 @@ describe('constants', () => {
     expect(SENT_CHECK_ADVICE).toBe(
       "Basket couldn't confirm every item reached your Fred Meyer cart. Wait about 5 minutes and check the cart in the Fred Meyer app before sending again.",
     );
+  });
+});
+
+describe('reviewLines cap', () => {
+  it('cuts a combined quantity at 99, with its price, and says which line', () => {
+    const items = [item('milk'), item('whole milk')];
+    const products = { milk: rec(offer('9', 60, 6000, 'Milk')), 'whole milk': rec(offer('9', 60, 6000, 'Milk')) };
+    const out = reviewLines(items, products);
+    expect(out.lines).toEqual([{ key: 'milk', canonical: 'milk', upc: '9', name: 'Milk', quantity: 99, cents: 9900 }]);
+    expect(out.capped).toEqual(['Milk']);
+  });
+  it('caps nothing at or under 99', () => {
+    expect(reviewLines([item('a')], { a: rec(offer('1', 99, 99)) }).capped).toEqual([]);
+  });
+});
+
+describe('sendPlan', () => {
+  const me = { userId: 'me', profileId: null };
+  const line = { key: 'beans', canonical: 'beans', upc: '1', name: 'Beans', quantity: 3, cents: 300 };
+  const earlier = send({ items: [{ ...line, quantity: 2, cents: 200 }] });
+  it('keeps the wanted total in the body but the difference in what is actually sent', () => {
+    const plan = sendPlan([line], cartDiff([line], [earlier], me), false);
+    expect(plan.body).toEqual([{ key: 'beans', upc: '1', quantity: 3 }]);
+    expect(plan.actual).toEqual([{ key: 'beans', upc: '1', quantity: 1 }]);
+    expect(plan.resend).toBe(false);
+  });
+  it('a retry after an unsure send adds 1, not 3', () => {
+    const plan = sendPlan([line], cartDiff([line], [earlier], me), false);
+    expect(resendScope(plan.actual, [])).toEqual([{ key: 'beans', upc: '1', quantity: 1 }]);
+  });
+  it('sending again sends differences for new lines and totals for the rest', () => {
+    const other = { ...line, key: 'rice', upc: '2', quantity: 2, cents: 200 };
+    const sent = send({ items: [{ ...line, quantity: 3 }, { ...other, quantity: 1, cents: 100 }] });
+    const plan = sendPlan([line, other], cartDiff([line, other], [sent], me), true);
+    expect(plan.resend).toBe(true);
+    expect(plan.body).toEqual([{ key: 'rice', upc: '2', quantity: 1 }, { key: 'beans', upc: '1', quantity: 3 }]);
+    expect(plan.actual).toEqual(plan.body);
+  });
+});
+
+describe('otherCartNote', () => {
+  const me = { userId: 'me', profileId: 'p-me' };
+  it('is null when every send went to my account, or none did', () => {
+    expect(otherCartNote([], me, 'UTC')).toBeNull();
+    expect(otherCartNote([send({ profileId: 'p-me' })], me, 'UTC')).toBeNull();
+  });
+  it('says someone else sent it to their own cart', () => {
+    expect(otherCartNote([send({ userId: 'other', profileId: 'p-x' })], me, 'America/Los_Angeles')).toBe(
+      'Someone else in your family sent this list to their Fred Meyer cart at 3:05 pm on Thursday.',
+    );
+  });
+  it('ignores failed sends and takes the newest', () => {
+    const sends = [
+      send({ id: 'a', userId: 'o1', profileId: 'p1', sentAt: '2026-11-25T23:05:00.000Z' }),
+      send({ id: 'b', userId: 'o2', profileId: 'p2', sentAt: '2026-11-27T23:05:00.000Z', status: 'failed' }),
+    ];
+    expect(otherCartNote(sends, me, 'UTC')).toBe('Someone else in your family sent this list to their Fred Meyer cart at 11:05 pm on Wednesday.');
   });
 });

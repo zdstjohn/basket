@@ -15,7 +15,7 @@ import { cartDiff, type CartLine, type CartSend, type Modality } from "@/lib/dom
 import type { ListItem } from "@/lib/domain/list";
 import { formatDollars } from "@/lib/domain/money-input";
 import { sendCart } from "@/lib/list/cart-client";
-import { FRED_MEYER_CART_URL, lastSendNote, resendScope, reviewLines, SENT_CHECK_ADVICE } from "@/lib/list/review";
+import { FRED_MEYER_CART_URL, lastSendNote, MAX_PER_PRODUCT, otherCartNote, resendScope, reviewLines, SENT_CHECK_ADVICE, sendPlan } from "@/lib/list/review";
 import { subscribeHousehold } from "@/lib/realtime";
 import { bigGreenLink, focusRing, pillButton, primaryButton, stickyAboveNav } from "@/lib/ui";
 import { listView, useWeekId, useWeekList } from "@/lib/useWeekList";
@@ -105,7 +105,7 @@ export function ReviewScreen({
   // Sends loaded for another week must not stand in for this one's.
   const sends = sendsFor && sendsFor.weekId === weekId ? sendsFor.sends : null;
 
-  const { lines, unmatched } = useMemo(() => reviewLines(items, products), [items, products]);
+  const { lines, unmatched, capped } = useMemo(() => reviewLines(items, products), [items, products]);
   const itemOf = useMemo(() => new Map(items.map((i) => [i.key, i])), [items]);
   const me = useMemo(() => ({ userId, profileId }), [userId, profileId]);
   const diff = useMemo(() => (sends ? cartDiff(lines, sends, me) : null), [lines, sends, me]);
@@ -116,6 +116,7 @@ export function ReviewScreen({
   const [problem, setProblem] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
+  const resultRef = useRef<HTMLDivElement>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [retry, setRetry] = useState<Retry | null>(null);
   const [again, setAgain] = useState(false);
@@ -159,19 +160,15 @@ export function ReviewScreen({
 
   const sig = signature(lines);
   const live = retry && retry.sig === sig ? retry : null;
-  // What the next tap sends. After an unsure send it is the lines not reported added (always a resend); after "send
-  // these again" it adds the lines already in the cart; otherwise only what is new, as the wanted totals.
+  // What the next tap sends. After an unsure send it is the lines not reported added (always a resend, and the
+  // differences that send asked for, never the wanted totals); after "send these again" it adds the lines already in
+  // the cart; otherwise only what is new, as the wanted totals.
   const payload = useMemo(() => {
-    if (live) return { lines: live.lines, resend: true };
-    if (!diff) return { lines: [], resend: false };
-    if (again) {
-      const all = [...diff.toSend, ...diff.alreadySent];
-      return { lines: all.map((l) => ({ key: l.key, upc: l.upc, quantity: l.quantity })), resend: true };
-    }
-    const wanted = new Set(diff.toSend.map((l) => l.key));
-    return { lines: lines.filter((l) => wanted.has(l.key)).map((l) => ({ key: l.key, upc: l.upc, quantity: l.quantity })), resend: false };
+    if (live) return { body: live.lines, actual: live.lines, resend: true, retry: true };
+    if (!diff) return { body: [], actual: [], resend: false, retry: false };
+    return { ...sendPlan(lines, diff, again), retry: false };
   }, [live, diff, again, lines]);
-  const sendCount = payload.lines.length;
+  const sendCount = payload.body.length;
   const offline = list.offline || (typeof navigator !== "undefined" && navigator.onLine === false);
   const over = state === "red";
 
@@ -180,9 +177,9 @@ export function ReviewScreen({
     sendingRef.current = true;
     setSending(true);
     setOutcome(null);
-    const sent = payload.lines;
+    const sent = payload.actual;
     try {
-      const res = await sendCart({ weekId, modality, lines: sent, resend: payload.resend });
+      const res = await sendCart({ weekId, modality, lines: payload.body, resend: payload.resend });
       if (res.ok) {
         setOutcome({ kind: "sent", rejected: res.rejected.map((r) => r.name) });
         setRetry(null);
@@ -204,9 +201,16 @@ export function ReviewScreen({
 
   function tapSend() {
     if (sendingRef.current || sendCount === 0) return;
-    if (over) setAsking("over");
+    // A retry after an unsure send may add things a second time: it asks first, like "Send these again".
+    if (payload.retry) setAsking("again");
+    else if (over) setAsking("over");
     else void doSend();
   }
+
+  // The result is said, and focus goes to it, so a screen reader hears it and a keyboard stays with it.
+  useEffect(() => {
+    if (outcome) resultRef.current?.focus();
+  }, [outcome]);
 
   const swapping = swapKey ? (itemOf.get(swapKey) ?? null) : null;
   const choiceOf = (canonical: string) => list.choices.find((c) => c.canonical === canonical);
@@ -234,6 +238,7 @@ export function ReviewScreen({
   };
 
   const note = sends ? lastSendNote(sends, me, household.time_zone) : null;
+  const otherNote = sends ? otherCartNote(sends, me, household.time_zone) : null;
   const unsureNow = outcome?.kind === "unsure" || (diff?.unsure ?? false);
   const look = BUDGET_LOOK[state];
 
@@ -244,7 +249,9 @@ export function ReviewScreen({
       : offline
         ? "You're offline."
         : !diff
-          ? "Checking your cart…"
+          ? sendsFailed
+            ? "Can’t send yet"
+            : "Checking your cart…"
           : sendCount === 0
             ? "Nothing new to send"
             : `Add ${plural(sendCount, "item", "items")} to my Fred Meyer cart`;
@@ -329,6 +336,16 @@ export function ReviewScreen({
             {note && (
               <p data-testid="last-send" role="status" className="mt-2 text-[13px] font-medium text-[#4A544F]">
                 {note}
+              </p>
+            )}
+            {otherNote && (
+              <p data-testid="other-cart" role="status" className="mt-2 rounded-xl bg-[#FFF1CC] p-3 text-[13px] font-medium text-[#7A4B00]">
+                {otherNote}
+              </p>
+            )}
+            {capped.length > 0 && (
+              <p data-testid="capped" role="status" className="mt-2 text-[13px] font-medium text-[#7A4B00]">
+                Capped at {MAX_PER_PRODUCT}: {capped.join(", ")}. Basket sends at most {MAX_PER_PRODUCT} of one product.
               </p>
             )}
             {unsureNow && (
@@ -432,8 +449,24 @@ export function ReviewScreen({
 
       <div className="mt-auto" />
       <div data-testid="review-bar" className={stickyAboveNav}>
-        {outcome && (
-          <div role="status" aria-live="polite" data-testid="send-result" className="mb-2 text-[13px] font-medium text-[#4A544F]">
+        {sendsFailed && !sends && (
+          <div role="alert" className="mb-2 flex items-center justify-between gap-2 text-[13px] font-medium text-[#A6261B]">
+            <p>Couldn’t check what’s already in your cart.</p>
+            <button type="button" onClick={() => void loadSends()} className={pillButton}>
+              Retry
+            </button>
+          </div>
+        )}
+        <div
+          ref={resultRef}
+          tabIndex={-1}
+          role="status"
+          aria-live="polite"
+          data-testid="send-result"
+          className={`text-[13px] font-medium text-[#4A544F] outline-none ${outcome ? "mb-2" : ""}`}
+        >
+          {outcome && (
+            <>
             {outcome.kind === "sent" && (
               <>
                 <p>Added. Check out in the Fred Meyer app.</p>
@@ -464,8 +497,9 @@ export function ReviewScreen({
             {outcome.kind === "rejected" && <p>Fred Meyer wouldn&apos;t take these items. Try swapping them.</p>}
             {outcome.kind === "too_many" && <p>That&apos;s a lot of sends for one day. Try again tomorrow.</p>}
             {outcome.kind === "failed" && <p role="alert" className="text-[#A6261B]">That didn&apos;t go through. Nothing was added.</p>}
-          </div>
-        )}
+            </>
+          )}
+        </div>
         <button type="button" data-testid="send-cart" disabled={!canSend} aria-disabled={!canSend} onClick={tapSend} className={primaryButton}>
           {label}
         </button>
@@ -508,7 +542,9 @@ export function ReviewScreen({
                 className={primaryButton}
                 onClick={() => {
                   setAsking(null);
-                  setAgain(true);
+                  if (!payload.retry) setAgain(true);
+                  else if (over) setAsking("over");
+                  else void doSend();
                 }}
               >
                 Add again
@@ -540,11 +576,6 @@ export function ReviewScreen({
             void run(() => list.resetChoice(swapping));
           }}
         />
-      )}
-      {sendsFailed && !sends && (
-        <p role="alert" className="mx-5 mb-2 text-[13px] font-medium text-[#A6261B]">
-          We couldn&apos;t check what you&apos;ve already sent. Try again in a moment.
-        </p>
       )}
     </section>
   );
