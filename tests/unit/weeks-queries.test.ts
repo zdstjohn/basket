@@ -3,6 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/db/types';
 import type { WeekMeal } from '@/lib/db/rows';
 import {
+  DinnerChangedError,
+  DinnerGoneError,
   NightTakenError,
   cookDouble,
   copyWeek,
@@ -36,6 +38,8 @@ function stub(answer: (op: Op) => Partial<Result> | undefined = () => undefined)
             if (prop === 'then') {
               const r = answer(op);
               const res: Result = { data: null, error: null, ...r };
+              // An update asked to return its rows answers with one row unless the test says otherwise.
+              if (op.verb === 'update' && op.filters.some(([f]) => f === 'select') && !r?.error && !(r && 'data' in r)) res.data = [{ id: 'x' }];
               return (resolve: (v: unknown) => unknown) => resolve(res);
             }
             return (...args: unknown[]) => {
@@ -136,6 +140,68 @@ describe('cookDouble', () => {
     const e = await cookDouble(sb, cook, 7.6, 'fri').catch((x) => x);
     expect(e).toBeInstanceOf(Error);
     expect(e).not.toBeInstanceOf(NightTakenError);
+  });
+});
+
+describe('cookDouble with the stricter database', () => {
+  const existing = row('left', 'fri', { leftover_of: 'cook', meal_id: 'm-cook', servings_override: 0 });
+
+  it('cook double again with a lower amount writes the amount first, then puts the night back', async () => {
+    // the database drops the leftovers night when its cooking night is lowered, so the read finds none
+    const { sb, ops } = stub();
+    await cookDouble(sb, cook, 5.6, 'fri');
+    expect(ops.map((o) => o.verb)).toEqual(['update', 'select', 'insert']);
+    expect(ops[0].payload).toEqual({ servings_override: 5.6 });
+  });
+  it('says the dinner changed when the database refuses the link', async () => {
+    const { sb } = stub((op) => (op.verb === 'insert' ? err('leftovers must follow', '23514') : undefined));
+    await expect(cookDouble(sb, cook, 7.6, 'fri')).rejects.toBeInstanceOf(DinnerChangedError);
+    await expect(cookDouble(sb, cook, 7.6, 'fri')).rejects.toThrow('That dinner changed on the other phone. Try again.');
+  });
+  it('says the dinner is gone when the cooking night is not there', async () => {
+    const { sb, ops } = stub((op) => (op.verb === 'update' ? { data: [] } : undefined));
+    await expect(cookDouble(sb, cook, 7.6, 'fri')).rejects.toBeInstanceOf(DinnerGoneError);
+    await expect(cookDouble(sb, cook, 7.6, 'fri')).rejects.toThrow('That dinner is gone.');
+    expect(ops).toHaveLength(2);
+  });
+  it('moves the other phone’s leftovers night once when both phones add one (last tap wins)', async () => {
+    let reads = 0;
+    const { sb, ops } = stub((op) => {
+      if (op.verb === 'insert') return err('duplicate key value violates unique constraint "week_meals_one_leftover"', '23505');
+      if (op.verb === 'select') return reads++ === 0 ? { data: null } : { data: existing };
+      return undefined;
+    });
+    await cookDouble(sb, cook, 7.6, 'sat');
+    expect(ops.map(brief).map((b) => b[0])).toEqual(['update', 'select', 'insert', 'select', 'update']);
+    expect(ops[4].payload).toEqual({ day: 'sat' });
+  });
+  it('writes nothing more when the other phone already chose the same night', async () => {
+    let reads = 0;
+    const { sb, ops } = stub((op) => {
+      if (op.verb === 'insert') return err('violates "week_meals_one_leftover"', '23505');
+      if (op.verb === 'select') return reads++ === 0 ? { data: null } : { data: existing };
+      return undefined;
+    });
+    await cookDouble(sb, cook, 7.6, 'fri');
+    expect(ops).toHaveLength(4);
+  });
+  it('still says night taken for the night index', async () => {
+    const { sb } = stub((op) => (op.verb === 'insert' ? err('violates "week_meals_week_id_day_slot_key"', '23505') : undefined));
+    await expect(cookDouble(sb, cook, 7.6, 'fri')).rejects.toBeInstanceOf(NightTakenError);
+  });
+  it('refuses to double a leftovers night, before any write', async () => {
+    const { sb, ops } = stub();
+    await expect(cookDouble(sb, existing, 7.6, 'sat')).rejects.toThrow();
+    expect(ops).toHaveLength(0);
+  });
+});
+
+describe('moveLeftover with the stricter database', () => {
+  it('says the dinner changed on a check violation', async () => {
+    await expect(moveLeftover(stub(() => err('x', '23514')).sb, 'left', 'sat')).rejects.toBeInstanceOf(DinnerChangedError);
+  });
+  it('says the dinner is gone when no row was updated', async () => {
+    await expect(moveLeftover(stub(() => ({ data: [] })).sb, 'left', 'sat')).rejects.toBeInstanceOf(DinnerGoneError);
   });
 });
 
@@ -242,6 +308,12 @@ describe('copyWeek', () => {
     expect(bumped).toBe(2); // Mon's changed meal and Wed's, never the leftovers row's
     const meals = ops.find((o) => o.table === 'meals' && o.verb === 'select')!;
     expect(meals.filters.find(([f]) => f === 'in')?.[2]).toEqual(['mA', 'mB']);
+  });
+
+  it('skips a leftovers row whose cooking row is not doubled', async () => {
+    const { sb, ops } = run([{ ...srcWed, servings_override: null }, srcFri], [dstSat]);
+    await copyWeek(sb, 'src', 'dst');
+    expect(ops.filter((o) => o.verb === 'upsert')).toHaveLength(1);
   });
 
   it('skips a leftovers row whose cooking row is missing', async () => {

@@ -124,22 +124,63 @@ export class NightTakenError extends Error {
   }
 }
 
+/** The database refused the link: the other phone un-doubled, moved or removed the cooking night. */
+export class DinnerChangedError extends Error {
+  constructor() {
+    super('That dinner changed on the other phone. Try again.');
+    this.name = 'DinnerChangedError';
+  }
+}
+
+/** The row to change is no longer there. */
+export class DinnerGoneError extends Error {
+  constructor() {
+    super('That dinner is gone.');
+    this.name = 'DinnerGoneError';
+  }
+}
+
+const CHECK_VIOLATION = '23514';
+const ONE_LEFTOVER_INDEX = 'week_meals_one_leftover';
+
+type WriteError = { message: string; code?: string };
+
 const fail = (error: { message: string }): never => {
   throw new Error(error.message);
 };
+
+/** The errors a leftovers write can answer with, in the words the screens use. */
+function failWrite(error: WriteError): never {
+  if (error.code === UNIQUE_VIOLATION) throw new NightTakenError();
+  if (error.code === CHECK_VIOLATION) throw new DinnerChangedError();
+  throw new Error(error.message);
+}
 
 /**
  * Doubles the cooking night, then sets, moves or clears its leftovers night. `servings` comes from
  * doubleServings(). The double is written first on purpose: if the second write fails the week says
  * "Cooking double / No leftovers night", which is true and which Change repairs. The reverse order
- * could leave a leftovers night with a single batch.
+ * could leave a leftovers night with a single batch. The amount is written before the leftovers night is
+ * kept or added, so "cook double again" with a lower amount (someone left the household) cannot drop it:
+ * the database drops a leftovers night only when its cooking night is lowered while the night is there,
+ * and we re-add it in this same call.
  */
 export async function cookDouble(sb: Sb, cook: WeekMeal, servings: number, leftoverDay: Day | null): Promise<void> {
-  const { error: upErr } = await sb.from('week_meals').update({ servings_override: servings }).eq('id', cook.id);
+  if (cook.leftover_of) throw new Error('A leftovers night cannot be doubled');
+  const { data: done, error: upErr } = await sb
+    .from('week_meals')
+    .update({ servings_override: servings })
+    .eq('id', cook.id)
+    .select('id');
   if (upErr) fail(upErr);
+  if (!done || done.length === 0) throw new DinnerGoneError();
 
-  const { data: row, error: rowErr } = await sb.from('week_meals').select('*').eq('leftover_of', cook.id).maybeSingle();
-  if (rowErr) fail(rowErr);
+  const readRow = async () => {
+    const { data, error } = await sb.from('week_meals').select('*').eq('leftover_of', cook.id).maybeSingle();
+    if (error) fail(error);
+    return data;
+  };
+  const row = await readRow();
 
   if (leftoverDay === null) {
     if (!row) return;
@@ -148,34 +189,42 @@ export async function cookDouble(sb: Sb, cook: WeekMeal, servings: number, lefto
     return;
   }
 
+  const moveTo = async (id: string): Promise<void> => {
+    const { data, error } = await sb.from('week_meals').update({ day: leftoverDay }).eq('id', id).select('id');
+    if (error) failWrite(error);
+    if (!data || data.length === 0) throw new DinnerGoneError();
+  };
+
   // An insert or an update, never an upsert, so it cannot replace a dinner.
-  let error: { message: string; code?: string } | null;
   if (row) {
-    if (row.day === leftoverDay) return;
-    ({ error } = await sb.from('week_meals').update({ day: leftoverDay }).eq('id', row.id));
-  } else {
-    ({ error } = await sb.from('week_meals').insert({
-      household_id: cook.household_id,
-      week_id: cook.week_id,
-      day: leftoverDay,
-      slot: cook.slot,
-      meal_id: cook.meal_id,
-      servings_override: 0,
-      leftover_of: cook.id,
-    }));
+    if (row.day !== leftoverDay) await moveTo(row.id);
+    return;
   }
-  if (error) {
-    if (error.code === UNIQUE_VIOLATION) throw new NightTakenError();
-    fail(error);
+  const { error } = await sb.from('week_meals').insert({
+    household_id: cook.household_id,
+    week_id: cook.week_id,
+    day: leftoverDay,
+    slot: cook.slot,
+    meal_id: cook.meal_id,
+    servings_override: 0,
+    leftover_of: cook.id,
+  });
+  if (!error) return;
+  if (error.code === UNIQUE_VIOLATION && error.message.includes(ONE_LEFTOVER_INDEX)) {
+    // The other phone added its leftovers night first: last tap wins, so move that one here.
+    const other = await readRow();
+    if (other) {
+      if (other.day !== leftoverDay) await moveTo(other.id);
+      return;
+    }
   }
+  failWrite(error);
 }
 
 export async function moveLeftover(sb: Sb, leftoverId: string, day: Day): Promise<void> {
-  const { error } = await sb.from('week_meals').update({ day }).eq('id', leftoverId);
-  if (error) {
-    if (error.code === UNIQUE_VIOLATION) throw new NightTakenError();
-    fail(error);
-  }
+  const { data, error } = await sb.from('week_meals').update({ day }).eq('id', leftoverId).select('id');
+  if (error) failWrite(error);
+  if (!data || data.length === 0) throw new DinnerGoneError();
 }
 
 /** Takes a leftovers night off, then puts its cooking night back to the usual amount. */
@@ -236,7 +285,8 @@ export async function copyWeek(sb: Sb, fromWeekId: string, toWeekId: string): Pr
     .filter(isLeftover)
     .map((l) => {
       const cook = cookNightOf(from, l);
-      const cookId = cook ? ids.get(key(cook)) : undefined;
+      // A leftovers night needs a cooking night that is doubled (the database refuses it otherwise).
+      const cookId = cook && cook.servings_override !== null ? ids.get(key(cook)) : undefined;
       return cookId
         ? {
             household_id: householdId,
