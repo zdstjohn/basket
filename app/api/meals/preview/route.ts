@@ -13,6 +13,10 @@ const BodySchema = z.object({ mealId: z.string().min(1).max(100) });
 /** Failures of the photo itself, which will fail the same way next time. Anything else is treated as transient. */
 const PERMANENT = new Set(['blocked_host', 'bad_url', 'not_image', 'too_large']);
 
+/** A source 4xx is a dead or blocked link and stays that way; 408, 425 and 429 are about timing, so they are retried. */
+const isPermanentStatus = (status?: number): boolean =>
+  status !== undefined && status >= 400 && status < 500 && ![408, 425, 429].includes(status);
+
 const unavailable = () => NextResponse.json({ error: 'unavailable' }, { status: 503, headers: { 'retry-after': '60' } });
 const unreadable = (error = 'unreadable') => NextResponse.json({ error }, { status: 422 });
 
@@ -60,7 +64,7 @@ export async function POST(req: Request) {
     }
     out = await makePreview(bytes);
   } catch (e) {
-    const permanent = e instanceof PreviewError || (e instanceof ImportError && PERMANENT.has(e.code));
+    const permanent = e instanceof PreviewError || (e instanceof ImportError && (PERMANENT.has(e.code) || isPermanentStatus(e.status)));
     if (!permanent) return unavailable();
     try {
       await store({ photo_width: 0 });

@@ -179,6 +179,20 @@ describe('POST /api/meals/preview', () => {
     expect(updates).toHaveLength(0);
   });
 
+  it.each([404, 403, 410, 401])('422 and width 0 for a source HTTP %i', async (status) => {
+    single.mockResolvedValue(row());
+    fetchPublicBytes.mockRejectedValue(new ImportError('fetch_failed', `http ${status}`, status));
+    expect((await POST(req({ mealId: 'm1' }))).status).toBe(422);
+    expect(updates[0].patch).toEqual({ photo_width: 0 });
+  });
+
+  it.each([429, 408, 425, 500, 503])('503 and nothing stored for a source HTTP %i', async (status) => {
+    single.mockResolvedValue(row());
+    fetchPublicBytes.mockRejectedValue(new ImportError('fetch_failed', `http ${status}`, status));
+    expect((await POST(req({ mealId: 'm1' }))).status).toBe(503);
+    expect(updates).toHaveLength(0);
+  });
+
   it('503 and nothing stored for a storage blip', async () => {
     single.mockResolvedValue(row({ photo_path: 'h1/m1.jpg', photo_url: null }));
     download.mockResolvedValue({ data: null, error: { message: 'storage down' } });
