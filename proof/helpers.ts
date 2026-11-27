@@ -30,7 +30,6 @@ export function pendingReason(screenNames: string[]): string | null {
   for (const name of screenNames) {
     const screen = SCREENS.find((s) => s.name === name);
     if (!screen) return `screen "${name}" is not in the registry yet`;
-    if (screen.contrastPending) return `screen "${name}" is still contrastPending`;
   }
   return null;
 }

@@ -24,10 +24,10 @@ Specs reuse `e2e/helpers` (sign-in, household, flows, look, insets) and `e2e/scr
 
 ## What gets skipped
 
-- A state whose registry screen is still `contrastPending` (or not registered yet) is skipped with a `[proof] skipped ...` line. This is how the "after" shots stay honest: a screen appears once its own task has redesigned it.
+- A state whose registry screen is not registered is skipped with a `[proof] skipped ...` line. This is how the "after" shots stay honest: a screen appears once its own task has redesigned it.
 - A state with `pending: "reason"` in `states.ts` (its trigger does not exist yet) is skipped with that reason before any sign-in or household is set up (a `Pending` thrown from a step also skips): `week-long-names`, `week-error`, `list-stale` and `review-sent` have no trigger yet; add one in `states.ts` when the screen's task lands.
-- Any other error fails the test: a screen that is registered and no longer `contrastPending` is finished, so a step that breaks on it is a bug. The same goes for clips, and a failed reduced-motion clip still reports its transform check. Clips need: a meal tile that is a button named after the dish and opens a dialog (`photo-sheet`), the list item sheet (`sheet-drag`), `list-row` checkboxes (`list-strike`).
-- On a `contrastPending` screen, `measure.spec.ts` writes its findings to `proof-out/measure/` and as a test annotation but passes; on any other screen findings fail the test.
+- Any other error fails the test: a screen that is registered is finished, so a step that breaks on it is a bug. The same goes for clips, and a failed reduced-motion clip still reports its transform check. Clips need: a meal tile that is a button named after the dish and opens a dialog (`photo-sheet`), the list item sheet (`sheet-drag`), `list-row` checkboxes (`list-strike`).
+- `measure.spec.ts` writes its findings to `proof-out/measure/`; any finding fails the test.
 
 ## Measurements (`measure.spec.ts`)
 

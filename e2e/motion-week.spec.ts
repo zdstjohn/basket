@@ -274,7 +274,7 @@ test("with leftovers set, the sheet scales to the override", async ({ page }) =>
   const sheet = await openTacos(page);
   const base = await servingsIn(sheet);
   await sheet.getByRole("button", { name: "More leftovers" }).click();
-  await expect(sheet.getByText("Leftovers: +1 servings")).toBeVisible();
+  await expect(sheet.getByText("Leftovers: +1 serving")).toBeVisible();
   await expect.poll(() => servingsIn(sheet)).toBeCloseTo(base + 1, 0);
   await sheet.getByRole("button", { name: "Fewer leftovers" }).click();
   await expect(sheet.getByText("Leftovers: +0 servings")).toBeVisible();

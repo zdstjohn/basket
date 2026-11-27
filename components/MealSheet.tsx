@@ -113,17 +113,17 @@ export function MealSheet({
       const blob = await resizeForUpload(file);
       const path = await uploadMealPhoto(sb, householdId, meal.id, blob);
       await setMealPhoto(sb, meal.id, { path });
-    }, "We couldn't save that photo. Try again.");
+    }, "We couldn’t save that photo. Try again.");
 
   const setLeftovers = (n: number) =>
     run(
       () => setWeekMeal(sb, weekMeal.week_id, day, weekMeal.slot, meal.id, n > 0 ? base + n : null),
-      "We couldn't change that. Try again.",
+      "We couldn’t change that. Try again.",
     );
 
   // Leave out or swap saves at once, so a favorite remembers it.
   const saveChanges = (next: PersonChange[]) =>
-    run(async () => void (await setPersonChanges(sb, meal.id, next)), "We couldn't change that. Try again.");
+    run(async () => void (await setPersonChanges(sb, meal.id, next)), "We couldn’t change that. Try again.");
 
   return (
     <Sheet label={meal.name} enter={enter} onClose={onClose}>
@@ -199,7 +199,7 @@ export function MealSheet({
         )}
 
         <div className="flex items-center justify-between gap-3 border-y border-line py-2">
-          <p className="text-small font-semibold">Leftovers: +{extra} servings</p>
+          <p className="text-small font-semibold">Leftovers: +{servingsText(extra)}</p>
           <Stepper
             value={extra}
             min={0}
@@ -230,7 +230,7 @@ export function MealSheet({
           variant="ghost"
           disabled={busy}
           onClick={() =>
-            void run(async () => void (await updateMeal(sb, meal.id, { is_favorite: !meal.is_favorite })), "We couldn't change that. Try again.")
+            void run(async () => void (await updateMeal(sb, meal.id, { is_favorite: !meal.is_favorite })), "We couldn’t change that. Try again.")
           }
         >
           <Icon icon={Bookmark} size={18} />
@@ -244,7 +244,7 @@ export function MealSheet({
             void run(async () => {
               await setWeekMeal(sb, weekMeal.week_id, day, weekMeal.slot, null);
               onClose();
-            }, "We couldn't take that off. Try again.")
+            }, "We couldn’t take that off. Try again.")
           }
         >
           Take off {dayName(day)}

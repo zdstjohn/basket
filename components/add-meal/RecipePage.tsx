@@ -105,7 +105,7 @@ export function RecipePage({
   const [smallSrc, setSmallSrc] = useState<string | null>(null);
 
   const name = draft?.name ?? pending?.title ?? "";
-  const shownPhoto = draft ? (photoSrc ?? draft.photo?.url ?? null) : (photoSrc ?? pending?.image ?? null);
+  const shownPhoto = draft ? (photoSrc ?? draft.photo?.url ?? pending?.image ?? null) : (photoSrc ?? pending?.image ?? null);
   const asTile = !shownPhoto || smallSrc === shownPhoto;
   const credit = photoSrc ? "Your photo" : draft?.photo ? `Photo: ${draft.photo.credit}` : "";
 

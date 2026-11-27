@@ -193,6 +193,13 @@ export function WeekScreen({ household }: { household: Household }) {
       setTimeout(() => setReveal(new Map()), 1200); // a safety net if an animation never reports its end
     }
     if (arrived.length > 0) {
+      // A day that settles has no reveal due as well, even if one is still waiting (a dinner added from the other phone).
+      setReveal((prev) => {
+        if (!arrived.some((d) => prev.has(d))) return prev;
+        const next = new Map(prev);
+        for (const d of arrived) next.delete(d);
+        return next;
+      });
       setSettling((prev) => new Set([...prev, ...arrived]));
       if (marked && arrived.includes(marked)) setTimeout(() => tick(), 150);
       setTimeout(() => setSettling((prev) => new Set([...prev].filter((d) => !arrived.includes(d)))), DUR.settle);
@@ -301,7 +308,7 @@ export function WeekScreen({ household }: { household: Household }) {
         note={info.tileNote}
         lines={info.lines}
         favorite={meal.is_favorite}
-        onOpen={() => void openDinner(d)}
+        onOpen={() => void openDinner(d).catch(() => {})}
         imgRef={widthRef(meal.id)}
       />
     );
@@ -346,7 +353,7 @@ export function WeekScreen({ household }: { household: Household }) {
             note={tonightInfo.note}
             lines={tonightInfo.flags.length > 0 ? <FlagLines flags={tonightInfo.flags} people={data.people} onPhoto /> : null}
             favorite={tonightInfo.meal.is_favorite}
-            onOpen={() => void openDinner(heroDay)}
+            onOpen={() => void openDinner(heroDay).catch(() => {})}
             reveal={revealProps(HERO)}
             onDemote={() => demote(tonightInfo.meal.id)}
             imgRef={widthRef(tonightInfo.meal.id)}

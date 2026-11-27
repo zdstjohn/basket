@@ -12,8 +12,7 @@ const MIN_CONTRAST = 4.5;
 
 /**
  * For every screen in both looks: (1) spacing on the scale, (2) gutter edges, (3) type scale, (4) contrast, (5) 200% crops.
- * Findings are written to proof-out/measure/. They fail the test, except on a screen that is still contrastPending (its own
- * task has not redesigned it yet): there they are listed as an annotation and in the file, and the test passes.
+ * Findings are written to proof-out/measure/ and fail the test.
  */
 test.describe.configure({ mode: "parallel" });
 
@@ -68,11 +67,7 @@ for (const screen of SCREENS) {
         await zoom.close();
       }
 
-      writeFileSync(`${outDir("measure")}/${slug(tag)}.json`, JSON.stringify({ screen: screen.name, device, look, pending: !!screen.contrastPending, found }, null, 2));
-      if (screen.contrastPending) {
-        if (found.length) testInfo.annotations.push({ type: "pending-findings", description: `${found.length} finding(s); see proof-out/measure\n${found.slice(0, 20).join("\n")}` });
-        return;
-      }
+      writeFileSync(`${outDir("measure")}/${slug(tag)}.json`, JSON.stringify({ screen: screen.name, device, look, found }, null, 2));
       expect(found, found.join("\n")).toEqual([]);
     });
   }

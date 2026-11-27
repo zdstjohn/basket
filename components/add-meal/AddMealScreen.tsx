@@ -78,6 +78,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const heroRef = useRef<HTMLDivElement | null>(null);
   // Bumped whenever a read is abandoned, so a late answer cannot bring the page back.
   const readToken = useRef(0);
+  /** Where the results were scrolled to when a recipe opened, so closing it puts them back. */
+  const resultsScroll = useRef(0);
 
   const key = weekStart ? `add-meal:${weekStart}:${day}:${slot}` : null;
   const label = dayName(day);
@@ -206,6 +208,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     const token = ++readToken.current;
     setPicking(true);
     setError(null);
+    resultsScroll.current = window.scrollY;
     // The recipe page opens at once; its photo grows from the card's.
     void morph({
       from: img,
@@ -242,13 +245,18 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     const url = pending?.url;
     const from = heroRef.current;
     if (!url || !from) {
-      startOver();
+      flushSync(startOver);
+      window.scrollTo(0, resultsScroll.current);
       return;
     }
     void morph({
       from,
       to: () => document.querySelector<HTMLElement>(`[data-option-url="${CSS.escape(url)}"]`),
-      update: () => flushSync(startOver),
+      update: () => {
+        flushSync(startOver);
+        // The results are back where they were when the recipe was opened.
+        window.scrollTo(0, resultsScroll.current);
+      },
     }).catch(() => {});
   }
 
