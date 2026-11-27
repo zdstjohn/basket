@@ -15,14 +15,22 @@ export interface QueuedPatch {
   weekId: string;
   itemKey: string;
   patch: ItemPatch;
-  /** Failed sends so far. Entries stored before this field existed read as 0. */
+  /** Failed sends that were real server answers (see countsAsAttempt). Entries stored before this field existed read as 0. */
   attempts?: number;
   /** When the first send failed (ms since epoch). Entries stored before this field existed read as "now". */
   firstTriedAt?: number;
+  /** When `attempts` last went up, so it goes up at most once a minute. */
+  lastCountedAt?: number;
 }
 
-/** A queued change that has failed this many times, or is this old past its first try, is given up on. */
+/**
+ * A change that has been refused by the server MAX_ATTEMPTS times (counted at most once per COUNT_EVERY_MS),
+ * with at least MIN_GIVE_UP_AGE_MS since its first try, is given up on. Any change more than MAX_AGE_MS past
+ * its first try is given up on after its next failure, whatever the failure.
+ */
 export const MAX_ATTEMPTS = 10;
+export const COUNT_EVERY_MS = 60_000;
+export const MIN_GIVE_UP_AGE_MS = 10 * 60_000;
 export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Keys this module owns in localStorage; signing out removes them (see lib/signout.ts). */
@@ -35,6 +43,7 @@ let counter = 0;
 export const newEntryId = (): string => `${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
 const REFUSAL_STATUS = new Set([400, 403, 404, 406, 409, 413, 422]);
+const RETRYABLE_STATUS = new Set([0, 401, 408, 429, 502, 503, 504]);
 
 /**
  * True only when the server clearly refused the change, so sending it again can never work:
@@ -98,20 +107,37 @@ export function enqueuePatches(householdId: string, entries: Omit<QueuedPatch, '
 }
 
 /**
- * Counts one failed send of `head` in the stored queue. Returns true when the entry should now be
- * dropped (MAX_ATTEMPTS failures, or more than MAX_AGE_MS since the first). Offline failures are not counted.
+ * True only for a real answer from the server that is not a "try again later": a thrown fetch error
+ * (dropped connection, the send timeout), status 0, 401, PGRST301 to PGRST303, 408, 429, 502, 503 and 504
+ * never count, however weak the signal is.
  */
-function recordFailure(householdId: string, head: QueuedPatch): boolean {
+function countsAsAttempt(e: unknown): boolean {
+  if (typeof e !== 'object' || e === null) return false;
+  const { code, status } = e as { code?: unknown; status?: unknown };
+  if (typeof code === 'string' && /^PGRST30[1-3]$/.test(code)) return false;
+  return typeof status === 'number' && status >= 400 && !RETRYABLE_STATUS.has(status);
+}
+
+/**
+ * Notes one failed send of `head` in the stored queue. Returns true when the entry should now be dropped.
+ * Nothing is noted, and nothing dropped, while the phone says it is offline.
+ */
+function recordFailure(householdId: string, head: QueuedPatch, e: unknown): boolean {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
   const now = Date.now();
-  const attempts = (head.attempts ?? 0) + 1;
   const firstTriedAt = head.firstTriedAt ?? now;
-  if (attempts >= MAX_ATTEMPTS || now - firstTriedAt > MAX_AGE_MS) return true;
-  // Only the entry that was sent is updated; if it was rewritten meanwhile it has a new id and starts fresh.
-  saveQueue(
-    householdId,
-    loadQueue(householdId).map((q) => (q.id === head.id ? { ...q, attempts, firstTriedAt } : q)),
-  );
+  if (now - firstTriedAt > MAX_AGE_MS) return true;
+  const counted = countsAsAttempt(e) && (head.lastCountedAt === undefined || now - head.lastCountedAt >= COUNT_EVERY_MS);
+  const attempts = (head.attempts ?? 0) + (counted ? 1 : 0);
+  if (attempts >= MAX_ATTEMPTS && now - firstTriedAt >= MIN_GIVE_UP_AGE_MS) return true;
+  const lastCountedAt = counted ? now : head.lastCountedAt;
+  if (head.firstTriedAt === undefined || counted) {
+    // Only the entry that was sent is updated; if it was rewritten meanwhile it has a new id and starts fresh.
+    saveQueue(
+      householdId,
+      loadQueue(householdId).map((q) => (q.id === head.id ? { ...q, attempts, firstTriedAt, lastCountedAt } : q)),
+    );
+  }
   return false;
 }
 
@@ -121,9 +147,9 @@ const inflight = new Map<string, Promise<number>>();
  * Sends the queued changes in order, one flush at a time per household (a second call joins the first).
  * After each send the queue is read again and only the entry that was sent is removed, so changes
  * made while sending are kept. A change the server clearly refuses (see isRefusal) is dropped so it
- * can't block the ones behind it. A change that keeps failing without a clear refusal is counted
- * (attempts, firstTriedAt) and dropped after MAX_ATTEMPTS failures or once it is more than MAX_AGE_MS
- * past its first try. Failures while the phone says it is offline are not counted. onDrop is told about
+ * can't block the ones behind it. A change the server keeps answering with an error that isn't a clear
+ * refusal is counted (at most once a minute) and dropped after MAX_ATTEMPTS counts and 10 minutes; any
+ * change is dropped once it is more than a day past its first try. Dropped changes: see recordFailure. onDrop is told about
  * every dropped change, whatever the reason. Stops at the first network failure that is kept.
  * Resolves to how many are left.
  */
@@ -142,7 +168,7 @@ export function flushQueue(
       try {
         await apply(head);
       } catch (e) {
-        if (networkError(e) && !recordFailure(householdId, head)) return loadQueue(householdId).length;
+        if (networkError(e) && !recordFailure(householdId, head, e)) return loadQueue(householdId).length;
         onDrop?.(head, e);
       }
       saveQueue(

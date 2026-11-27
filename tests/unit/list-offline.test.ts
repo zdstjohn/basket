@@ -204,11 +204,21 @@ describe('flushQueue', () => {
   });
 
   describe('giving up on a stuck entry', () => {
-    const HOUR = 3600_000;
-    const stuck = () => Object.assign(new Error('weird permanent failure'), {});
+    const MIN = 60_000;
+    const HOUR = 60 * MIN;
+    const T0 = new Date('2026-06-01T12:00:00Z').getTime();
+    const s500 = () => Object.assign(new Error('Internal Server Error'), { status: 500 });
+    const fetchFail = () => new TypeError('Failed to fetch');
+    const timeout = () => new TypeError('Failed to fetch (timeout)');
     const stored = (): QueuedPatch[] => loadQueue('h1');
+    const at = (ms: number) => vi.setSystemTime(T0 + ms);
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      at(0);
+    });
+    afterEach(() => void vi.useRealTimers());
 
-    it('drops a 500 with code P0001, carries on, and reports the drop', async () => {
+    it('drops a 500 with code P0001 at once, carries on, and reports the drop', async () => {
       saveQueue('h1', [e('a', { checked: true }), e('b', { checked: true })]);
       const seen: string[] = [];
       const dropped: string[] = [];
@@ -226,73 +236,112 @@ describe('flushQueue', () => {
       expect(dropped).toEqual(['a']);
     });
 
-    it.each([406, 413])('drops status %i', async (status) => {
+    it.each([406, 413])('drops status %i at once', async (status) => {
       saveQueue('h1', [e('a', { checked: true })]);
       expect(await flushQueue('h1', async () => { throw Object.assign(new Error('x'), { status }); })).toBe(0);
       expect(stored()).toEqual([]);
     });
 
-    it('keeps a code-less error for 9 attempts and drops it on the 10th', async () => {
-      saveQueue('h1', [e('a', { checked: true }), e('b', { checked: true })]);
-      const dropped: string[] = [];
-      const apply = async () => { throw stuck(); };
-      for (let i = 1; i <= 9; i++) {
-        expect(await flushQueue('h1', apply, undefined, (x) => void dropped.push(x.itemKey))).toBe(2);
-        expect(stored().map((x) => x.itemKey)).toEqual(['a', 'b']);
-        expect(stored()[0].attempts).toBe(i);
+    it('keeps the entry through 30 thrown "Failed to fetch" within a minute', async () => {
+      saveQueue('h1', [e('a', { checked: true })]);
+      const dropped = vi.fn();
+      for (let i = 0; i < 30; i++) {
+        at(i * 1000);
+        expect(await flushQueue('h1', async () => { throw fetchFail(); }, undefined, dropped)).toBe(1);
       }
-      expect(dropped).toEqual([]);
-      // The 10th failure drops 'a'; 'b' is then the head and fails once itself.
-      expect(await flushQueue('h1', apply, undefined, (x) => void dropped.push(x.itemKey))).toBe(1);
-      expect(dropped).toEqual(['a']);
-      expect(stored().map((x) => x.itemKey)).toEqual(['b']);
-      expect(stored()[0].attempts).toBe(1);
-    });
-
-    it('drops an entry first tried 24 hours and a minute ago on its next failure, but not one just inside the day', async () => {
-      const now = Date.now();
-      saveQueue('h1', [{ ...e('old', { checked: true }), attempts: 2, firstTriedAt: now - (24 * HOUR + 60_000) }]);
-      const dropped: string[] = [];
-      expect(await flushQueue('h1', async () => { throw stuck(); }, undefined, (x) => void dropped.push(x.itemKey))).toBe(0);
-      expect(dropped).toEqual(['old']);
-
-      saveQueue('h1', [{ ...e('young', { checked: true }), attempts: 2, firstTriedAt: now - (24 * HOUR - 60_000) }]);
-      expect(await flushQueue('h1', async () => { throw stuck(); })).toBe(1);
-      expect(stored()[0].attempts).toBe(3);
-    });
-
-    it('still works for a stored entry without the new fields', async () => {
-      const before = Date.now();
-      saveQueue('h1', [e('a', { checked: true })]);
-      expect(await flushQueue('h1', async () => { throw stuck(); })).toBe(1);
-      const [x] = stored();
-      expect(x.attempts).toBe(1);
-      expect(x.firstTriedAt).toBeGreaterThanOrEqual(before);
-      expect(await flushQueue('h1', async () => {})).toBe(0);
-    });
-
-    it('does not count a failure while the phone says it is offline', async () => {
-      saveQueue('h1', [e('a', { checked: true })]);
-      vi.stubGlobal('navigator', { onLine: false });
-      for (let i = 0; i < 12; i++) await flushQueue('h1', async () => { throw offlineErr(); });
-      expect(stored().map((x) => x.itemKey)).toEqual(['a']);
+      expect(dropped).not.toHaveBeenCalled();
       expect(stored()[0].attempts ?? 0).toBe(0);
     });
 
+    it('keeps the entry through 30 timeouts over an hour', async () => {
+      saveQueue('h1', [e('a', { checked: true })]);
+      const dropped = vi.fn();
+      for (let i = 0; i < 30; i++) {
+        at(i * 2 * MIN);
+        expect(await flushQueue('h1', async () => { throw timeout(); }, undefined, dropped)).toBe(1);
+      }
+      expect(dropped).not.toHaveBeenCalled();
+      expect(stored()[0].attempts ?? 0).toBe(0);
+    });
+
+    it.each([
+      ['401', { status: 401 }],
+      ['status 0', { status: 0 }],
+      ['PGRST301 with 401', { status: 401, code: 'PGRST301' }],
+      ['PGRST303', { code: 'PGRST303' }],
+      ['408', { status: 408 }],
+      ['429', { status: 429 }],
+      ['502', { status: 502 }],
+      ['503', { status: 503 }],
+      ['504', { status: 504 }],
+    ])('never counts %s, even 50 times over 11 minutes', async (_n, extra) => {
+      saveQueue('h1', [e('a', { checked: true })]);
+      const dropped = vi.fn();
+      for (let i = 0; i < 50; i++) {
+        at(i * 15_000);
+        await flushQueue('h1', async () => { throw Object.assign(new Error('x'), extra); }, undefined, dropped);
+      }
+      expect(dropped).not.toHaveBeenCalled();
+      expect(stored()[0].attempts ?? 0).toBe(0);
+    });
+
+    it('counts a code-less 500 at most once a minute and drops it only after 10 counts and 10 minutes', async () => {
+      saveQueue('h1', [e('a', { checked: true })]);
+      const dropped: number[] = [];
+      for (let t = 0; t <= 15 * MIN && dropped.length === 0; t += 2000) {
+        at(t);
+        await flushQueue('h1', async () => { throw s500(); }, undefined, () => void dropped.push(t));
+        if (dropped.length === 0) expect(stored()[0].attempts).toBeLessThanOrEqual(Math.floor(t / MIN) + 1);
+      }
+      expect(dropped).toHaveLength(1);
+      expect(dropped[0]).toBeGreaterThanOrEqual(10 * MIN);
+      expect(dropped[0]).toBeLessThan(10 * MIN + 2000 + 1);
+      expect(stored()).toEqual([]);
+    });
+
+    it('does not drop a code-less 500 after 10 counts if 10 minutes have not passed', async () => {
+      const t = T0 - 1000;
+      saveQueue('h1', [{ ...e('a', { checked: true }), attempts: 9, firstTriedAt: t, lastCountedAt: t - 2 * MIN }]);
+      expect(await flushQueue('h1', async () => { throw s500(); })).toBe(1);
+      expect(stored()[0].attempts).toBe(10);
+    });
+
+    it('drops an entry 24h and a minute past its first try on its next failure of any kind', async () => {
+      for (const err of [fetchFail(), timeout(), Object.assign(new Error('x'), { status: 401 }), s500()]) {
+        saveQueue('h1', [{ ...e('old', { checked: true }), firstTriedAt: T0 - (24 * HOUR + MIN) }]);
+        const dropped: string[] = [];
+        expect(await flushQueue('h1', async () => { throw err; }, undefined, (x) => void dropped.push(x.itemKey))).toBe(0);
+        expect(dropped).toEqual(['old']);
+      }
+      saveQueue('h1', [{ ...e('young', { checked: true }), firstTriedAt: T0 - (24 * HOUR - MIN) }]);
+      expect(await flushQueue('h1', async () => { throw fetchFail(); })).toBe(1);
+    });
+
+    it('does not drop an old entry while the phone says it is offline', async () => {
+      saveQueue('h1', [{ ...e('old', { checked: true }), firstTriedAt: T0 - 48 * HOUR }]);
+      vi.stubGlobal('navigator', { onLine: false });
+      expect(await flushQueue('h1', async () => { throw fetchFail(); })).toBe(1);
+    });
+
+    it('still works for a stored entry without the new fields', async () => {
+      saveQueue('h1', [e('a', { checked: true })]);
+      expect(await flushQueue('h1', async () => { throw fetchFail(); })).toBe(1);
+      expect(stored()[0].firstTriedAt).toBe(T0);
+      expect(await flushQueue('h1', async () => {})).toBe(0);
+    });
+
     it('a success leaves the other entries alone', async () => {
-      const t0 = Date.now() - 3600_000;
       const q = [
-        { ...e('a', { checked: true }), attempts: 4, firstTriedAt: t0 },
+        { ...e('a', { checked: true }), attempts: 4, firstTriedAt: T0 - HOUR, lastCountedAt: T0 - HOUR },
         e('b', { checked: true }),
-        { ...e('c', { checked: true }), attempts: 7, firstTriedAt: t0 + 1000 },
+        { ...e('c', { checked: true }), attempts: 7, firstTriedAt: T0 - HOUR, lastCountedAt: T0 - HOUR },
       ];
       saveQueue('h1', q);
       await flushQueue('h1', async (x) => {
-        if (x.itemKey === 'c') throw stuck();
+        if (x.itemKey === 'c') throw s500();
       });
       expect(stored().map((x) => x.itemKey)).toEqual(['c']);
-      expect(stored()[0]).toMatchObject({ attempts: 8, firstTriedAt: t0 + 1000 });
-      // 'a' succeeded; 'b' succeeded; 'c' failed and kept its own history.
+      expect(stored()[0]).toMatchObject({ attempts: 8, firstTriedAt: T0 - HOUR });
     });
   });
 });

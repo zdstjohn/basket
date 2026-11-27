@@ -285,6 +285,8 @@ export function useWeekList(household: Household, weekId: string | null) {
       const left = await flushPending();
       if (left > 0) {
         setOffline(true);
+        // A change was given up on while others wait: put the screen back to what the server has.
+        if (refused.current) void load();
         return;
       }
       void load();
