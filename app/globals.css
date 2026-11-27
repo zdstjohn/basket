@@ -263,3 +263,28 @@ body {
 .bk-fallback-letter { font-family: var(--bk-font-display); font-size: 54px; line-height: 1; color: var(--bk-ink-soft); }
 :focus-visible { outline: 2px solid var(--bk-accent); outline-offset: 2px; }
 :disabled, [aria-disabled="true"] { opacity: 0.45; }
+
+/* ---- Motion (Task S3): every screen's motion classes live here ---- */
+@keyframes bk-reveal { from { opacity: 0; transform: translateY(calc(8px * var(--bk-move))); } }
+.bk-reveal { animation: bk-reveal var(--bk-dur-base) var(--bk-ease-out) both; animation-delay: calc(min(var(--i, 0), 7) * var(--bk-stagger)); }
+@keyframes bk-settle-move { from { transform: translateY(calc(-12px * var(--bk-move))) scale(calc(1 + 0.04 * var(--bk-move))); } }
+@keyframes bk-settle-fade { from { opacity: 0; } }
+@keyframes bk-settle-shadow { 0%, 54% { opacity: 1; } 100% { opacity: 0; } }
+.bk-settle { position: relative; animation: bk-settle-move var(--bk-dur-settle) var(--bk-spring-settle) both, bk-settle-fade var(--bk-dur-base) var(--bk-ease-out) both; }
+.bk-settle::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: var(--bk-shadow-1); pointer-events: none; animation: bk-settle-shadow var(--bk-dur-settle) linear both; }
+@keyframes bk-skeleton { 50% { opacity: 0.6; } }
+.bk-skeleton { background: var(--bk-sunk); animation: bk-skeleton 1.2s ease-in-out infinite; }
+@keyframes bk-fade-in { from { opacity: 0; } }
+.bk-fade-in { animation: bk-fade-in var(--bk-dur-base) var(--bk-ease-out) both; }
+.bk-strike { position: absolute; inset: 0; color: transparent; text-decoration: line-through; text-decoration-color: var(--bk-ink-soft); text-decoration-thickness: 1.5px; clip-path: inset(0 100% 0 0); transition: clip-path var(--bk-dur-base) var(--bk-ease-out); pointer-events: none; }
+.bk-strike[data-on] { clip-path: inset(0); transition-delay: 60ms; }
+.bk-roll { display: inline-block; overflow: hidden; height: 1lh; vertical-align: bottom; }
+.bk-roll > span { display: block; transition: transform var(--bk-dur-settle) var(--bk-spring-settle); }
+::view-transition { pointer-events: none; }
+::view-transition-group(meal-photo) { animation-duration: var(--bk-dur-slow); animation-timing-function: var(--bk-spring-snap); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--bk-dur-base); animation-timing-function: var(--bk-ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .bk-skeleton { animation: none; }
+  .bk-strike, .bk-strike[data-on] { clip-path: inset(0); opacity: 0; transition: opacity var(--bk-dur-fast) linear; transition-delay: 0ms; }
+  .bk-strike[data-on] { opacity: 1; }
+}

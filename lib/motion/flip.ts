@@ -1,0 +1,67 @@
+import { useLayoutEffect, useRef } from "react";
+import { DUR, prefersReducedMotion } from "./motion";
+
+export function invert(
+  first: { left: number; top: number },
+  last: { left: number; top: number },
+): { dx: number; dy: number } {
+  return { dx: first.left - last.left, dy: first.top - last.top };
+}
+
+type Pos = { left: number; top: number };
+
+/** Positions of every [data-flip-key] at any depth, relative to the root so scrolling cancels out. */
+export function measureKeys(root: HTMLElement): Map<string, { el: HTMLElement; pos: Pos }> {
+  const base = root.getBoundingClientRect();
+  const out = new Map<string, { el: HTMLElement; pos: Pos }>();
+  root.querySelectorAll<HTMLElement>("[data-flip-key]").forEach((el) => {
+    const key = el.getAttribute("data-flip-key");
+    if (!key) return;
+    const r = el.getBoundingClientRect();
+    out.set(key, { el, pos: { left: r.left - base.left, top: r.top - base.top } });
+  });
+  return out;
+}
+
+function spring(): string {
+  try {
+    return getComputedStyle(document.documentElement).getPropertyValue("--bk-spring-snap").trim() || "ease-out";
+  } catch {
+    return "ease-out";
+  }
+}
+
+function play(el: HTMLElement, frames: Keyframe[], duration: number, easing: string) {
+  if (typeof el.animate !== "function") return;
+  try {
+    el.animate(frames, { duration, easing });
+  } catch {
+    el.animate(frames, { duration, easing: "ease-out" });
+  }
+}
+
+/** When `signature` changes, every [data-flip-key] that moved slides from its old place (a fade under reduced motion). */
+export function useFlipList(ref: React.RefObject<HTMLElement | null>, signature: string): void {
+  const prev = useRef<Map<string, Pos> | null>(null);
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const now = measureKeys(root);
+    const before = prev.current;
+    if (before) {
+      const reduced = prefersReducedMotion();
+      const easing = spring();
+      now.forEach(({ el, pos }, key) => {
+        const old = before.get(key);
+        if (!old) return;
+        const { dx, dy } = invert(old, pos);
+        if (dx === 0 && dy === 0) return;
+        if (reduced) play(el, [{ opacity: 0 }, { opacity: 1 }], DUR.fast, "linear");
+        else play(el, [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], DUR.snap, easing);
+      });
+    }
+    const next = new Map<string, Pos>();
+    now.forEach(({ pos }, key) => next.set(key, pos));
+    prev.current = next;
+  }, [ref, signature]);
+}
