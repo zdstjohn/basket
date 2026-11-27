@@ -21,3 +21,22 @@ export function weekStartFor(now: Date, startDay: Day, timeZone: string): string
   const back = (dow - DAYS.indexOf(startDay) + 7) % 7;
   return new Date(local - back * 86_400_000).toISOString().slice(0, 10);
 }
+
+/** YYYY-MM-DD of `day` in the week that starts on `weekStart` (whatever weekday that is). */
+export function dinnerDate(weekStart: string, day: Day): string {
+  const start = new Date(`${weekStart}T00:00:00Z`);
+  const offset = (DAYS.indexOf(day) - start.getUTCDay() + 7) % 7;
+  return new Date(start.getTime() + offset * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** YYYY-MM-DD of the calendar date in `timeZone` at `now`. */
+export function todayIn(timeZone: string, now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
