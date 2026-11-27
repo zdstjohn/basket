@@ -180,6 +180,17 @@ describe('flushQueue', () => {
     expect(apply).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the entry on a send timeout and starts a new send on the next flush', async () => {
+    saveQueue('h1', [e('a', { checked: true })]);
+    const timeout = vi.fn(async () => { throw new TypeError('Failed to fetch (timeout)'); });
+    expect(await flushQueue('h1', timeout)).toBe(1);
+    expect(loadQueue('h1').map((x) => x.itemKey)).toEqual(['a']);
+    const ok = vi.fn(async () => {});
+    expect(await flushQueue('h1', ok)).toBe(0);
+    expect(timeout).toHaveBeenCalledTimes(1);
+    expect(ok).toHaveBeenCalledTimes(1);
+  });
+
   it('is empty-safe', async () => {
     expect(await flushQueue('h9', async () => {})).toBe(0);
   });
