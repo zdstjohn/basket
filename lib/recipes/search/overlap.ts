@@ -7,13 +7,14 @@ import type { RecipeOption } from './provider';
 /** Foods everybody has: they never count as "shared" with another meal. */
 export const PANTRY_BASICS: readonly string[] = [
   'salt', 'pepper', 'black pepper', 'water', 'oil', 'olive oil', 'vegetable oil', 'butter', 'sugar', 'flour',
-  'baking soda', 'baking powder', 'garlic powder', 'onion powder',
+  'baking soda', 'baking powder', 'garlic powder', 'onion powder', 'cooking spray', 'cornstarch',
 ];
 
 const MAX_NAMES = 3;
 
 /** One word, lower case, singular: "limes" and "lime" both become "lime". */
 function singular(w: string): string {
+  if (w.length > 5 && w.endsWith('leaves')) return `${w.slice(0, -6)}leaf`;
   if (w.length > 4 && w.endsWith('ies')) return `${w.slice(0, -3)}y`;
   if (w.length > 4 && /(?:o|ch|sh|x|z)es$/.test(w)) return w.slice(0, -2);
   if (w.length > 3 && w.endsWith('s') && !/(?:ss|us|is)$/.test(w)) return w.slice(0, -1);
@@ -23,10 +24,28 @@ function singular(w: string): string {
 const words = (s: string): string[] =>
   s.toLowerCase().split(/[^\p{L}]+/u).filter(Boolean).map(singular);
 
-const BASICS = new Set(PANTRY_BASICS.map((b) => words(b).join(' ')));
+// Bare "pepper" is a basic, but bell pepper is not, so it is handled apart from the subset rule below.
+const BASIC_WORDS = PANTRY_BASICS.map((b) => words(b)).filter((w) => w.join(' ') !== 'pepper');
+const ALWAYS_BASIC_LAST = new Set(['salt', 'sugar', 'flour', 'water']);
+const PEPPER_KINDS = new Set(['black', 'ground', 'white']);
 
-/** True for salt, oil, flour and the rest of the pantry basics. */
-const isBasic = (food: string): boolean => BASICS.has(words(food).join(' '));
+/**
+ * True for salt, oil, flour and the rest of the pantry basics, and for their everyday variants:
+ * "kosher salt", "extra virgin olive oil", "unsalted butter", "ground black pepper", "brown sugar".
+ */
+export function isBasic(food: string): boolean {
+  const w = words(food);
+  const last = w[w.length - 1];
+  if (!last) return false;
+  if (ALWAYS_BASIC_LAST.has(last)) return true;
+  if (last === 'pepper' && (w.length === 1 || PEPPER_KINDS.has(w[w.length - 2]))) return true;
+  return BASIC_WORDS.some((b) => b.every((x) => w.includes(x)));
+}
+
+// A recipe word like these next to a food makes a different food: "green onions" are not onions.
+const QUALIFIERS = new Set(
+  ['green', 'cream', 'broth', 'stock', 'paste', 'vinegar', 'noodle', 'tortilla', 'powder', 'sauce', 'juice'].map(singular),
+);
 
 /**
  * The foods on this week's shopping list that come from the given (other) meals:
@@ -80,6 +99,9 @@ export function sharedFoods(o: RecipeOption, foods: string[]): string[] {
       for (let start = 0; start + f.w.length <= lw.length; start++) {
         const fits = f.w.every((w, k) => lw[start + k] === w && !used[li][start + k]);
         if (!fits) continue;
+        const before = lw[start - 1];
+        const after = lw[start + f.w.length];
+        if ((before !== undefined && QUALIFIERS.has(before)) || (after !== undefined && QUALIFIERS.has(after))) continue;
         f.w.forEach((_, k) => (used[li][start + k] = true));
         found.add(f.index);
       }

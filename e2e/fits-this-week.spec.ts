@@ -48,6 +48,8 @@ test("fits this week: orders by shared foods, shows what is shared, and fits 360
 
   await fits.click();
   await expect(fits).toBeChecked();
+  const firstTitle = page.getByTestId("result-title").first();
+  await expect(firstTitle).toHaveText("Easy taco bowls");
   const after = await titles(page);
   expect(after).not.toEqual(before);
   expect(after[0]).toBe("Easy taco bowls");
@@ -62,11 +64,13 @@ test("fits this week: orders by shared foods, shows what is shared, and fits 360
   await page.reload();
   await searchFor(page, "tacos");
   await expect(page.getByRole("radio", { name: "Fits this week" })).toBeChecked();
+  await expect(page.getByTestId("result-title").first()).toHaveText("Easy taco bowls");
   await page.getByRole("radio", { name: "Fits this week" }).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByRole("radio", { name: "Most loved" })).toBeChecked();
-  expect((await titles(page))[0]).toBe("Chicken tacos");
+  await expect(page.getByTestId("result-title").first()).toHaveText("Chicken tacos");
   await page.getByRole("radio", { name: "Fits this week" }).click();
+  await expect(page.getByTestId("result-title").first()).toHaveText("Easy taco bowls");
 
   // 360 px: the line sits on its own line and is not clipped.
   await page.setViewportSize({ width: 360, height: 800 });
@@ -90,6 +94,6 @@ test("fits this week: with no other dinners it says so and keeps the most-loved 
   const before = await titles(page);
   await page.getByRole("radio", { name: "Fits this week" }).click();
   await expect(page.getByText("Add another dinner first to see what fits")).toBeVisible();
-  expect(await titles(page)).toEqual(before);
+  await expect.poll(() => titles(page)).toEqual(before);
   await expect(page.getByTestId("result-shares")).toHaveCount(0);
 });

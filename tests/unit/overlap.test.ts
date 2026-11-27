@@ -46,6 +46,45 @@ describe('sharedFoods', () => {
   });
 });
 
+describe('pantry basics by variant', () => {
+  const week = (food: string) => weekFoods([{ meal: meal('m', [[food, 'pantry']]), servings: null }], [adult], []);
+  it.each([
+    'extra virgin olive oil', 'unsalted butter', 'kosher salt', 'sea salt', 'ground black pepper', 'white pepper',
+    'all-purpose flour', 'brown sugar', 'cooking spray', 'cornstarch', 'pepper', 'cold water',
+  ])('%s is a basic', (food) => {
+    expect(week(food)).toEqual([]);
+    expect(sharedFoods(opt({ ingredients: [food] }), [food])).toEqual([]);
+  });
+  it.each(['bell pepper', 'red pepper flakes', 'garlic', 'sour cream'])('%s is not a basic', (food) => {
+    expect(week(food)).toEqual([food]);
+  });
+});
+
+describe('sharedFoods qualifiers', () => {
+  it.each([
+    ['onion', '3 green onions'],
+    ['cheese', '4 oz cream cheese'],
+    ['corn', '12 corn tortillas'],
+    ['chicken', '2 cups chicken broth'],
+    ['tomato', '2 tbsp tomato paste'],
+    ['rice', '1 tbsp rice vinegar'],
+    ['soy', '2 tbsp soy sauce'],
+    ['lime', '1 tbsp lime juice'],
+  ])('%s does not match "%s"', (food, line) => {
+    expect(sharedFoods(opt({ ingredients: [line] }), [food])).toEqual([]);
+  });
+  it('still matches plain uses', () => {
+    expect(sharedFoods(opt({ ingredients: ['1 lb boneless chicken breast'] }), ['chicken'])).toEqual(['chicken']);
+    expect(sharedFoods(opt({ ingredients: ['1 yellow onion', '1 cup heavy cream'] }), ['onion', 'cream'])).toEqual(['onion', 'cream']);
+    expect(sharedFoods(opt({ ingredients: ['3 green onions'] }), ['green onion'])).toEqual(['green onion']);
+    expect(sharedFoods(opt({ ingredients: ['4 oz cream cheese'] }), ['cream cheese'])).toEqual(['cream cheese']);
+  });
+  it('matches leaves with leaf', () => {
+    expect(sharedFoods(opt({ ingredients: ['2 bay leaves'] }), ['bay leaf'])).toEqual(['bay leaf']);
+    expect(sharedFoods(opt({ ingredients: ['1 bay leaf'] }), ['bay leaves'])).toEqual(['bay leaves']);
+  });
+});
+
 describe('sortByOverlap', () => {
   it('orders by overlap, then loved score, then original order', () => {
     const a = opt({ url: 'a', ingredients: ['1 lime'] });

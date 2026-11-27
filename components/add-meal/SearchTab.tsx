@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 import { isMostLoved, ratingLine } from "@/lib/recipes/search/loved";
@@ -40,6 +40,7 @@ export function SearchTab({
   onSource,
   hideResults,
   week,
+  onNeedWeek,
   picking,
   onPick,
   onSearchStart,
@@ -51,7 +52,9 @@ export function SearchTab({
   onSource: (s: RecipeSource) => void;
   hideResults: boolean;
   /** Foods on this week's list from the other planned meals; null until known. */
-  week: { foods: string[]; otherMeals: number } | null;
+  week: { foods: string[] } | null;
+  /** Called when "Fits this week" is chosen, so the week is only read when it is wanted. */
+  onNeedWeek: () => void;
   picking: boolean;
   onPick: (o: RecipeOption) => void;
   onSearchStart: () => void;
@@ -62,14 +65,12 @@ export function SearchTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dish, setDish] = useState<DishState | null>(null);
-  const [sort, setSort] = useState<SortMode>("loved");
+  const [sort, setSort] = useState<SortMode>(loadSort);
   const thumbUrl = useRef<string | null>(null);
 
   useEffect(() => {
-    // The remembered choice is read after the page loads (it lives in this browser session).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSort(loadSort());
-  }, []);
+    if (sort === "fits") onNeedWeek();
+  }, [sort, onNeedWeek]);
 
   useEffect(() => () => {
     if (thumbUrl.current) URL.revokeObjectURL(thumbUrl.current);
@@ -125,13 +126,16 @@ export function SearchTab({
     }
   }
 
-  const found = result?.options ?? [];
-  const foods = week?.foods ?? [];
-  const noOthers = week !== null && week.otherMeals === 0;
+  const found = useMemo(() => result?.options ?? [], [result]);
+  const foods = useMemo(() => week?.foods ?? [], [week]);
   // Fits this week reorders by shared foods; with nothing to share it is the same order as Most loved.
-  const ranked = sortByOverlap(found, foods);
-  const shown = sort === "fits" ? ranked : found.map((option) => ({ option, shared: ranked.find((r) => r.option === option)?.shared ?? [] }));
-  const options = shown.map((r) => r.option);
+  const ranked = useMemo(() => sortByOverlap(found, foods), [found, foods]);
+  const shown = useMemo(() => {
+    if (sort === "fits") return ranked;
+    const sharedBy = new Map(ranked.map((r) => [r.option, r.shared]));
+    return found.map((option) => ({ option, shared: sharedBy.get(option) ?? [] }));
+  }, [sort, ranked, found]);
+  const options = found;
   const showsSpoonacular = options.some((o) => o.source === "spoonacular");
 
   return (
@@ -234,7 +238,7 @@ export function SearchTab({
                     saveSort(m);
                   }}
                 />
-                {sort === "fits" && noOthers && (
+                {sort === "fits" && week !== null && foods.length === 0 && (
                   <p data-testid="fits-empty" className="mb-2.5 text-sm text-muted">Add another dinner first to see what fits</p>
                 )}
                 <ul className="flex flex-col gap-2">

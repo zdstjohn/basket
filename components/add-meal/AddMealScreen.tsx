@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DraftPreview } from "@/components/add-meal/DraftPreview";
 import { PasteTab } from "@/components/add-meal/PasteTab";
 import { SearchTab } from "@/components/add-meal/SearchTab";
@@ -52,6 +52,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const [error, setError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
   const [others, setOthers] = useState<{ entries: { meal: Meal; servings: number | null }[]; alwaysHave: string[] } | null>(null);
+  const [needWeek, setNeedWeek] = useState(false);
+  const wantWeek = useCallback(() => setNeedWeek(true), []);
   const savedMealId = useRef<string | null>(null);
 
   const key = weekStart ? `add-meal:${weekStart}:${day}:${slot}` : null;
@@ -78,9 +80,10 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     void listPeople(sb, household.id).then(setPeople, () => setError("We couldn't load your household. Try again."));
   }, [sb, household.id, household.week_start, household.time_zone, day, slot]);
 
-  // The other dinners already planned this week (not the one being added or replaced), for "Fits this week".
+  // The other dinners already planned this week (not the one being added or replaced), read only once
+  // "Fits this week" is chosen.
   useEffect(() => {
-    if (!weekStart) return;
+    if (!weekStart || !needWeek) return;
     let alive = true;
     (async () => {
       const week = await findWeek(sb, household.id, weekStart);
@@ -101,12 +104,12 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     return () => {
       alive = false;
     };
-  }, [sb, household.id, weekStart, day, slot]);
+  }, [sb, household.id, weekStart, day, slot, needWeek]);
 
   const week = useMemo(
     () =>
       others && people.length > 0
-        ? { foods: weekFoods(others.entries, people, others.alwaysHave), otherMeals: others.entries.length }
+        ? { foods: weekFoods(others.entries, people, others.alwaysHave) }
         : null,
     [others, people],
   );
@@ -253,6 +256,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
           onSource={changeSource}
           hideResults={!!draft}
           week={week}
+          onNeedWeek={wantWeek}
           picking={picking}
           onPick={(o) => void pick(o)}
           onSearchStart={startOver}
