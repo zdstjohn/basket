@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  enqueuePatch, flushQueue, isNetworkError, loadListCache, loadQueue, mergePatch, saveListCache, saveQueue, type QueuedPatch,
+  enqueuePatch, flushQueue, isNetworkError, isRefusal, loadListCache, loadQueue, mergePatch, saveListCache, saveQueue, type QueuedPatch,
 } from "@/lib/list/offline";
 
 function fakeStorage() {
@@ -15,7 +15,7 @@ function fakeStorage() {
 
 const e = (itemKey: string, patch: QueuedPatch['patch'], weekId = 'w1', id = `id-${itemKey}`): QueuedPatch => ({ id, weekId, itemKey, patch });
 const offlineErr = () => new Error('TypeError: Failed to fetch');
-const rlsErr = () => new Error('new row violates row-level security policy');
+const rlsErr = () => Object.assign(new Error('new row violates row-level security policy'), { code: '42501', status: 403 });
 
 describe('mergePatch', () => {
   it('keeps the last write per item, merging different fields, under the newest id', () => {
@@ -72,26 +72,50 @@ describe('queue and cache storage', () => {
   });
 });
 
-describe('isNetworkError', () => {
+describe('isRefusal / isNetworkError', () => {
   afterEach(() => void vi.unstubAllGlobals());
 
-  it('recognises fetch failures however they are shaped', () => {
-    expect(isNetworkError(new Error('TypeError: Failed to fetch'))).toBe(true); // what setItemState throws
-    expect(isNetworkError(new Error('Load failed'))).toBe(true);
-    expect(isNetworkError(new Error('NetworkError when attempting to fetch resource.'))).toBe(true);
-    expect(isNetworkError(new Error('Network request failed'))).toBe(true);
-    expect(isNetworkError({ message: 'TypeError: Failed to fetch', code: '', details: '' })).toBe(true); // PostgrestError shape
+  const kept: [string, unknown][] = [
+    ['Failed to fetch', new Error('TypeError: Failed to fetch')],
+    ['Load failed', new Error('Load failed')],
+    ['PostgrestError-shaped fetch failure', { message: 'TypeError: Failed to fetch', code: '', details: '' }],
+    ['JWT expired (401)', Object.assign(new Error('JWT expired'), { code: 'PGRST301', status: 401 })],
+    ['JWT expired, status only', Object.assign(new Error('JWT expired'), { status: 401 })],
+    ['PGRST302', { message: 'x', code: 'PGRST302' }],
+    ['PGRST303', { message: 'x', code: 'PGRST303' }],
+    ['Bad Gateway (502)', Object.assign(new Error('Bad Gateway'), { status: 502 })],
+    ['upstream request timeout (504)', Object.assign(new Error('upstream request timeout'), { status: 504 })],
+    ['The operation was aborted', new Error('The operation was aborted')],
+    ['a bare TypeError', new TypeError("Cannot read properties of undefined (reading 'x')")],
+    ['a string', 'boom'],
+    ['null', null],
+  ];
+  const dropped: [string, unknown][] = [
+    ['code 42501', { message: 'permission denied for table week_item_state', code: '42501' }],
+    ['code 23514', { message: 'violates check constraint', code: '23514' }],
+    ['code 22P02', { message: 'invalid input syntax', code: '22P02' }],
+    ['status 400', Object.assign(new Error('Bad Request'), { status: 400 })],
+    ['status 403', Object.assign(new Error('Forbidden'), { status: 403 })],
+    ['status 404', Object.assign(new Error('Not Found'), { status: 404 })],
+    ['status 409', Object.assign(new Error('Conflict'), { status: 409 })],
+    ['status 422', Object.assign(new Error('Unprocessable'), { status: 422 })],
+  ];
+
+  it.each(kept)('keeps in the queue: %s', (_n, err) => {
+    expect(isRefusal(err)).toBe(false);
+    expect(isNetworkError(err)).toBe(true);
   });
-  it('treats a refusal, and a plain TypeError from a bug, as not the network', () => {
-    expect(isNetworkError(rlsErr())).toBe(false);
-    expect(isNetworkError({ message: 'permission denied for table week_item_state', code: '42501' })).toBe(false);
-    expect(isNetworkError(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe(false);
-    expect(isNetworkError('boom')).toBe(false);
-    expect(isNetworkError(null)).toBe(false);
+  it.each(dropped)('drops from the queue: %s', (_n, err) => {
+    expect(isRefusal(err)).toBe(true);
+    expect(isNetworkError(err)).toBe(false);
   });
-  it('is the network whenever the phone says it is offline', () => {
+  it('is never a refusal whenever the phone says it is offline', () => {
     vi.stubGlobal('navigator', { onLine: false });
+    expect(isRefusal(rlsErr())).toBe(false);
     expect(isNetworkError(rlsErr())).toBe(true);
+  });
+  it('waits when a permanent error carries no code (accepted)', () => {
+    expect(isNetworkError(new Error('new row violates row-level security policy'))).toBe(true);
   });
 });
 

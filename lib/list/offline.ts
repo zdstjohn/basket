@@ -26,20 +26,35 @@ const cacheKey = (weekId: string): string => `list:${weekId}`;
 let counter = 0;
 export const newEntryId = (): string => `${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-const NETWORK_MESSAGE = /failed to fetch|networkerror|load failed|network request failed|fetch failed/i;
+const REFUSAL_STATUS = new Set([400, 403, 404, 409, 422]);
 
 /**
- * True when the network is down: the phone says so, or the error's message is a fetch failure
- * (setItemState throws `new Error(message)`, and a plain `{ message }` object counts too).
- * Everything else, including a TypeError from a bug, is a refusal.
+ * True only when the server clearly refused the change, so sending it again can never work:
+ * a Postgres error class 22 (bad data), 23 (constraint) or 42 (permission or syntax), or an HTTP
+ * 400, 403, 404, 409 or 422. setItemState attaches `code` and `status` to what it throws.
+ * Never true while the phone says it is offline, and never for an expired or missing sign-in
+ * (status 401, PostgREST PGRST301 to PGRST303): those pass once the session is refreshed.
+ * Known and accepted: a permanent error that carries no code or status waits in the queue
+ * instead of being dropped. That blocks the entries behind it until it is cleared, which is
+ * better than losing a tick the shopper made on weak signal.
+ */
+export function isRefusal(e: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  if (typeof e !== 'object' || e === null) return false;
+  const { code, status } = e as { code?: unknown; status?: unknown };
+  if (typeof code === 'string' && /^PGRST30[1-3]$/.test(code)) return false;
+  if (status === 401) return false;
+  if (typeof code === 'string' && /^(22|23|42)/.test(code)) return true;
+  return typeof status === 'number' && REFUSAL_STATUS.has(status);
+}
+
+/**
+ * True when a failed send should stay in the queue and be tried again: everything except a clear
+ * refusal (see isRefusal). That covers a dropped connection, a timeout, a gateway error, an
+ * expired sign-in and anything unrecognised. The name is kept for lib/useWeekList.ts.
  */
 export function isNetworkError(e: unknown): boolean {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
-  const msg =
-    e instanceof Error ? e.message : typeof e === 'object' && e !== null && typeof (e as { message?: unknown }).message === 'string'
-      ? (e as { message: string }).message
-      : null;
-  return msg !== null && NETWORK_MESSAGE.test(msg);
+  return !isRefusal(e);
 }
 
 /** Adds a change to the queue. A newer change to the same item wins field by field. */
@@ -77,7 +92,7 @@ const inflight = new Map<string, Promise<number>>();
 /**
  * Sends the queued changes in order, one flush at a time per household (a second call joins the first).
  * After each send the queue is read again and only the entry that was sent is removed, so changes
- * made while sending are kept. A change the server refuses (not a network failure) is dropped so it
+ * made while sending are kept. A change the server clearly refuses (see isRefusal) is dropped so it
  * can't block the ones behind it. Stops at the first network failure. Resolves to how many are left.
  */
 export function flushQueue(

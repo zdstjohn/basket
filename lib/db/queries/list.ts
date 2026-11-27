@@ -120,14 +120,14 @@ export async function setItemState(
 ): Promise<void> {
   let household = householdId;
   if (!household) {
-    const { data, error } = await sb.from('weeks').select('household_id').eq('id', weekId).single();
-    if (error) throw new Error(error.message);
+    const { data, error, status } = await sb.from('weeks').select('household_id').eq('id', weekId).single();
+    if (error) throw Object.assign(new Error(error.message), { code: error.code, status });
     household = data.household_id;
   }
-  const { error } = await sb
+  const { error, status } = await sb
     .from('week_item_state')
     .upsert({ household_id: household, week_id: weekId, item_key: itemKey, ...patch }, { onConflict: 'week_id,item_key' });
-  if (error) throw new Error(error.message);
+  if (error) throw Object.assign(new Error(error.message), { code: error.code, status });
 }
 
 // ---------------------------------------------------------------------------
