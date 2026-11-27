@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(228);
+select plan(244);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
