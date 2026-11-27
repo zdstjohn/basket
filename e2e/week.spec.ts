@@ -310,6 +310,31 @@ test("two phones: changes show up live, and a Friday tie ends with one meal", as
   await context.close();
 });
 
+test("favorites are photo tiles; an empty list offers Find a dinner", async ({ page }) => {
+  await createHousehold(page);
+  await page.goto("/favorites");
+  await expect(page.getByText("Nothing saved yet. Meals you keep will wait here.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Find a dinner" })).toHaveAttribute("href", "/week");
+
+  await addFromSearch(page, "thu", "tacos", "Chicken tacos · Allrecipes");
+  await page.goto("/favorites");
+  const row = page.getByTestId("favorite-row");
+  await expect(row).toHaveCount(1);
+  // A tile: a photo crop with the name, the made line and the tag under it, and a "+" that is its own button.
+  await expect(row.first().locator("img")).toBeVisible();
+  await expect(row.first()).toContainText("Made");
+  await expect(row.first().getByRole("button", { name: "Add Chicken tacos to this week" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Find a dinner" })).toHaveCount(0);
+});
+
+test("the Favorites tab inside Add a meal has no Find a dinner link", async ({ page }) => {
+  await createHousehold(page);
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await page.getByRole("tab", { name: "Favorites" }).click();
+  await expect(page.getByText("Nothing saved yet. Meals you keep will wait here.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Find a dinner" })).toHaveCount(0);
+});
+
 test("favorites: listed with a photo and tag, searchable, adds to the first empty day; repeat copies last week", async ({
   page,
 }, testInfo) => {

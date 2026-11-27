@@ -1,5 +1,3 @@
-components/FavoritesBrowser.tsx
-components/FavoritesScreen.tsx
 components/add-meal/AddMealScreen.tsx
 components/add-meal/DraftPreview.tsx
 components/add-meal/FindMyDish.tsx

@@ -23,7 +23,7 @@ async function searchSoup(page: Page, day: string): Promise<void> {
 export const SCREENS_A: Screen[] = [
   { name: "week", path: "/week" },
   { name: "add-meal", path: "/week/add?day=thu&slot=dinner", contrastPending: true },
-  { name: "favorites", path: "/favorites", contrastPending: true },
+  { name: "favorites", path: "/favorites" },
   {
     // A household with an allergy and the soup with almonds planned anyway: the week tile shows the allergy line.
     name: "week-allergy",

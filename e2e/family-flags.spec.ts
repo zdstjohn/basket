@@ -141,6 +141,25 @@ test("an allergy stays a warning: on the draft, the week row, the meal sheet and
   await expect(row.getByTestId("result-flag")).toContainText("Tree nut allergy: Daughter (4)");
 });
 
+test("a favorite with an allergy shows the whole warning at 360 px", async ({ page }) => {
+  await createHousehold(page, "family-flags-favorite-360", WITH_LISTS);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await searchFor(page, "soup");
+  await page.getByRole("button", { name: PILAF }).click();
+  await page.getByRole("button", { name: "Add to Thursday anyway" }).click();
+  await expect(page).toHaveURL(/\/week$/);
+
+  await page.goto("/favorites");
+  const row = page.getByTestId("favorite-row").filter({ hasText: "Broccolini quinoa pilaf" });
+  const flag = row.getByTestId("result-flag");
+  await expect(flag).toContainText("Tree nut allergy: Daughter (4)");
+  await expect(flag).toContainText(/check labels/i);
+  await expectUnclipped(flag);
+  // The page does not scroll sideways.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 /** The first number in the cremini mushrooms row of the shopping list (ounces). */
 async function mushroomAmount(page: Page): Promise<number> {
   await page.goto("/list");
