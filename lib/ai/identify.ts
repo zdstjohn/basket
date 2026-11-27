@@ -1,8 +1,9 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 import { generateObject, NoObjectGeneratedError } from 'ai';
 import { z } from 'zod';
 import { fakeIdentify } from './fake';
-import { getModel, UnreadableError, usageReport, type UsageReport } from './provider';
+import { getModel, thrownUsage, UnreadableError, usageReport, type UsageReport } from './provider';
 
 const MAX_OUTPUT_TOKENS = 300;
 import type { DishGuess } from './schemas';
@@ -55,7 +56,7 @@ export async function identifyDish(
   opts: { onUsage?: (u: UsageReport) => void } = {},
 ): Promise<DishGuess> {
   const model = getModel('parse');
-  if (process.env.AI_FAKE === '1') {
+  if (fakeOn('AI_FAKE')) {
     const usage = { inputTokens: 100, outputTokens: 50 };
     opts.onUsage?.({ model, ...usage });
     const parsed = LooseGuessSchema.safeParse(fakeIdentify(image.base64));
@@ -88,6 +89,8 @@ export async function identifyDish(
       opts.onUsage?.(report);
       throw new UnreadableError({ inputTokens: report.inputTokens, outputTokens: report.outputTokens });
     }
+    const thrown = thrownUsage(model, e, MAX_OUTPUT_TOKENS);
+    if (thrown) opts.onUsage?.(thrown);
     throw e;
   }
 }

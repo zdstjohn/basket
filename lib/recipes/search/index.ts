@@ -1,4 +1,5 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 import { fetchRecipePage } from '../import-url';
 import { extractRecipeJsonLd } from '../jsonld';
 import { siteForHost } from '../sites';
@@ -36,7 +37,7 @@ async function toOption(hit: { url: string; title: string }, siteName: string): 
 }
 
 export async function searchSites(query: string, meter?: SearchMeter): Promise<RecipeOption[]> {
-  if (process.env.RECIPE_SEARCH_FAKE === '1') return fakeSiteOptions(query).slice(0, MAX_OPTIONS);
+  if (fakeOn('RECIPE_SEARCH_FAKE')) return fakeSiteOptions(query).slice(0, MAX_OPTIONS);
   const hits = await (await getWebSearch()).search(`${query} recipe`, 20, meter);
   const candidates: { hit: { url: string; title: string }; site: string }[] = [];
   for (const hit of hits) {
@@ -71,18 +72,18 @@ export interface SearchResult {
 
 async function searchUnsorted(query: string, source: RecipeSource = 'sites', meter?: SearchMeter): Promise<SearchResult> {
   if (source === 'spoonacular') {
-    return { options: await searchSpoonacular(query), source, fellBack: false, toppedUp: false };
+    return { options: await searchSpoonacular(query, meter), source, fellBack: false, toppedUp: false };
   }
   const options = await searchSites(query, meter);
   if (options.length >= TOP_UP_BELOW || !process.env.SPOONACULAR_API_KEY) {
     return { options, source, fellBack: false, toppedUp: false };
   }
   if (options.length === 0) {
-    return { options: await searchSpoonacular(query), source: 'spoonacular', fellBack: true, toppedUp: false };
+    return { options: await searchSpoonacular(query, meter), source: 'spoonacular', fellBack: true, toppedUp: false };
   }
   try {
     const have = new Set(options.map((o) => o.url));
-    const extra = (await searchSpoonacular(query)).filter((o) => !have.has(o.url));
+    const extra = (await searchSpoonacular(query, meter)).filter((o) => !have.has(o.url));
     return { options: [...options, ...extra].slice(0, MAX_OPTIONS), source, fellBack: false, toppedUp: extra.length > 0 };
   } catch {
     return { options, source, fellBack: false, toppedUp: false };

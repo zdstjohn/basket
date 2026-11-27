@@ -3,7 +3,7 @@ import type { Candidate } from "@/lib/domain/packages";
 import { setItemState, setItemStates, type ItemState } from "@/lib/db/queries/list";
 import { flushQueue, loadQueue, saveQueue, type QueuedPatch } from "@/lib/list/offline";
 import { overlayQueue } from "@/lib/list/state";
-import { buildList, listView, weekChanged, type ListInputs } from "@/lib/useWeekList";
+import { buildList, listView, rawForWeek, weekChanged, type ListInputs } from "@/lib/useWeekList";
 
 function fakeStorage() {
   const data = new Map<string, string>();
@@ -150,5 +150,19 @@ describe("buildList with a malformed search row", () => {
     };
     expect(() => buildList(raw)).not.toThrow();
     expect(buildList(raw).items).toHaveLength(1);
+  });
+});
+
+describe("rawForWeek: last week's list is never used under this week's id", () => {
+  const raw = (weekId: string): ListInputs => ({
+    entries: [], people: [], alwaysHave: [], itemState: {}, itemStores: [], categoryStore: {}, prices: [],
+    staples: [{ canonical: "olive oil", amount: 1, unit: "tbsp", role: "pantry" }], weekId,
+  });
+  it("shows a list only for the week it was fetched for", () => {
+    const old = raw("w-old");
+    expect(rawForWeek(old, "w-old")).toBe(old);
+    expect(rawForWeek(old, "w-new")).toBeNull(); // slow or failed new load: nothing shown, cached or tapped
+    expect(rawForWeek(old, null)).toBeNull();
+    expect(rawForWeek(null, "w-new")).toBeNull();
   });
 });

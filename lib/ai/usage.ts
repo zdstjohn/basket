@@ -1,3 +1,4 @@
+import { fakeOn } from '@/lib/fake';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/db/types';
 
@@ -31,7 +32,7 @@ const HOLD_CENTS = { draft: 2, search: 1, identify: 3, estimate: 1 } as const;
 
 export function holdCents(kind: keyof typeof HOLD_CENTS): number {
   // With the model faked nothing costs money, so nothing is reserved (the rate limits still apply).
-  return process.env.AI_FAKE === '1' ? 0 : HOLD_CENTS[kind];
+  return fakeOn('AI_FAKE') ? 0 : HOLD_CENTS[kind];
 }
 
 /**
@@ -55,8 +56,12 @@ export async function recordUsage(
 ): Promise<void> {
   let cost: number;
   if (kind === 'search') {
-    const configured = Number(process.env.SEARCH_COST_CENTS);
-    cost = process.env.SEARCH_COST_CENTS && Number.isFinite(configured) ? configured : 0.5;
+    // Brave bills per request (0.5); Spoonacular's cost is nominal (1: its free plan has a small shared
+    // daily quota, so the 50 cent pool for strangers allows about 50 requests a day).
+    const spoon = model === 'spoonacular';
+    const env = spoon ? process.env.SPOONACULAR_COST_CENTS : process.env.SEARCH_COST_CENTS;
+    const configured = Number(env);
+    cost = env && Number.isFinite(configured) ? configured : spoon ? 1 : 0.5;
   } else if (model === 'fake') {
     cost = 0;
   } else {
@@ -70,7 +75,7 @@ export async function recordUsage(
     model,
     input_tokens: usage.inputTokens,
     output_tokens: usage.outputTokens,
-    cost_cents: cost,
+    cost_cents: Math.min(cost, 50), // the table refuses a row over 50 cents; keep the record
   });
   if (error) throw new Error(error.message);
 }

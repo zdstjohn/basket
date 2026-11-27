@@ -65,3 +65,10 @@ describe("api failures", () => {
     );
   });
 });
+
+describe('spend guard messages', () => {
+  it('slow says wait a minute; busy says try again in an hour', () => {
+    expect(messageFor(new ApiFailure("slow"))).toBe("Too many tries just now. Wait a minute and try again.");
+    expect(messageFor(new ApiFailure("busy"))).toBe("Lots of people are searching right now. Try again in an hour.");
+  });
+});

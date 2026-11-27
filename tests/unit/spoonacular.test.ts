@@ -163,3 +163,25 @@ describe('draftFromOption on a Spoonacular option', () => {
     expect(draft.sourceUrl).toBe(option.url);
   });
 });
+
+describe('searchSpoonacular metering', () => {
+  it('counts each request it sends, also one Spoonacular refused', async () => {
+    const meter = { braveCalls: 0, spoonacularCalls: 0 };
+    fetchMock.mockResolvedValueOnce(new Response(fixture, { status: 200 }));
+    await searchSpoonacular('tacos', meter);
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 402 }));
+    await expect(searchSpoonacular('tacos', meter)).rejects.toBeInstanceOf(SourceLimitError);
+    expect(meter).toEqual({ braveCalls: 0, spoonacularCalls: 2 });
+  });
+
+  it('searchRecipes meters a Spoonacular search, and the Spoonacular top-up after a thin Brave one', async () => {
+    const meter = { braveCalls: 0, spoonacularCalls: 0 };
+    fetchMock.mockResolvedValue(new Response(fixture, { status: 200 }));
+    await searchRecipes('tacos', 'spoonacular', meter);
+    expect(meter.spoonacularCalls).toBe(1);
+    sitesSearch.mockResolvedValue([]);
+    fetchMock.mockResolvedValue(new Response(fixture, { status: 200 }));
+    await searchRecipes('tacos', 'sites', meter);
+    expect(meter.spoonacularCalls).toBe(2);
+  });
+});

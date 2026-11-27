@@ -1,14 +1,22 @@
 import { createServerClient } from "@/lib/db/server";
-import { getMyHousehold, listPeople } from "@/lib/db/queries/household";
+import { listPeople } from "@/lib/db/queries/household";
+import { getMyHouseholdOnce } from "@/lib/db/queries/household-server";
+import { linkStatus } from "@/lib/kroger/link";
+import { isCartConfigured } from "@/lib/kroger/oauth";
 import { isKrogerConfigured } from "@/lib/kroger/token";
 import { HouseholdScreen } from "./HouseholdScreen";
 
-export default async function HouseholdPage() {
+export default async function HouseholdPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ fm?: string | string[] }>;
+}) {
+  const { fm } = await searchParams;
   const sb = await createServerClient();
   const {
     data: { user },
   } = await sb.auth.getUser();
-  const household = await getMyHousehold(sb);
+  const household = await getMyHouseholdOnce();
   if (!user || !household) return null; // the layout has already redirected
 
   const [people, members] = await Promise.all([
@@ -18,6 +26,10 @@ export default async function HouseholdPage() {
   const roster = members.data ?? [];
   const isOwner = roster.some((m) => m.user_id === user.id && m.role === "owner");
 
+  const cartEnabled = isCartConfigured();
+  const connected = (await linkStatus(sb, user.id)).connected;
+  const notice = typeof fm === "string" && ["connected", "denied", "failed"].includes(fm) ? (fm as "connected" | "denied" | "failed") : null;
+
   return (
     <HouseholdScreen
       household={household}
@@ -25,6 +37,9 @@ export default async function HouseholdPage() {
       memberCount={Math.max(roster.length, 1)}
       isOwner={isOwner}
       krogerEnabled={isKrogerConfigured()}
+      cartEnabled={cartEnabled}
+      fredMeyerConnected={connected}
+      fredMeyerNotice={notice}
     />
   );
 }

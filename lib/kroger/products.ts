@@ -1,19 +1,10 @@
 import 'server-only';
-import { perBase, type Candidate } from '@/lib/domain/packages';
-import type { Quantity } from '@/lib/domain/types';
+import type { Candidate } from '@/lib/domain/packages';
 import { krogerImageUrl } from '@/lib/list/prices';
 import { fakeProductsResponse } from './fake';
 import { krogerGet } from './http';
 import { parseSize } from './size';
 import { isKrogerFake } from './token';
-
-export interface KrogerPrice {
-  /** Cents for one gram, one millilitre or one item. */
-  centsPerBase: number;
-  productName: string;
-  onSale: boolean;
-  imageUrl: string | null;
-}
 
 export interface KrogerProduct {
   productId?: string;
@@ -93,20 +84,4 @@ export async function searchProducts(term: string, locationId: string): Promise<
         'filter.limit': '20',
       });
   return body.data ?? [];
-}
-
-/**
- * The shelf price of a grocery item at one Kroger store, per base unit: the lowest among the first five
- * relevant products, else among the first three results (see perBase). Null when nothing can be priced
- * in the item's kind (mass, volume or count).
- */
-export async function priceFor(canonical: string, kind: Quantity['kind'], locationId: string): Promise<KrogerPrice | null> {
-  const best = perBase(canonical, kind, toCandidates(await searchProducts(canonical, locationId), canonical));
-  if (!best) return null;
-  return {
-    centsPerBase: best.centsPerBase,
-    productName: best.candidate.name,
-    onSale: best.candidate.promoCents !== null,
-    imageUrl: best.candidate.imageUrl,
-  };
 }

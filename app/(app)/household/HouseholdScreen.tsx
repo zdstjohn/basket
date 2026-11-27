@@ -20,6 +20,7 @@ import type { Household } from "@/lib/db/rows";
 import { formatDollars, formatExtra, parseMoneyToCents } from "@/lib/domain/money-input";
 import { householdServings } from "@/lib/domain/portions";
 import type { Person } from "@/lib/domain/types";
+import { FM_NOTICES } from "@/lib/list/fm-notices";
 import { subscribeHousehold } from "@/lib/realtime";
 import { focusRing, pillButton, textInput } from "@/lib/ui";
 import { PersonEditor, type PersonDraft } from "./PersonEditor";
@@ -38,6 +39,9 @@ export function HouseholdScreen({
   memberCount,
   isOwner,
   krogerEnabled,
+  cartEnabled,
+  fredMeyerConnected,
+  fredMeyerNotice,
 }: {
   household: Household;
   initialPeople: Person[];
@@ -45,6 +49,11 @@ export function HouseholdScreen({
   isOwner: boolean;
   /** Whether Fred Meyer shelf prices can be looked up on this server. */
   krogerEnabled: boolean;
+  /** Whether people can connect their own Fred Meyer account here. */
+  cartEnabled: boolean;
+  fredMeyerConnected: boolean;
+  /** How the last connect attempt ended, from the `fm` address parameter. */
+  fredMeyerNotice: "connected" | "denied" | "failed" | null;
 }) {
   const sb = useMemo(() => createBrowserClient(), []);
   const [people, setPeople] = useState(initialPeople);
@@ -59,6 +68,30 @@ export function HouseholdScreen({
   const linkInput = useRef<HTMLInputElement>(null);
   const [fredMeyer, setFredMeyer] = useState(household.kroger_location_name);
   const [picking, setPicking] = useState(false);
+  const [connected, setConnected] = useState(fredMeyerConnected);
+  const [fmNotice, setFmNotice] = useState<keyof typeof FM_NOTICES | null>(fredMeyerNotice);
+  useEffect(() => {
+    // The notice is shown once: take ?fm= out of the address so a reload or a shared link does not repeat it.
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("fm")) return;
+    url.searchParams.delete("fm");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  async function disconnectFredMeyer() {
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/kroger/disconnect", { method: "POST" });
+      if (res.status !== 204) throw new Error("disconnect failed");
+      setConnected(false);
+      setFmNotice(null);
+    } catch {
+      setFmNotice("disconnectFailed");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   // Another phone may change a person (an allergy added, say): reload so this one never saves over it.
   useEffect(() => {
@@ -265,6 +298,34 @@ export function HouseholdScreen({
               </li>
             );
           })}
+          {(cartEnabled || connected) && (
+            <li className={divider}>
+              <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-medium">Fred Meyer account</span>
+                  <span className="block text-xs text-muted">
+                    {connected
+                      ? "Connected"
+                      : "You'll sign in on Fred Meyer's own page. Basket never sees your password."}
+                  </span>
+                </span>
+                {connected ? (
+                  <button type="button" onClick={disconnectFredMeyer} disabled={disconnecting} className={pillButton}>
+                    Disconnect
+                  </button>
+                ) : cartEnabled ? (
+                  <a href="/api/kroger/connect?next=/household" className={pillButton}>
+                    Connect
+                  </a>
+                ) : null}
+              </div>
+              {fmNotice && (
+                <p role="status" className="px-3.5 pb-3 text-[13px] text-ink">
+                  {FM_NOTICES[fmNotice]}
+                </p>
+              )}
+            </li>
+          )}
           <li className={`${divider}`}>
             <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
               <span className="min-w-0 flex-1">
