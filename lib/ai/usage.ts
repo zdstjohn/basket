@@ -1,3 +1,4 @@
+import { fakeOn } from '@/lib/fake';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/db/types';
 
@@ -18,45 +19,32 @@ function prices(): Prices {
   }
 }
 
-/** The instant the current calendar month began in `timeZone`, as a UTC Date. */
-export function monthStartUtc(timeZone: string, now: Date = new Date()): Date {
-  const parts = (d: Date) => {
-    const f = new Intl.DateTimeFormat('en-US', {
-      timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric',
-      hour: 'numeric', minute: 'numeric', second: 'numeric',
-    }).formatToParts(d);
-    const get = (t: string) => Number(f.find((p) => p.type === t)?.value);
-    return { y: get('year'), mo: get('month'), d: get('day'), h: get('hour'), mi: get('minute'), s: get('second') };
-  };
-  // Offset of the zone from UTC at instant `d`, in ms.
-  const offset = (d: Date) => {
-    const p = parts(d);
-    return Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi, p.s) - Math.floor(d.getTime() / 1000) * 1000;
-  };
-  const { y, mo } = parts(now);
-  const naive = Date.UTC(y, mo - 1, 1);
-  // Two passes so a daylight-saving change between the guess and the answer cannot skew it.
-  const first = naive - offset(new Date(naive));
-  return new Date(naive - offset(new Date(first)));
+/** What ai_gate (migration 0008) answers. Only 'ok' lets the paid call go ahead. */
+export type GateResult = 'ok' | 'cap' | 'slow' | 'busy' | 'not_member';
+const GATE_RESULTS: readonly string[] = ['ok', 'cap', 'slow', 'busy', 'not_member'];
+
+/**
+ * What each paid route reserves up front, in cents (about a call's worst case; the real cost is
+ * recorded afterwards and the hold ages out after 90 seconds). A draft is up to two model calls plus a
+ * photo search; identify is a vision call plus up to two searches; a search is up to two Brave calls.
+ */
+const HOLD_CENTS = { draft: 2, search: 1, identify: 3, estimate: 1 } as const;
+
+export function holdCents(kind: keyof typeof HOLD_CENTS): number {
+  // With the model faked nothing costs money, so nothing is reserved (the rate limits still apply).
+  return fakeOn('AI_FAKE') ? 0 : HOLD_CENTS[kind];
 }
 
-export async function checkCap(
-  sb: Sb,
-  householdId: string,
-): Promise<{ ok: boolean; spentCents: number; capCents: number }> {
-  const { data: household, error: hErr } = await sb
-    .from('households')
-    .select('ai_cap_cents, time_zone')
-    .eq('id', householdId)
-    .single();
-  if (hErr) throw new Error(hErr.message);
-  const since = monthStartUtc(household.time_zone).toISOString();
-  // Summed in the database (migration 0003); the API would cut a plain select off at 1000 rows.
-  const { data, error } = await sb.rpc('ai_spend_since', { h: householdId, since });
+/**
+ * The one check before any paid call: not a member, over the monthly cap, too fast, or the shared pool
+ * for households nobody vouched for is used up. 'ok' has also reserved `hold` cents in one step, so a
+ * burst of parallel calls cannot all pass. An answer this does not recognise is an error, not a pass.
+ */
+export async function aiGate(sb: Sb, householdId: string, hold: number): Promise<GateResult> {
+  const { data, error } = await sb.rpc('ai_gate', { h: householdId, hold_cents: hold });
   if (error) throw new Error(error.message);
-  const spentCents = Number(data ?? 0);
-  const capCents = household.ai_cap_cents;
-  return { ok: spentCents < capCents, spentCents, capCents };
+  if (typeof data !== 'string' || !GATE_RESULTS.includes(data)) throw new Error('ai_gate answered something unexpected');
+  return data as GateResult;
 }
 
 export async function recordUsage(
@@ -64,16 +52,21 @@ export async function recordUsage(
   householdId: string,
   kind: 'parse' | 'estimate' | 'search' | 'identify',
   model: string,
-  usage: { inputTokens: number; outputTokens: number },
+  usage: { inputTokens: number; outputTokens: number; assumed?: boolean },
 ): Promise<void> {
   let cost: number;
   if (kind === 'search') {
-    const configured = Number(process.env.SEARCH_COST_CENTS);
-    cost = process.env.SEARCH_COST_CENTS && Number.isFinite(configured) ? configured : 0.5;
+    // Brave bills per request (0.5); Spoonacular's cost is nominal (1: its free plan has a small shared
+    // daily quota, so the 50 cent pool for strangers allows about 50 requests a day).
+    const spoon = model === 'spoonacular';
+    const env = spoon ? process.env.SPOONACULAR_COST_CENTS : process.env.SEARCH_COST_CENTS;
+    const configured = Number(env);
+    cost = env && Number.isFinite(configured) ? configured : spoon ? 1 : 0.5;
   } else if (model === 'fake') {
     cost = 0;
   } else {
-    const p = prices()[model] ?? UNKNOWN_MODEL_PRICE;
+    // `assumed`: the model reported no token counts, so the usage is the output limit at the high rate.
+    const p = (usage.assumed ? undefined : prices()[model]) ?? UNKNOWN_MODEL_PRICE;
     cost = (usage.inputTokens * p.in + usage.outputTokens * p.out) / 1_000_000;
   }
   const { error } = await sb.from('ai_usage').insert({
@@ -82,7 +75,7 @@ export async function recordUsage(
     model,
     input_tokens: usage.inputTokens,
     output_tokens: usage.outputTokens,
-    cost_cents: cost,
+    cost_cents: Math.min(cost, 50), // the table refuses a row over 50 cents; keep the record
   });
   if (error) throw new Error(error.message);
 }

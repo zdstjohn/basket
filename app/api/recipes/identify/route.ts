@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { identifyDish, UnreadableError, type ImageMediaType } from '@/lib/ai/identify';
 import type { UsageReport } from '@/lib/ai/provider';
 import { IdentifyBodySchema } from '@/lib/ai/schemas';
-import { recordUsage } from '@/lib/ai/usage';
-import { isResponse, readJson, requireHouseholdWithinCap } from '@/lib/api/household-context';
+import { newMeter, recordSearchCalls } from '@/lib/ai/billing';
+import { holdCents, recordUsage } from '@/lib/ai/usage';
+import { isResponse, readJson, requireHousehold, takeGate } from '@/lib/api/household-context';
 import { updateHousehold } from '@/lib/db/queries/household';
 import { searchRecipes } from '@/lib/recipes/search';
 import { SourceLimitError } from '@/lib/recipes/search/provider';
@@ -32,7 +33,7 @@ function sniffType(b64: string): ImageMediaType | null {
 /** The photo is read once and dropped: never stored, never logged. */
 export async function POST(req: Request) {
   const body = IdentifyBodySchema.safeParse(await readJson(req));
-  const ctx = await requireHouseholdWithinCap();
+  const ctx = await requireHousehold();
   if (isResponse(ctx)) return ctx;
   if (!body.success) return NextResponse.json({ error: 'bad_request' }, { status: 400 });
   const { image, source } = body.data;
@@ -41,8 +42,11 @@ export async function POST(req: Request) {
   if (decodedLength(image) > MAX_IMAGE_BYTES) return NextResponse.json({ error: 'too_large' }, { status: 413 });
   const mediaType = sniffType(image);
   if (!mediaType) return NextResponse.json({ error: 'bad_type' }, { status: 415 });
+  const refused = await takeGate(ctx, holdCents('identify'));
+  if (refused) return refused;
 
   const usages: UsageReport[] = [];
+  const meter = newMeter();
   let searches = 0;
   try {
     const guess = await identifyDish({ base64: image, mediaType }, { onUsage: (u) => void usages.push(u) });
@@ -50,12 +54,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ guess: { ...guess, isFood: false }, options: [] });
     }
     const query = guess.searchQuery.trim();
-    let found = await searchRecipes(query, source);
+    let found = await searchRecipes(query, source, meter);
     searches++;
     // A long query can find nothing: try once more with just its first three words.
     const shorter = query.split(/\s+/).slice(0, 3).join(' ');
     if (found.options.length === 0 && shorter !== query) {
-      found = await searchRecipes(shorter, source);
+      found = await searchRecipes(shorter, source, meter);
       searches++;
     }
     return NextResponse.json({ guess, ...found });
@@ -68,12 +72,12 @@ export async function POST(req: Request) {
     // Every model call costs money, even one whose answer was unusable or whose search then failed.
     try {
       for (const u of usages) {
-        await recordUsage(sb, household.id, 'identify', u.model, { inputTokens: u.inputTokens, outputTokens: u.outputTokens });
+        await recordUsage(sb, household.id, 'identify', u.model, {
+          inputTokens: u.inputTokens, outputTokens: u.outputTokens, assumed: u.assumed,
+        });
       }
-      // Only Brave costs money; Spoonacular's free plan does not.
-      if (source === 'sites') {
-        for (let i = 0; i < searches; i++) await recordUsage(sb, household.id, 'search', 'brave', { inputTokens: 0, outputTokens: 0 });
-      }
+      // Bill each paid search request that was sent (Brave, Spoonacular), even when the search then failed.
+      await recordSearchCalls(sb, household.id, meter);
       if (searches > 0 && household.recipe_source !== source) await updateHousehold(sb, household.id, { recipe_source: source });
     } catch (e) {
       console.error('identify bookkeeping failed', e instanceof Error ? e.message : 'unknown');

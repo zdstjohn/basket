@@ -1,70 +1,47 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { checkCap, monthStartUtc, recordUsage } from '@/lib/ai/usage';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { aiGate, holdCents, recordUsage } from '@/lib/ai/usage';
 
-function mockSb(rows: { cost_cents: number }[], household = { ai_cap_cents: 300, time_zone: 'America/Los_Angeles' }) {
+function mockSb(rpcResult: { data: unknown; error: { message: string } | null } = { data: 'ok', error: null }) {
   const inserts: unknown[] = [];
-  const filters: Record<string, unknown[]> = {};
+  const rpcCalls: { fn: string; args: unknown }[] = [];
   const sb = {
-    rpc: async (fn: string, args: { h: string; since: string }) => {
-      filters[`rpc.${fn}`] = [args.h, args.since];
-      // numeric comes back as a string from PostgREST when large; sum like the database would
-      return { data: String(rows.reduce((n, r) => n + r.cost_cents, 0)), error: null };
-    },
+    rpc: async (fn: string, args: unknown) => (rpcCalls.push({ fn, args }), rpcResult),
     from(table: string) {
-      const b: Record<string, unknown> = {};
-      b.select = () => b;
-      b.eq = (c: string, v: unknown) => ((filters[`${table}.${c}`] = [v]), b);
-      b.gte = (c: string, v: unknown) => ((filters[`${table}.${c}`] = [v]), b);
-      b.single = async () => ({ data: household, error: null });
-      b.maybeSingle = b.single;
-      b.insert = async (row: unknown) => (inserts.push({ table, row }), { error: null });
-      b.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: rows, error: null }).then(res);
-      return b;
+      return { insert: async (row: unknown) => (inserts.push({ table, row }), { error: null }) };
     },
   };
-  return { sb: sb as never, inserts, filters };
+  return { sb: sb as never, inserts, rpcCalls };
 }
 
-describe('checkCap', () => {
-  it('is ok at 299 of 300 and not at 300', async () => {
-    const a = await checkCap(mockSb([{ cost_cents: 200 }, { cost_cents: 99 }]).sb, 'h');
-    expect(a).toEqual({ ok: true, spentCents: 299, capCents: 300 });
-    const b = await checkCap(mockSb([{ cost_cents: 150 }, { cost_cents: 150 }]).sb, 'h');
-    expect(b.ok).toBe(false);
-    expect(b.spentCents).toBe(300);
+describe('aiGate', () => {
+  it('asks the database to check and hold, with the household and the hold', async () => {
+    const m = mockSb();
+    expect(await aiGate(m.sb, 'h1', 2)).toBe('ok');
+    expect(m.rpcCalls).toEqual([{ fn: 'ai_gate', args: { h: 'h1', hold_cents: 2 } }]);
   });
 
-  it('only counts rows since the start of the month in the household time zone', async () => {
-    const m = mockSb([]);
-    await checkCap(m.sb, 'h');
-    const [h, since] = m.filters['rpc.ai_spend_since'];
-    expect(h).toBe('h');
-    expect(since).toMatch(/^\d{4}-\d{2}-01T\d{2}:00:00\.000Z$/);
-  });
-});
-
-describe('checkCap at scale', () => {
-  it('does not depend on how many usage rows exist (summed in the database)', async () => {
-    const rows = Array.from({ length: 5000 }, () => ({ cost_cents: 0.1 }));
-    const r = await checkCap(mockSb(rows).sb, 'h');
-    expect(r.spentCents).toBeCloseTo(500, 5);
-    expect(r.ok).toBe(false);
+  it.each(['ok', 'cap', 'slow', 'busy', 'not_member'] as const)('passes %s through', async (r) => {
+    expect(await aiGate(mockSb({ data: r, error: null }).sb, 'h', 1)).toBe(r);
   });
 
-  it('throws when the database refuses', async () => {
-    const sb = { from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { ai_cap_cents: 300, time_zone: 'UTC' }, error: null }) }) }) }),
-      rpc: async () => ({ data: null, error: { message: 'not_member' } }) };
-    await expect(checkCap(sb as never, 'h')).rejects.toThrow('not_member');
+  it('throws when the database errors, and on an answer it does not know (never lets a call through)', async () => {
+    await expect(aiGate(mockSb({ data: null, error: { message: 'boom' } }).sb, 'h', 1)).rejects.toThrow('boom');
+    await expect(aiGate(mockSb({ data: 'sure', error: null }).sb, 'h', 1)).rejects.toThrow();
+    await expect(aiGate(mockSb({ data: null, error: null }).sb, 'h', 1)).rejects.toThrow();
   });
 });
 
-describe('monthStartUtc', () => {
-  it('is local midnight on the 1st, expressed in UTC', () => {
-    expect(monthStartUtc('America/Los_Angeles', new Date('2026-11-26T12:00:00Z')).toISOString()).toBe('2026-11-01T07:00:00.000Z');
-    expect(monthStartUtc('America/Los_Angeles', new Date('2026-07-15T12:00:00Z')).toISOString()).toBe('2026-07-01T07:00:00.000Z');
-    expect(monthStartUtc('UTC', new Date('2026-11-30T23:59:00Z')).toISOString()).toBe('2026-11-01T00:00:00.000Z');
-    // 2026-12-01 03:00Z is still 30 Nov in Los Angeles.
-    expect(monthStartUtc('America/Los_Angeles', new Date('2026-12-01T03:00:00Z')).toISOString()).toBe('2026-11-01T07:00:00.000Z');
+describe('holdCents', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('reserves a positive amount for each paid route', () => {
+    vi.stubEnv('AI_FAKE', '');
+    for (const k of ['draft', 'search', 'identify', 'estimate'] as const) expect(holdCents(k)).toBeGreaterThan(0);
+  });
+
+  it('reserves nothing when the model is faked, since nothing costs money then', () => {
+    vi.stubEnv('AI_FAKE', '1');
+    expect(holdCents('identify')).toBe(0);
   });
 });
 
@@ -76,7 +53,7 @@ describe('recordUsage', () => {
 
   it('prices tokens from AI_PRICES_JSON', async () => {
     process.env.AI_PRICES_JSON = JSON.stringify({ m1: { in: 100, out: 500 } });
-    const m = mockSb([]);
+    const m = mockSb();
     await recordUsage(m.sb, 'h', 'parse', 'm1', { inputTokens: 10_000, outputTokens: 2_000 });
     expect(m.inserts[0]).toMatchObject({
       table: 'ai_usage',
@@ -85,18 +62,43 @@ describe('recordUsage', () => {
   });
 
   it('uses the default haiku price when AI_PRICES_JSON is unset', async () => {
-    const m = mockSb([]);
-    await recordUsage(m.sb, 'h', 'estimate', 'anthropic/claude-haiku-5.5', { inputTokens: 1_000_000, outputTokens: 1_000_000 });
-    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(60);
+    const m = mockSb();
+    await recordUsage(m.sb, 'h', 'estimate', 'anthropic/claude-haiku-5.5', { inputTokens: 500_000, outputTokens: 500_000 });
+    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(30);
   });
 
   it('charges a search SEARCH_COST_CENTS, default 0.5', async () => {
-    const m = mockSb([]);
+    const m = mockSb();
     await recordUsage(m.sb, 'h', 'search', 'brave', { inputTokens: 0, outputTokens: 0 });
     expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(0.5);
     process.env.SEARCH_COST_CENTS = '0.8';
-    const m2 = mockSb([]);
+    const m2 = mockSb();
     await recordUsage(m2.sb, 'h', 'search', 'brave', { inputTokens: 0, outputTokens: 0 });
     expect((m2.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(0.8);
+  });
+
+  it('charges an answer with no token counts at the unknown-model rate times the output limit', async () => {
+    const m = mockSb();
+    await recordUsage(m.sb, 'h', 'estimate', 'anthropic/claude-haiku-5.5', { inputTokens: 0, outputTokens: 4000, assumed: true });
+    // 4000 output tokens at 1500 per million = 6 cents, not the 0.2 the Haiku price would give.
+    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(6);
+  });
+
+  it('never inserts a row over 50 cents (the table refuses it), so a pricey call still leaves its record', async () => {
+    process.env.AI_PRICES_JSON = JSON.stringify({ big: { in: 1_000_000, out: 1_000_000 } });
+    const m = mockSb();
+    await recordUsage(m.sb, 'h', 'parse', 'big', { inputTokens: 1_000_000, outputTokens: 1_000_000 });
+    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(50);
+  });
+
+  it('charges a Spoonacular request SPOONACULAR_COST_CENTS, default 1', async () => {
+    const m = mockSb();
+    await recordUsage(m.sb, 'h', 'search', 'spoonacular', { inputTokens: 0, outputTokens: 0 });
+    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(1);
+    process.env.SPOONACULAR_COST_CENTS = '0.2';
+    const m2 = mockSb();
+    await recordUsage(m2.sb, 'h', 'search', 'spoonacular', { inputTokens: 0, outputTokens: 0 });
+    expect((m2.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(0.2);
+    delete process.env.SPOONACULAR_COST_CENTS;
   });
 });

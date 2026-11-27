@@ -31,6 +31,23 @@ describe('braveSearch', () => {
     expect(hits.map((h) => h.url)).toEqual(['https://delish.com/x']);
   });
 
+  it('counts each call it sends on the meter, including the retry', async () => {
+    fetchMock.mockResolvedValueOnce(reply(['https://random.test/a'])).mockResolvedValueOnce(reply(['https://delish.com/x']));
+    const meter = { braveCalls: 0, spoonacularCalls: 0 };
+    await braveSearch.search('beef stew recipe', 20, meter);
+    expect(meter.braveCalls).toBe(2);
+    fetchMock.mockResolvedValueOnce(reply(['https://www.allrecipes.com/a']));
+    await braveSearch.search('tacos recipe', 20, meter);
+    expect(meter.braveCalls).toBe(3);
+  });
+
+  it('counts a call that failed (it was sent, so it is billed)', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 429 }));
+    const meter = { braveCalls: 0, spoonacularCalls: 0 };
+    await expect(braveSearch.search('x', 5, meter)).rejects.toThrow('HTTP 429');
+    expect(meter.braveCalls).toBe(1);
+  });
+
   it('throws on an HTTP error without echoing the key', async () => {
     fetchMock.mockResolvedValueOnce(new Response('{}', { status: 429 }));
     await expect(braveSearch.search('x', 5)).rejects.toThrow('HTTP 429');

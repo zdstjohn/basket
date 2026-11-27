@@ -6,7 +6,7 @@ import { siteForHost } from '../sites';
 import { sortByLoved } from './loved';
 import { clampOption } from './clamp';
 import { fakeSiteOptions } from './fake';
-import { getWebSearch, type RecipeOption, type RecipeSource } from './provider';
+import { getWebSearch, type RecipeOption, type RecipeSource, type SearchMeter } from './provider';
 import { searchSpoonacular } from './spoonacular';
 
 export type { RecipeOption, RecipeSource } from './provider';
@@ -36,9 +36,9 @@ async function toOption(hit: { url: string; title: string }, siteName: string): 
   });
 }
 
-export async function searchSites(query: string): Promise<RecipeOption[]> {
+export async function searchSites(query: string, meter?: SearchMeter): Promise<RecipeOption[]> {
   if (fakeOn('RECIPE_SEARCH_FAKE')) return fakeSiteOptions(query).slice(0, MAX_OPTIONS);
-  const hits = await (await getWebSearch()).search(`${query} recipe`, 20);
+  const hits = await (await getWebSearch()).search(`${query} recipe`, 20, meter);
   const candidates: { hit: { url: string; title: string }; site: string }[] = [];
   for (const hit of hits) {
     let host: string;
@@ -70,20 +70,20 @@ export interface SearchResult {
   toppedUp: boolean;
 }
 
-async function searchUnsorted(query: string, source: RecipeSource = 'sites'): Promise<SearchResult> {
+async function searchUnsorted(query: string, source: RecipeSource = 'sites', meter?: SearchMeter): Promise<SearchResult> {
   if (source === 'spoonacular') {
-    return { options: await searchSpoonacular(query), source, fellBack: false, toppedUp: false };
+    return { options: await searchSpoonacular(query, meter), source, fellBack: false, toppedUp: false };
   }
-  const options = await searchSites(query);
+  const options = await searchSites(query, meter);
   if (options.length >= TOP_UP_BELOW || !process.env.SPOONACULAR_API_KEY) {
     return { options, source, fellBack: false, toppedUp: false };
   }
   if (options.length === 0) {
-    return { options: await searchSpoonacular(query), source: 'spoonacular', fellBack: true, toppedUp: false };
+    return { options: await searchSpoonacular(query, meter), source: 'spoonacular', fellBack: true, toppedUp: false };
   }
   try {
     const have = new Set(options.map((o) => o.url));
-    const extra = (await searchSpoonacular(query)).filter((o) => !have.has(o.url));
+    const extra = (await searchSpoonacular(query, meter)).filter((o) => !have.has(o.url));
     return { options: [...options, ...extra].slice(0, MAX_OPTIONS), source, fellBack: false, toppedUp: extra.length > 0 };
   } catch {
     return { options, source, fellBack: false, toppedUp: false };
@@ -91,7 +91,9 @@ async function searchUnsorted(query: string, source: RecipeSource = 'sites'): Pr
 }
 
 /** Searches, then puts the most loved recipes first (both sources, both screens). */
-export async function searchRecipes(query: string, source: RecipeSource = 'sites'): Promise<SearchResult> {
-  const result = await searchUnsorted(query, source);
+export async function searchRecipes(
+  query: string, source: RecipeSource = 'sites', meter?: SearchMeter,
+): Promise<SearchResult> {
+  const result = await searchUnsorted(query, source, meter);
   return { ...result, options: sortByLoved(result.options) };
 }

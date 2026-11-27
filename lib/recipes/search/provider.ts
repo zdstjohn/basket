@@ -8,8 +8,18 @@ export interface SearchHit {
   title: string;
 }
 
+/**
+ * Counts the paid requests a search sent (Brave, Spoonacular). Routes bill it in `finally`, so a failure
+ * after the provider answered still costs, and so does every Spoonacular request: it has a shared daily quota.
+ */
+export interface SearchMeter {
+  braveCalls: number;
+  spoonacularCalls: number;
+}
+
 export interface WebSearchProvider {
-  search(query: string, count: number): Promise<SearchHit[]>;
+  /** `meter`, when given, counts each request sent (also one that then failed: it was still billed). */
+  search(query: string, count: number, meter?: SearchMeter): Promise<SearchHit[]>;
 }
 
 export interface RecipeOption {

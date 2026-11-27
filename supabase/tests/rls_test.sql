@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(162);
+select plan(206);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -346,6 +346,177 @@ reset role;
 select pg_temp.act_as(null);
 select throws_ok($q$select public.ai_spend_since(gen_random_uuid(), '-infinity')$q$, '42501', null, 'anon cannot call ai_spend_since');
 reset role;
+
+-- ---------------------------------------------------------------------------
+-- One spend guard for every paid call (0008): ai_gate, trusted, the untrusted Kroger pool
+-- ---------------------------------------------------------------------------
+reset role;
+-- The local database may hold other untrusted usage from today: lift the pool so only the pool test hits it.
+update public.spend_limits set untrusted_day_cents = 1000000000;
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+insert into t_kv select 'HD', public.create_household('Delta family')::text;
+reset role;
+select is((select ai_cap_cents from public.households where id = (select v::uuid from t_kv where k = 'HD')), 50, 'a new household starts with a 50 cent AI cap');
+select is((select trusted from public.households where id = (select v::uuid from t_kv where k = 'HD')), false, 'a new household is not trusted');
+
+select pg_temp.act_as(null);
+select throws_ok($q$select public.ai_gate(gen_random_uuid(), 1)$q$, '42501', null, 'anon cannot call ai_gate');
+select throws_ok($q$select public.create_invite()$q$, '42501', null, 'anon cannot call create_invite');
+reset role;
+
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'not_member', 'ai_gate refuses a household the caller is not in');
+select throws_ok($q$select public.ai_gate((select v::uuid from t_kv where k = 'HA'), -1)$q$, 'P0001', 'bad_hold', 'ai_gate refuses a negative hold');
+select throws_ok($q$update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'a member cannot make their own household trusted');
+select throws_ok($q$select * from public.spend_limits$q$, '42501', null, 'members cannot read spend_limits');
+reset role;
+
+-- With 1 cent left: the first call holds it, the second is refused, and no real usage row appears.
+update public.households set ai_cap_cents = 10 where id = (select v::uuid from t_kv where k = 'HB');
+delete from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HB');
+insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HB'), 'parse', 'test', 9);
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'ok', 'with 1 cent left the first call is ok');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'cap', 'the second call is over the cap (the hold counts)');
+select is((select count(*)::int from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HB') and kind <> 'hold'), 1, 'the gate wrote no real usage row');
+select throws_ok($q$delete from public.ai_usage$q$, '42501', null, 'a member cannot erase a hold');
+reset role;
+select is((select count(*)::int from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HB') and kind = 'hold'), 1, 'exactly one hold was made');
+update public.ai_usage set created_at = now() - interval '91 seconds' where household_id = (select v::uuid from t_kv where k = 'HB') and kind = 'hold';
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'ok', 'a hold 91 seconds old is no longer counted');
+reset role;
+
+-- Rate: per minute, then per day. D's zone is also unknown to Postgres: it falls back to Pacific.
+update public.spend_limits set per_minute = 2;
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'per_minute: first call ok');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'per_minute: second call ok');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'slow', 'per_minute: the third call in a minute is slow');
+reset role;
+update public.spend_limits set per_minute = 20, per_day = 2;
+update public.ai_usage set created_at = greatest(date_trunc('day', now() at time zone 'utc') at time zone 'utc', now() - interval '5 minutes')
+  where household_id = (select v::uuid from t_kv where k = 'HD') and kind = 'hold';
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'slow', 'per_day: two holds today is the daily limit');
+reset role;
+update public.spend_limits set per_day = 300;
+-- A name Postgres does not list can only be an old row now (a trigger refuses new ones): plant one.
+set local session_replication_role = replica;
+update public.households set time_zone = 'nonsense' where id = (select v::uuid from t_kv where k = 'HD');
+set local session_replication_role = origin;
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'an unknown time zone falls back instead of failing');
+reset role;
+
+-- The untrusted pool: busy for an untrusted household, ok for a trusted one.
+update public.households set ai_cap_cents = 2000000000 where id = (select v::uuid from t_kv where k = 'HA');
+update public.spend_limits set untrusted_day_cents = 1 + (
+  select coalesce(sum(u.cost_cents), 0) from public.ai_usage u join public.households x on x.id = u.household_id
+  where not x.trusted and u.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc' and u.created_at <= now()
+    and (u.kind <> 'hold' or u.created_at > now() - interval '90 seconds'));
+insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HA'), 'parse', 'test', 5);
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 1), 'busy', 'untrusted pool full: busy for an untrusted household');
+reset role;
+update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HA');
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 1), 'ok', 'untrusted pool full: ok for a trusted household');
+reset role;
+
+-- Spoonacular searches count: strangers fill the shared pool with them, and then get busy; a trusted one searches on.
+update public.households set trusted = false where id = (select v::uuid from t_kv where k = 'HA');
+update public.spend_limits set untrusted_day_cents = 1 + (
+  select coalesce(sum(u.cost_cents), 0) from public.ai_usage u join public.households x on x.id = u.household_id
+  where not x.trusted and u.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc' and u.created_at <= now()
+    and (u.kind <> 'hold' or u.created_at > now() - interval '90 seconds'));
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select lives_ok($q$insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HD'), 'search', 'spoonacular', 0.5), ((select v::uuid from t_kv where k = 'HD'), 'search', 'spoonacular', 0.5)$q$, 'a member records two Spoonacular searches');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'busy', 'two Spoonacular searches fill the untrusted pool: busy');
+reset role;
+update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HA');
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 1), 'ok', 'a trusted household still gets through the full pool');
+reset role;
+update public.spend_limits set untrusted_day_cents = 1000000000;
+update public.households set trusted = false where id = (select v::uuid from t_kv where k = 'HD');
+
+-- Members cannot choose created_at or id, and a future-dated row counts for nothing.
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select throws_ok($q$insert into public.ai_usage (household_id, kind, model, created_at) values ((select v::uuid from t_kv where k = 'HD'), 'parse', 'x', now() + interval '1 day')$q$, '42501', null, 'a member cannot set created_at on a usage row');
+select throws_ok($q$insert into public.ai_usage (id, household_id, kind, model) values (gen_random_uuid(), (select v::uuid from t_kv where k = 'HD'), 'parse', 'x')$q$, '42501', null, 'a member cannot set the id of a usage row');
+reset role;
+update public.spend_limits set untrusted_day_cents = 1 + (
+  select coalesce(sum(u.cost_cents), 0) from public.ai_usage u join public.households x on x.id = u.household_id
+  where not x.trusted and u.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc' and u.created_at <= now()
+    and (u.kind <> 'hold' or u.created_at > now() - interval '90 seconds'));
+insert into public.ai_usage (household_id, kind, model, cost_cents, created_at) values ((select v::uuid from t_kv where k = 'HD'), 'parse', 'test', 50, now() + interval '1 day');
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'a future-dated row does not count toward the pool');
+reset role;
+update public.spend_limits set untrusted_day_cents = 1000000000;
+
+-- A direct call cannot hold more than 5 cents.
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 100), 'ok', 'a big hold is accepted');
+reset role;
+select is((select count(*)::int from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HA') and kind = 'hold' and cost_cents = 5), 1, 'and clamped to 5 cents');
+
+-- One row cannot cost more than 50 cents, so one inserted row cannot fill the shared pool.
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select throws_ok($q$insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HD'), 'parse', 'x', 51)$q$, '23514', null, 'a usage row over 50 cents is refused');
+reset role;
+select ok(not has_function_privilege('anon', 'public.households_check_time_zone()', 'execute') and not has_function_privilege('authenticated', 'public.households_check_time_zone()', 'execute') and not has_function_privilege('public', 'public.households_check_time_zone()', 'execute'), 'nobody can call the time zone trigger function directly');
+
+-- Trusted households get the higher rate limits.
+delete from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HB') and kind = 'hold';
+update public.households set trusted = true, ai_cap_cents = 2000000000 where id = (select v::uuid from t_kv where k = 'HB');
+update public.spend_limits set per_minute = 1, trusted_per_minute = 2;
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'ok', 'trusted per_minute: first call ok');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'ok', 'trusted per_minute: the second is ok where an untrusted household would be slow');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'slow', 'trusted per_minute: the third is slow');
+reset role;
+update public.spend_limits set per_minute = 20, trusted_per_minute = 60;
+
+-- A time zone Postgres does not list cannot be stored.
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select throws_ok($q$update public.households set time_zone = 'nonsense' where id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'a member cannot set an unknown time zone');
+select lives_ok($q$update public.households set time_zone = 'Europe/Paris' where id = (select v::uuid from t_kv where k = 'HA')$q$, 'a listed time zone is accepted');
+reset role;
+
+-- No spend_limits row means the defaults, not no limits.
+delete from public.spend_limits;
+-- (trusted, so the answer does not depend on how much untrusted usage the local database holds today)
+update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HD');
+update public.ai_usage set created_at = now() - interval '2 days' where household_id = (select v::uuid from t_kv where k = 'HD') and kind = 'hold';
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'with no spend_limits row ai_gate still answers, on the defaults');
+reset role;
+insert into public.spend_limits default values;
+update public.spend_limits set untrusted_day_cents = 1000000000;
+update public.households set trusted = false where id = (select v::uuid from t_kv where k = 'HD');
+
+-- The untrusted Kroger pool (600 a day for all untrusted households together).
+update public.kroger_global_calls set untrusted_calls = 598 where day = (now() at time zone 'utc')::date;
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HD'), 3), 0, 'Kroger pool: 3 more past 598 is refused, the household total is unchanged');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HD'), 2), 2, 'Kroger pool: exactly 600 is allowed');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HD'), 1), 2, 'Kroger pool: full, nothing more is added');
+reset role;
+update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HD');
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HD'), 1), 3, 'Kroger pool: a trusted household is not held by it');
+reset role;
+select is((select untrusted_calls from public.kroger_global_calls where day = (now() at time zone 'utc')::date), 600, 'a trusted household adds nothing to the untrusted pool');
+
+-- Every table in public has row-level security, and none is granted to anon or PUBLIC.
+select is((select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity), 0, 'every table in public has row-level security');
+select is((select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace,
+  lateral aclexplode(c.relacl) a
+  where n.nspname = 'public' and c.relkind in ('r', 'p')
+    and a.grantee in (0, (select oid from pg_roles where rolname = 'anon'))), 0, 'no table in public is granted to anon or PUBLIC');
 
 -- ---------------------------------------------------------------------------
 -- Photo bucket limits (0005)

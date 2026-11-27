@@ -6,7 +6,7 @@ import type { RecipeOption } from '@/lib/recipes/search/provider';
 const getUser = vi.fn();
 const getMyHousehold = vi.fn();
 const updateHousehold = vi.fn();
-const checkCap = vi.fn();
+const aiGate = vi.fn();
 const recordUsage = vi.fn();
 const searchRecipes = vi.fn();
 const fetchRecipePage = vi.fn();
@@ -17,8 +17,9 @@ vi.mock('@/lib/db/queries/household', () => ({
   listPeople: async () => familyOfFive,
   updateHousehold: (...a: unknown[]) => updateHousehold(...a),
 }));
-vi.mock('@/lib/ai/usage', () => ({
-  checkCap: (...a: unknown[]) => checkCap(...a),
+vi.mock('@/lib/ai/usage', async (orig) => ({
+  ...(await orig<typeof import('@/lib/ai/usage')>()),
+  aiGate: (...a: unknown[]) => aiGate(...a),
   recordUsage: (...a: unknown[]) => recordUsage(...a),
 }));
 vi.mock('@/lib/recipes/search', () => ({ searchRecipes: (...a: unknown[]) => searchRecipes(...a) }));
@@ -52,7 +53,7 @@ beforeEach(() => {
   process.env.AI_FAKE = '1';
   getUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
   getMyHousehold.mockResolvedValue({ id: 'h1', recipe_source: 'sites' });
-  checkCap.mockResolvedValue({ ok: true, spentCents: 0, capCents: 300 });
+  aiGate.mockResolvedValue('ok');
   searchRecipes.mockResolvedValue({ options: [], source: 'sites', fellBack: false });
 });
 
@@ -62,8 +63,35 @@ describe('POST /api/meals/draft', () => {
     expect((await draftPost(req({ mode: 'text', value: 'x' }))).status).toBe(401);
   });
 
+  it.each([['slow', 'slow_down'], ['busy', 'busy']])('429 %s without calling the model or the provider', async (why, error) => {
+    aiGate.mockResolvedValue(why);
+    const res = await draftPost(req({ mode: 'option', option }));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error });
+    expect(generateStructured).not.toHaveBeenCalled();
+    expect(searchRecipes).not.toHaveBeenCalled();
+  });
+
+  it('takes the gate for its household with the draft hold', async () => {
+    delete process.env.AI_FAKE;
+    aiGate.mockResolvedValue('cap');
+    await draftPost(req({ mode: 'option', option }));
+    expect(aiGate).toHaveBeenCalledWith(expect.anything(), 'h1', 2);
+    process.env.AI_FAKE = '1';
+  });
+
+  it('records every Brave call the photo lookup made, even if the lookup then failed', async () => {
+    searchRecipes.mockImplementation(async (_q: string, _s: string, meter?: { braveCalls: number }) => {
+      if (meter) meter.braveCalls += 2;
+      throw new SourceLimitError();
+    });
+    const res = await draftPost(req({ mode: 'text', value: 'Chicken tacos\n1 lb chicken thighs' }));
+    expect(res.status).toBe(200);
+    expect(recordUsage.mock.calls.filter((c) => c[2] === 'search')).toHaveLength(2);
+  });
+
   it('402 at the cap without calling the model or the provider', async () => {
-    checkCap.mockResolvedValue({ ok: false, spentCents: 300, capCents: 300 });
+    aiGate.mockResolvedValue('cap');
     const res = await draftPost(req({ mode: 'option', option }));
     expect(res.status).toBe(402);
     expect(await res.json()).toEqual({ error: 'cap_reached' });
@@ -102,8 +130,9 @@ describe('POST /api/meals/draft', () => {
     expect(await res.json()).toEqual({ error: 'blocked_host' });
   });
 
-  it('400 on a malformed body', async () => {
+  it('400 on a malformed body, without taking the gate', async () => {
     expect((await draftPost(req({ mode: 'nope' }))).status).toBe(400);
+    expect(aiGate).not.toHaveBeenCalled();
   });
 });
 
@@ -127,7 +156,7 @@ describe('draftFromOption / draftFromText', () => {
       source: 'sites', fellBack: false,
     });
     const d = await draftFromText('Chicken tacos\n1 lb chicken thighs\n12 corn tortillas', familyOfFive);
-    expect(searchRecipes).toHaveBeenCalledWith('Chicken tacos', expect.anything());
+    expect(searchRecipes).toHaveBeenCalledWith('Chicken tacos', expect.anything(), undefined);
     expect(d.photo).toEqual({ url: 'https://images.example.test/found.jpg', credit: 'Delish', creditUrl: 'https://delish.com/t' });
   });
 
@@ -139,18 +168,50 @@ describe('draftFromOption / draftFromText', () => {
 });
 
 describe('POST /api/recipes/search', () => {
+  it('429 when the gate says slow or busy, without searching', async () => {
+    for (const [why, error] of [['slow', 'slow_down'], ['busy', 'busy']] as const) {
+      aiGate.mockResolvedValue(why);
+      const res = await searchPost(req({ query: 'tacos', source: 'sites' }));
+      expect(res.status).toBe(429);
+      expect(await res.json()).toEqual({ error });
+    }
+    expect(searchRecipes).not.toHaveBeenCalled();
+  });
+
+  it('a Brave fallback that made two calls records two searches', async () => {
+    searchRecipes.mockImplementation(async (_q: string, _s: string, meter?: { braveCalls: number }) => {
+      if (meter) meter.braveCalls += 2;
+      return { options: [option], source: 'sites', fellBack: false };
+    });
+    await searchPost(req({ query: 'tacos', source: 'sites' }));
+    expect(recordUsage.mock.calls.filter((c) => c[2] === 'search')).toHaveLength(2);
+  });
+
+  it('a search that fails after Brave answered still records it', async () => {
+    searchRecipes.mockImplementation(async (_q: string, _s: string, meter?: { braveCalls: number }) => {
+      if (meter) meter.braveCalls += 1;
+      throw new SourceLimitError();
+    });
+    const res = await searchPost(req({ query: 'tacos', source: 'sites' }));
+    expect(res.status).toBe(429);
+    expect(recordUsage.mock.calls.filter((c) => c[2] === 'search')).toHaveLength(1);
+  });
+
   it('401 when signed out; 402 at the cap without searching', async () => {
     getUser.mockResolvedValue({ data: { user: null } });
     expect((await searchPost(req({ query: 'tacos', source: 'sites' }))).status).toBe(401);
     getUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    checkCap.mockResolvedValue({ ok: false, spentCents: 300, capCents: 300 });
+    aiGate.mockResolvedValue('cap');
     const res = await searchPost(req({ query: 'tacos', source: 'sites' }));
     expect(res.status).toBe(402);
     expect(searchRecipes).not.toHaveBeenCalled();
   });
 
   it('200 with options; records a search for sites; saves a changed source only', async () => {
-    searchRecipes.mockResolvedValue({ options: [option], source: 'sites', fellBack: false });
+    searchRecipes.mockImplementation(async (_q: string, _s: string, meter?: { braveCalls: number }) => {
+      if (meter) meter.braveCalls += 1;
+      return { options: [option], source: 'sites', fellBack: false };
+    });
     const res = await searchPost(req({ query: 'tacos', source: 'sites' }));
     expect(res.status).toBe(200);
     expect((await res.json()).options).toHaveLength(1);
@@ -171,9 +232,21 @@ describe('POST /api/recipes/search', () => {
     expect(await res.json()).toEqual({ error: 'source_limit' });
   });
 
-  it('400 on a bad body', async () => {
+  it('400 on a bad body, without taking the gate', async () => {
     expect((await searchPost(req({ query: '', source: 'sites' }))).status).toBe(400);
     expect((await searchPost(req({ query: 'x', source: 'bing' }))).status).toBe(400);
+    expect(aiGate).not.toHaveBeenCalled();
+  });
+
+  it('records each Spoonacular request as a search, so strangers cannot search it for free', async () => {
+    searchRecipes.mockImplementation(async (_q: string, _s: string, meter?: { spoonacularCalls: number }) => {
+      if (meter) meter.spoonacularCalls += 2;
+      return { options: [option], source: 'spoonacular', fellBack: false };
+    });
+    await searchPost(req({ query: 'tacos', source: 'spoonacular' }));
+    const rows = recordUsage.mock.calls.filter((c) => c[2] === 'search');
+    expect(rows).toHaveLength(2);
+    expect(rows.every((c) => c[3] === 'spoonacular')).toBe(true);
   });
 });
 
