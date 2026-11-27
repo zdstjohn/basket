@@ -65,4 +65,11 @@ describe("mealTag", () => {
   it("is null for meat with no swap", () => {
     expect(mealTag({ ...tacos, vegSwap: null })).toBeNull();
   });
+
+  it("says cooking double", () => {
+    expect(dayNote(veg, familyOfFive, 7.6)).toBe("Everyone vegetarian · cooking double");
+    expect(dayNote(veg, familyOfFive, 5.8, true)).toBe("Everyone vegetarian · cooking double");
+    expect(dayNote(veg, familyOfFive, null, true)).toBe("Everyone vegetarian · cooking double");
+    expect(dayNote(veg, familyOfFive, 5.8)).toBe("Everyone vegetarian · +2 for leftovers");
+  });
 });

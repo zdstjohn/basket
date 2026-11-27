@@ -24,7 +24,7 @@ export function joinNames(people: Person[]): string {
 const num = (n: number): string => String(Math.round(n * 10) / 10);
 
 /** The line under a meal on the week: who eats something else, and leftovers. */
-export function dayNote(meal: Meal, people: Person[], servingsOverride: number | null): string {
+export function dayNote(meal: Meal, people: Person[], servingsOverride: number | null, double = false): string {
   let main: string;
   if (!hasMeatOrFish(meal)) {
     main = 'Everyone vegetarian';
@@ -34,8 +34,11 @@ export function dayNote(meal: Meal, people: Person[], servingsOverride: number |
     else if (meal.vegSwap) main = `${joinNames(skipping)}: ${meal.vegSwap.canonical} instead`;
     else main = `${joinNames(skipping)}: no swap yet`;
   }
-  const extra =
-    servingsOverride === null ? 0 : Math.round((servingsOverride - householdServings(people)) * 10) / 10;
+  const household = householdServings(people);
+  const isDouble =
+    double || (servingsOverride !== null && Math.abs(servingsOverride - 2 * household) <= 0.06);
+  if (isDouble) return `${main} · cooking double`;
+  const extra = servingsOverride === null ? 0 : Math.round((servingsOverride - household) * 10) / 10;
   return extra > 0 ? `${main} · +${num(extra)} for leftovers` : main;
 }
 
