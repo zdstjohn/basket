@@ -50,6 +50,7 @@ export async function getMatches(
   canonicals: string[],
   ctx: MatchContext,
 ): Promise<{ matches: MatchRow[]; limited: boolean; failed: number }> {
+  // Names arrive tidy (normFood), and migration 0016 tidied every stored canonical, so an exact match is enough here.
   const names = [...new Set(canonicals)];
   const { sb, householdId, locationId } = ctx;
   if (names.length === 0) return { matches: [], limited: false, failed: 0 };

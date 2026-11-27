@@ -65,6 +65,18 @@ describe("saveOnboarding", () => {
     });
   });
 
+  it("saves each person's allergies, none by default", async () => {
+    const { sb, log } = fake();
+    await saveOnboarding(sb, input, null);
+    const rows = log.find((r) => r.op === "insert")!.args[0] as { allergies: string[] }[];
+    expect(rows.map((r) => r.allergies)).toEqual([[], [], [], [], []]);
+    const b = fake();
+    const people = [{ ...person("Mom", 39), allergies: ["sesame"] }, ...input.people.slice(1)];
+    await saveOnboarding(b.sb, { ...input, people }, null);
+    const sent = b.log.find((r) => r.op === "insert")!.args[0] as { allergies: string[] }[];
+    expect(sent[0].allergies).toEqual(["sesame"]);
+  });
+
   it("on retry with an empty existing household, skips create and inserts once", async () => {
     const { sb, log } = fake();
     await saveOnboarding(sb, input, "h1");

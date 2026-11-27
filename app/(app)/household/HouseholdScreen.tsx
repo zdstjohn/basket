@@ -1,16 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlwaysHaveSection } from "@/components/household/AlwaysHaveSection";
 import { SignOutButton } from "@/components/household/SignOutButton";
 import { StaplesSection } from "@/components/household/StaplesSection";
 import { StoresSection } from "@/components/household/StoresSection";
+import { personLabel } from "@/lib/domain/flags";
 import { PersonRow } from "@/components/PersonRow";
 import { StorePicker, type StoreChoice } from "@/components/StorePicker";
 import { createBrowserClient } from "@/lib/db/client";
 import {
   createInviteLink,
   deletePerson,
+  listPeople,
   updateHousehold,
   upsertPerson,
 } from "@/lib/db/queries/household";
@@ -18,10 +20,11 @@ import type { Household } from "@/lib/db/rows";
 import { formatDollars, formatExtra, parseMoneyToCents } from "@/lib/domain/money-input";
 import { householdServings } from "@/lib/domain/portions";
 import type { Person } from "@/lib/domain/types";
+import { subscribeHousehold } from "@/lib/realtime";
 import { focusRing, pillButton, textInput } from "@/lib/ui";
 import { PersonEditor, type PersonDraft } from "./PersonEditor";
 
-const NEW_PERSON: PersonDraft = { name: "", age: 0, diet: "none", appetite: 1, dislikes: [] };
+const NEW_PERSON: PersonDraft = { name: "", age: 0, diet: "none", appetite: 1, dislikes: [], allergies: [] };
 
 const STORES = [
   { label: "Fred Meyer", detail: "Pickup and delivery" },
@@ -43,7 +46,7 @@ export function HouseholdScreen({
   /** Whether Fred Meyer shelf prices can be looked up on this server. */
   krogerEnabled: boolean;
 }) {
-  const sb = useRef(createBrowserClient()).current;
+  const sb = useMemo(() => createBrowserClient(), []);
   const [people, setPeople] = useState(initialPeople);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [budget, setBudget] = useState(formatDollars(household.budget_cents));
@@ -56,6 +59,22 @@ export function HouseholdScreen({
   const linkInput = useRef<HTMLInputElement>(null);
   const [fredMeyer, setFredMeyer] = useState(household.kroger_location_name);
   const [picking, setPicking] = useState(false);
+
+  // Another phone may change a person (an allergy added, say): reload so this one never saves over it.
+  useEffect(() => {
+    let current = true;
+    const stop = subscribeHousehold(household.id, ["people"], () => {
+      listPeople(sb, household.id)
+        .then((fresh) => {
+          if (current) setPeople(fresh);
+        })
+        .catch(() => {}); // keep what is on screen; the next change or foreground tries again
+    });
+    return () => {
+      current = false;
+      stop();
+    };
+  }, [sb, household.id]);
 
   async function chooseFredMeyer(s: StoreChoice) {
     await updateHousehold(sb, household.id, { kroger_location_id: s.id, kroger_location_name: s.name });
@@ -158,6 +177,7 @@ export function HouseholdScreen({
                   initial={p}
                   onSave={savePerson}
                   onDelete={() => removePerson(p.id)}
+                  deleteLabel={personLabel(p, people)}
                   onCancel={() => setEditing(null)}
                 />
               )}
@@ -173,6 +193,9 @@ export function HouseholdScreen({
             </li>
           )}
         </ul>
+        <p className="mt-2 text-[13px] text-muted">
+          Tap a person to change what they won’t eat or are allergic to.
+        </p>
       </section>
 
       <section aria-label="Budget" className="mx-5 mt-4">

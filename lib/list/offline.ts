@@ -146,6 +146,30 @@ function recordFailure(householdId: string, head: QueuedPatch, e: unknown): bool
 
 const inflight = new Map<string, Promise<number>>();
 
+/** The most entries one batched send carries. */
+export const MAX_BATCH = 50;
+
+/** The columns an entry writes, as one string: entries can share a batch only when this matches. */
+const columnsOf = (q: QueuedPatch): string =>
+  Object.entries(q.patch)
+    .filter(([, v]) => v !== undefined)
+    .map(([k]) => k)
+    .sort()
+    .join(',');
+
+/** The entries from the head of `queue` that can go in one batch: same week, same columns, none already marked for one-by-one. */
+function batchAtHead(queue: QueuedPatch[], single: ReadonlySet<string>): QueuedPatch[] {
+  const [head] = queue;
+  if (!head || single.has(head.id)) return [];
+  const cols = columnsOf(head);
+  const run: QueuedPatch[] = [];
+  for (const q of queue) {
+    if (run.length >= MAX_BATCH || single.has(q.id) || q.weekId !== head.weekId || columnsOf(q) !== cols) break;
+    run.push(q);
+  }
+  return run;
+}
+
 /**
  * Sends the queued changes in order, one flush at a time per household (a second call joins the first).
  * After each send the queue is read again and only the entry that was sent is removed, so changes
@@ -155,19 +179,56 @@ const inflight = new Map<string, Promise<number>>();
  * change is dropped once it is more than a day past its first try. Dropped changes: see recordFailure. onDrop is told about
  * every dropped change, whatever the reason. Stops at the first network failure that is kept.
  * Resolves to how many are left.
+ *
+ * With `applyBatch`, a run of two or more entries at the head of the queue that share a week and the same
+ * set of columns (at most MAX_BATCH) goes as one send. A batch that fails for a network reason (a thrown
+ * fetch, a timeout, a lost sign-in, a gateway error) is kept whole. Any other failure, and any batch with an
+ * entry past MAX_AGE_MS, is sent again one entry at a time through `apply`, so refusing, counting and giving
+ * up still happen per entry and one bad row cannot take the others with it.
  */
 export function flushQueue(
   householdId: string,
   apply: (entry: QueuedPatch) => Promise<void>,
   networkError: (e: unknown) => boolean = isNetworkError,
   onDrop?: (entry: QueuedPatch, e: unknown) => void,
+  applyBatch?: (entries: QueuedPatch[]) => Promise<void>,
 ): Promise<number> {
   const running = inflight.get(householdId);
   if (running) return running;
   const run = (async () => {
+    const single = new Set<string>();
     for (;;) {
-      const [head] = loadQueue(householdId);
+      const queue = loadQueue(householdId);
+      const [head] = queue;
       if (!head) return 0;
+      const batch = applyBatch ? batchAtHead(queue, single) : [];
+      if (applyBatch && batch.length > 1) {
+        try {
+          await applyBatch(batch);
+          const sent = new Set(batch.map((q) => q.id));
+          saveQueue(
+            householdId,
+            loadQueue(householdId).filter((q) => !sent.has(q.id)),
+          );
+          continue;
+        } catch (e) {
+          const now = Date.now();
+          const tooOld = batch.some((q) => now - (q.firstTriedAt ?? now) > MAX_AGE_MS);
+          if (networkError(e) && !countsAsAttempt(e) && !tooOld) {
+            // Kept whole. Every entry gets its first-try time, as a single failure would give it.
+            if (!(typeof navigator !== 'undefined' && navigator.onLine === false)) {
+              const ids = new Set(batch.map((q) => q.id));
+              saveQueue(
+                householdId,
+                loadQueue(householdId).map((q) => (ids.has(q.id) && q.firstTriedAt === undefined ? { ...q, firstTriedAt: now } : q)),
+              );
+            }
+            return loadQueue(householdId).length;
+          }
+          for (const q of batch) single.add(q.id);
+          continue;
+        }
+      }
       try {
         await apply(head);
       } catch (e) {

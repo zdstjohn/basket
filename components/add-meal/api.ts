@@ -13,7 +13,7 @@ export interface IdentifyResult extends Partial<Omit<SearchResult, "options">> {
   options: RecipeOption[];
 }
 
-export type Failure = "unauthorized" | "cap" | "source_limit" | "unreadable" | "other";
+export type Failure = "unauthorized" | "cap" | "source_limit" | "busy" | "unreadable" | "other";
 
 /** Which failure an HTTP status means. */
 export function failureForStatus(status: number): Failure {
@@ -47,7 +47,12 @@ async function post<T>(url: string, body: unknown): Promise<T> {
     throw new ApiFailure("other");
   }
   if (res.ok) return (await res.json()) as T;
-  const kind = failureForStatus(res.status);
+  let kind = failureForStatus(res.status);
+  if (kind === "source_limit") {
+    // 429 is also the spend guard saying slow down; only Spoonacular's own limit says source_limit.
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    if (body?.error === "slow_down" || body?.error === "busy") kind = "busy";
+  }
   if (kind === "unauthorized" && typeof window !== "undefined") {
     window.location.assign(loginUrl(window.location.pathname + window.location.search));
   }
@@ -70,6 +75,7 @@ export const MESSAGES: Record<Failure, string> = {
   unauthorized: "Signing you in again…",
   cap: "This month's recipe help is used up. You can still type the ingredients in.",
   source_limit: "Spoonacular's daily limit is used up. Big sites still works.",
+  busy: "Too many tries just now. Wait a minute and try again.",
   unreadable: "We couldn't read that recipe. Try another one, or paste the ingredients.",
   other: "Something went wrong. Try again.",
 };

@@ -21,12 +21,19 @@ export function portionText(person: Person): string {
   return f === 1 ? "1 portion" : String(f);
 }
 
+/** Diet and won't-eat foods; empty when the only thing to say is an allergy (that gets its own line). */
 export function detailText(person: Person): string {
-  const parts = [DIET_NAME[person.diet]];
-  if (person.dislikes.length > 0) {
-    parts.push(`Dislikes ${person.dislikes.join(", ")}`);
-  }
-  return parts.join(" · ");
+  const parts: string[] = [];
+  if (person.diet !== "none") parts.push(DIET_NAME[person.diet]);
+  if (person.dislikes.length > 0) parts.push(`Won’t eat ${person.dislikes.join(", ")}`);
+  if (parts.length > 0) return parts.join(" · ");
+  return (person.allergies ?? []).length > 0 ? "" : DIET_NAME.none;
+}
+
+export function allergyText(person: Person): string | null {
+  const list = person.allergies ?? [];
+  if (list.length === 0) return null;
+  return `${list.length === 1 ? "Allergy" : "Allergies"}: ${list.join(", ")}`;
 }
 
 // Adults, vegetarians and kids each get their own badge color, as in the mockup.
@@ -44,6 +51,8 @@ export function PersonRow({
   expanded: boolean;
   onClick: () => void;
 }) {
+  const detail = detailText(person);
+  const allergy = allergyText(person);
   return (
     <button
       type="button"
@@ -59,7 +68,16 @@ export function PersonRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[15px] font-semibold">{person.name}</span>
-        <span className="block text-xs text-muted">{detailText(person)}</span>
+        {detail && <span className="block text-xs text-muted">{detail}</span>}
+        {allergy && (
+          <span className="mt-px flex items-center gap-1 text-xs font-semibold text-[#A6261B]">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">
+              <path d="M12 3.5l9.5 16.5h-19z" />
+              <path d="M12 10v4.5M12 17.6h.01" />
+            </svg>
+            {allergy}
+          </span>
+        )}
       </span>
       <span className="text-[13px] font-medium text-[#4A544F]">{portionText(person)}</span>
     </button>

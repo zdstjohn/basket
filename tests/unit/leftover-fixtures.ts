@@ -17,6 +17,15 @@ export const tacosRow: MealRow = {
   photo_url: null,
   source_url: null,
   times_planned: 0,
+  facts_checked_at: null,
+  likes: null,
+  make_ahead: false,
+  method: null,
+  person_changes: [],
+  rating: null,
+  rating_count: null,
+  steps: null,
+  total_minutes: null,
 };
 
 export const wm = (id: string, day: string, mealId: string, o: Partial<WeekMeal> = {}): WeekMeal => ({

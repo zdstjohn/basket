@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/db/types';
 import type { MealRow } from '@/lib/db/rows';
-import type { RecipeDraft } from '@/lib/ai/schemas';
-import type { IngredientLine, Meal, VegSwap } from '@/lib/domain/types';
+import { PersonChangeSchema, type RecipeDraft } from '@/lib/ai/schemas';
+import { isAllergyChange } from '@/lib/domain/flags';
+import type { IngredientLine, Meal, PersonChange, VegSwap } from '@/lib/domain/types';
 
 type Sb = SupabaseClient<Database>;
 
@@ -14,6 +15,15 @@ export const UNDER_15_CENTS = 1500;
 
 const SIGNED_URL_SECONDS = 3600;
 
+/** Reads the saved changes one by one: an entry that fails the schema is dropped, never the whole list. */
+function parseChanges(raw: unknown): PersonChange[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    const r = PersonChangeSchema.safeParse(entry);
+    return r.success ? [r.data] : [];
+  });
+}
+
 /** A database row as the pure meal the scaling and note code works on. */
 export function toMeal(row: MealRow): Meal {
   return {
@@ -24,6 +34,7 @@ export function toMeal(row: MealRow): Meal {
     vegSwap: (row.veg_swap as unknown as VegSwap | null) ?? null,
     everyoneVegetarian: row.everyone_vegetarian,
     isFavorite: row.is_favorite,
+    personChanges: parseChanges(row.person_changes),
   };
 }
 
@@ -61,6 +72,36 @@ export async function updateMeal(
   const { data, error } = await sb.from('meals').update(patch).eq('id', id).select().single();
   if (error) throw new Error(error.message);
   return data;
+}
+
+/** The change for this person and food becomes `next`; any other change stays. */
+export function withChange(changes: PersonChange[], next: PersonChange): PersonChange[] {
+  const same = (c: PersonChange): boolean => c.personId === next.personId && c.food === next.food;
+  return changes.some(same) ? changes.map((c) => (same(c) ? next : c)) : [...changes, next];
+}
+
+export function withoutChange(changes: PersonChange[], personId: string, food: string): PersonChange[] {
+  return changes.filter((c) => !(c.personId === personId && c.food === food));
+}
+
+/**
+ * Saves who leaves out or swaps what. A change for a food the person is allergic to is refused:
+ * an allergy is never left out or swapped, only warned about.
+ */
+export async function setPersonChanges(sb: Sb, mealId: string, changes: PersonChange[]): Promise<MealRow> {
+  const clean = changes.map((c) => PersonChangeSchema.parse(c));
+  if (clean.length > 0) {
+    const ids = [...new Set(clean.map((c) => c.personId))];
+    const { data, error } = await sb.from('people').select('id, allergies').in('id', ids);
+    if (error) throw new Error(error.message);
+    for (const c of clean) {
+      const person = (data ?? []).find((p) => p.id === c.personId);
+      if (person && isAllergyChange(c, { id: person.id, name: '', age: 0, diet: 'none', appetite: 1, dislikes: [], allergies: person.allergies ?? [] })) {
+        throw new Error(`${c.food} is an allergy, so it can’t be left out or swapped`);
+      }
+    }
+  }
+  return updateMeal(sb, mealId, { person_changes: clean as unknown as Database['public']['Tables']['meals']['Update']['person_changes'] });
 }
 
 /** Either an uploaded photo (a storage path) or a picture from a recipe page, which keeps its credit. */

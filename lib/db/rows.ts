@@ -10,3 +10,4 @@ export type MealRow = Row<"meals">;
 export type PersonRow = Row<"people">;
 export type CartSendRow = Row<"cart_sends">;
 export type KrogerMatchRow = Row<"kroger_matches">;
+export type VerdictRow = Row<"meal_verdicts">;

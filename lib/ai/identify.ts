@@ -2,7 +2,9 @@ import 'server-only';
 import { generateObject, NoObjectGeneratedError } from 'ai';
 import { z } from 'zod';
 import { fakeIdentify } from './fake';
-import { getModel, UnreadableError, type UsageReport } from './provider';
+import { getModel, UnreadableError, usageReport, type UsageReport } from './provider';
+
+const MAX_OUTPUT_TOKENS = 300;
 import type { DishGuess } from './schemas';
 
 export { UnreadableError } from './provider';
@@ -75,20 +77,16 @@ export async function identifyDish(
         },
       ],
       temperature: 0,
-      maxOutputTokens: 300,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
       abortSignal: AbortSignal.timeout(30_000),
     });
-    opts.onUsage?.({
-      model,
-      inputTokens: result.usage.inputTokens ?? 0,
-      outputTokens: result.usage.outputTokens ?? 0,
-    });
+    opts.onUsage?.(usageReport(model, result.usage, MAX_OUTPUT_TOKENS));
     return clampGuess(result.object);
   } catch (e) {
     if (NoObjectGeneratedError.isInstance(e)) {
-      const usage = { inputTokens: e.usage?.inputTokens ?? 0, outputTokens: e.usage?.outputTokens ?? 0 };
-      opts.onUsage?.({ model, ...usage });
-      throw new UnreadableError(usage);
+      const report = usageReport(model, e.usage, MAX_OUTPUT_TOKENS);
+      opts.onUsage?.(report);
+      throw new UnreadableError({ inputTokens: report.inputTokens, outputTokens: report.outputTokens });
     }
     throw e;
   }

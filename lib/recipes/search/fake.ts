@@ -1,3 +1,4 @@
+import { soup } from '@/lib/fixtures/soup';
 import { tacos } from '@/lib/fixtures/tacos';
 import type { RecipeOption, SearchHit, WebSearchProvider } from './provider';
 
@@ -42,6 +43,39 @@ const SPOON: Record<string, RecipeOption[]> = {
       title: 'Sheet pan chicken tacos', image: img('sheet-pan-tacos'), likes: 340,
       ingredients: ['1 lb boneless chicken thighs', '12 corn tortillas', '1 yellow onion'],
       structured: tacos.ingredients,
+    },
+  ],
+  // Both carry structured lines, so a draft built from them keeps these ingredients (the AI fake answers tacos lines).
+  // With no SITES entry a Big sites search for "soup" or "pesto" falls back to them, as "lasagna" does.
+  soup: [
+    {
+      ...base, source: 'spoonacular', url: 'https://www.budgetbytes.com/fake-white-bean-mushroom-soup', site: 'Budget Bytes',
+      title: 'White bean and mushroom soup', image: img('bean-soup'), likes: 512, totalMinutes: 40,
+      ingredients: ['8 oz cremini mushrooms', '2 cans white beans', '1 yellow onion'],
+      structured: soup.ingredients,
+    },
+    {
+      ...base, source: 'spoonacular', url: 'https://www.example-kitchen.test/broccolini-quinoa-pilaf', site: 'Example Kitchen',
+      title: 'Broccolini quinoa pilaf with toasted almonds', image: img('quinoa-pilaf'), likes: 208, totalMinutes: 30,
+      ingredients: ['1 cup quinoa', '2 bunches broccolini', '1/4 cup sliced almonds', '1 lemon'],
+      structured: [
+        { canonical: 'quinoa', amount: 1, unit: 'cup', role: 'pantry' },
+        { canonical: 'broccolini', amount: 2, unit: 'each', role: 'produce' },
+        { canonical: 'sliced almonds', amount: 0.25, unit: 'cup', role: 'pantry' },
+        { canonical: 'lemon', amount: 1, unit: 'each', role: 'produce' },
+      ],
+    },
+  ],
+  pesto: [
+    {
+      ...base, source: 'spoonacular', url: 'https://www.example-kitchen.test/pesto-pasta', site: 'Example Kitchen',
+      title: 'Basil pesto pasta', image: img('pesto-pasta'), likes: 150, totalMinutes: 25,
+      ingredients: ['12 oz spaghetti', '1/2 cup basil pesto', '1 cup cherry tomatoes'],
+      structured: [
+        { canonical: 'spaghetti', amount: 12, unit: 'oz', role: 'pantry' },
+        { canonical: 'basil pesto', amount: 0.5, unit: 'cup', role: 'pantry' },
+        { canonical: 'cherry tomatoes', amount: 1, unit: 'cup', role: 'produce' },
+      ],
     },
   ],
   // Only Spoonacular knows lasagna, so a Big sites search for it falls back.

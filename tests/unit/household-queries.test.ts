@@ -54,6 +54,7 @@ const row = {
   diet: "vegetarian",
   appetite: 1,
   dislikes: ["mushrooms"],
+  allergies: ["tree nuts"],
   sort: 1,
 };
 
@@ -74,11 +75,23 @@ describe("listPeople", () => {
         diet: "vegetarian",
         appetite: 1,
         dislikes: ["mushrooms"],
+        allergies: ["tree nuts"],
       },
-      { id: "p2", name: "Baby", age: 0, diet: "vegetarian", appetite: 0.5, dislikes: ["mushrooms"] },
+      {
+        id: "p2", name: "Baby", age: 0, diet: "vegetarian", appetite: 0.5,
+        dislikes: ["mushrooms"], allergies: ["tree nuts"],
+      },
     ]);
     expect(find(calls, "from")).toEqual(["people"]);
     expect(find(calls, "eq")).toEqual(["household_id", "h1"]);
+  });
+
+  it("maps a row with no allergies to an empty list", async () => {
+    const { allergies: _omit, ...old } = row;
+    void _omit;
+    const { sb } = mockClient({ data: [old], error: null });
+    const [p] = await listPeople(sb, "h1");
+    expect(p.allergies).toEqual([]);
   });
 
   it("throws when the query fails", async () => {
@@ -105,6 +118,23 @@ describe("upsertPerson", () => {
     expect(find(calls, "update")).toBeUndefined();
     expect(saved.id).toBe("p1");
     expect(saved.age).toBe(39);
+  });
+
+  it("sends allergies on insert and on update", async () => {
+    const withAllergy = { ...person, dislikes: ["olives"], allergies: ["tree nuts"] };
+    const a = mockClient({ data: row, error: null });
+    await upsertPerson(a.sb, "h1", withAllergy, 3);
+    expect(find(a.calls, "insert")).toEqual([
+      {
+        household_id: "h1", name: "Mom", age: 39, diet: "vegetarian", appetite: 1,
+        dislikes: ["olives"], allergies: ["tree nuts"], sort: 3,
+      },
+    ]);
+    const b = mockClient({ data: row, error: null });
+    await upsertPerson(b.sb, "h1", { ...withAllergy, id: "p1" });
+    expect(find(b.calls, "update")).toEqual([
+      { name: "Mom", age: 39, diet: "vegetarian", appetite: 1, dislikes: ["olives"], allergies: ["tree nuts"] },
+    ]);
   });
 
   it("updates by id when an id is given, without touching the household", async () => {

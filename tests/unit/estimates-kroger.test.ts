@@ -3,14 +3,15 @@ import type { Quantity } from '@/lib/domain/types';
 
 const getUser = vi.fn();
 const getMyHousehold = vi.fn();
-const checkCap = vi.fn();
+const aiGate = vi.fn();
 const recordUsage = vi.fn();
 let sbRef: unknown;
 
 vi.mock('@/lib/db/server', () => ({ createServerClient: async () => sbRef }));
 vi.mock('@/lib/db/queries/household', () => ({ getMyHousehold: (...a: unknown[]) => getMyHousehold(...a) }));
-vi.mock('@/lib/ai/usage', () => ({
-  checkCap: (...a: unknown[]) => checkCap(...a),
+vi.mock('@/lib/ai/usage', async (orig) => ({
+  ...(await orig<typeof import('@/lib/ai/usage')>()),
+  aiGate: (...a: unknown[]) => aiGate(...a),
   recordUsage: (...a: unknown[]) => recordUsage(...a),
 }));
 vi.mock('@/lib/ai/provider', async (orig) => {
@@ -64,7 +65,7 @@ beforeEach(() => {
   vi.stubEnv('KROGER_FAKE', '1');
   getUser.mockResolvedValue({ data: { user: { id: 'u' } } });
   getMyHousehold.mockResolvedValue({ id: 'h1', kroger_location_id: LOC, kroger_location_name: 'Fred Meyer - Tacoma-Stevens' });
-  checkCap.mockResolvedValue({ ok: true, spentCents: 0, capCents: 300 });
+  aiGate.mockResolvedValue('ok');
 });
 
 describe('POST /api/estimates with a Fred Meyer store chosen', () => {
@@ -101,17 +102,18 @@ describe('POST /api/estimates with a Fred Meyer store chosen', () => {
     expect(prompt).not.toContain('chicken');
   });
 
-  it('records no AI usage, and makes no model call, when Kroger prices everything', async () => {
+  it('records no AI usage, takes no gate, and makes no model call, when Kroger prices everything', async () => {
     sbRef = mockSb([]).sb;
     const res = await POST(req({ items: [chicken], store: 'fred_meyer' }));
     expect(res.status).toBe(200);
+    expect(aiGate).not.toHaveBeenCalled();
     expect(generateStructured).not.toHaveBeenCalled();
     expect(recordUsage).not.toHaveBeenCalled();
   });
 
   it('still answers from Kroger when the AI cap is reached', async () => {
     sbRef = mockSb([]).sb;
-    checkCap.mockResolvedValue({ ok: false, spentCents: 300, capCents: 300 });
+    aiGate.mockResolvedValue('cap');
     const res = await POST(req({ items: [chicken, eggs], store: 'fred_meyer' }));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -121,7 +123,7 @@ describe('POST /api/estimates with a Fred Meyer store chosen', () => {
 
   it('is 402 at the cap when Kroger priced nothing', async () => {
     sbRef = mockSb([]).sb;
-    checkCap.mockResolvedValue({ ok: false, spentCents: 300, capCents: 300 });
+    aiGate.mockResolvedValue('cap');
     const res = await POST(req({ items: [eggs], store: 'fred_meyer' }));
     expect(res.status).toBe(402);
   });

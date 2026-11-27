@@ -8,6 +8,8 @@ import { MealSheet } from "@/components/MealSheet";
 import { LeftoverSheet } from "@/components/leftovers/LeftoverSheet";
 import { Sheet } from "@/components/Sheet";
 import { useWeekData } from "@/components/useWeekData";
+import { VerdictCard } from "@/components/verdicts/VerdictCard";
+import { useDinnerToAsk, useOffline, type Ask } from "@/components/verdicts/useDinnerToAsk";
 import { useWeekList } from "@/lib/useWeekList";
 import { copyWeek } from "@/lib/db/queries/weeks";
 import { toMeal } from "@/lib/db/queries/meals";
@@ -20,8 +22,17 @@ import { formatWeekRange } from "@/lib/week/format";
 import { leftoverRowNote } from "@/lib/week/leftover-copy";
 import { dayNote } from "@/lib/week/note";
 
+const weekdayOf = (ymd: string): string =>
+  new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(new Date(`${ymd}T00:00:00Z`));
+
 export function WeekScreen({ household }: { household: Household }) {
-  const { sb, data, error, live, reload } = useWeekData(household);
+  const { sb, data, error, live, changes, reload } = useWeekData(household);
+  // The dinner card loads on its own and fails quietly: it is never part of the week's load.
+  const { ask, reload: reloadAsk } = useDinnerToAsk(household, sb, changes);
+  // The card the family just answered stays up while "Saved." shows, though the dinner no longer needs asking.
+  const [held, setHeld] = useState<Ask | null>(null);
+  const offline = useOffline();
+  const card = held ?? ask;
   const list = useWeekList(household, data?.week.id ?? null);
   const [openDay, setOpenDay] = useState<Day | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -91,6 +102,20 @@ export function WeekScreen({ household }: { household: Household }) {
       )}
 
       <BudgetMeter totalCents={list.totals.totalCents} targetCents={household.budget_cents} cushionCents={household.cushion_cents} />
+
+      {data && card && data.people.length > 0 && (
+        <VerdictCard
+          key={`${card.dinner.mealId}|${card.dinner.date}`}
+          ask={card}
+          dayName={weekdayOf(card.dinner.date)}
+          people={data.people}
+          offline={offline}
+          sb={sb}
+          householdId={household.id}
+          onHold={setHeld}
+          onDone={reloadAsk}
+        />
+      )}
 
       <section aria-label="Dinners" className="mx-5 mt-3.5 flex flex-col gap-1.5">
         <div className="flex items-center justify-between">

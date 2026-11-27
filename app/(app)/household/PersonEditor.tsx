@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { DIETS } from "@/components/PersonRow";
+import { FoodChips, addFood, allergyHelp, mergeList } from "@/components/household/FoodChips";
+import { COMMON_ALLERGENS } from "@/lib/domain/families";
 import type { Diet, Person } from "@/lib/domain/types";
 import { focusRing, pillButton, textInput } from "@/lib/ui";
 
@@ -17,17 +19,48 @@ export function PersonEditor({
   initial,
   onSave,
   onDelete,
+  deleteLabel,
   onCancel,
 }: {
   initial: PersonDraft;
   onSave: (p: PersonDraft) => Promise<void>;
   onDelete?: () => Promise<void>;
+  /** How this person is named when asking to delete them: "Son", or "Daughter (4)" when a name is shared. */
+  deleteLabel?: string;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial.name);
   const [age, setAge] = useState(initial.age > 0 || initial.id ? String(initial.age) : "");
   const [diet, setDiet] = useState<Diet>(initial.diet);
   const [appetite, setAppetite] = useState(initial.appetite);
+  const [dislikes, setDislikes] = useState(initial.dislikes);
+  const [allergies, setAllergies] = useState(initial.allergies ?? []);
+  const [dislikeTyped, setDislikeTyped] = useState("");
+  const [allergyTyped, setAllergyTyped] = useState("");
+  const [dislikeError, setDislikeError] = useState<string | null>(null);
+  const [allergyError, setAllergyError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const cancelDelete = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirmingDelete) cancelDelete.current?.focus();
+  }, [confirmingDelete]);
+
+  // The person changed on another phone while this editor was open: keep my edits, take the rest from the fresh row.
+  const [base, setBase] = useState(initial);
+  const [changedElsewhere, setChangedElsewhere] = useState(false);
+  const fields = (p: PersonDraft) =>
+    JSON.stringify([p.name, p.age, p.diet, p.appetite, p.dislikes, p.allergies ?? []]);
+  if (initial.id && fields(initial) !== fields(base)) {
+    const baseAge = base.age > 0 || base.id ? String(base.age) : "";
+    setName(name === base.name ? initial.name : name);
+    setAge(age === baseAge ? String(initial.age) : age);
+    setDiet(diet === base.diet ? initial.diet : diet);
+    setAppetite(appetite === base.appetite ? initial.appetite : appetite);
+    setDislikes(mergeList(base.dislikes, dislikes, initial.dislikes));
+    setAllergies(mergeList(base.allergies ?? [], allergies, initial.allergies ?? []));
+    setBase(initial);
+    setChangedElsewhere(true);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +81,12 @@ export function PersonEditor({
 
   function submit(e: FormEvent) {
     e.preventDefault();
+    // Text left in a box is a food the parent meant to add: add it now, or say why it can't be.
+    const d = addFood(dislikes, dislikeTyped);
+    const a = addFood(allergies, allergyTyped);
+    setDislikeError(d.error);
+    setAllergyError(a.error);
+    if (d.error || a.error) return;
     return run(() =>
       onSave({
         ...initial,
@@ -55,6 +94,8 @@ export function PersonEditor({
         age: Number(age),
         diet,
         appetite,
+        dislikes: d.list,
+        allergies: a.list,
       }),
     );
   }
@@ -65,6 +106,11 @@ export function PersonEditor({
       aria-label={initial.id ? `Edit ${initial.name}` : "Add a person"}
       className="grid gap-3 border-t border-[#F0F2EF] bg-ground px-3.5 py-3"
     >
+      {changedElsewhere && (
+        <p role="status" className="text-[13px] font-medium text-[#4A544F]">
+          Changed on the other phone. Your edits are kept; check before saving.
+        </p>
+      )}
       <label className="grid gap-1 text-xs text-muted">
         Name
         <input
@@ -118,6 +164,36 @@ export function PersonEditor({
           ))}
         </select>
       </label>
+      <FoodChips
+        label="Won’t eat"
+        help={
+          dislikes.length === 0
+            ? "Nothing yet. Add foods to steer around."
+            : "We’ll point these out and offer to swap or leave them out."
+        }
+        value={dislikes}
+        onChange={setDislikes}
+        typed={dislikeTyped}
+        onTyped={setDislikeTyped}
+        error={dislikeError}
+        onError={setDislikeError}
+        placeholder="Add a food"
+        addLabel="Add"
+      />
+      <FoodChips
+        label="Allergies"
+        help={allergyHelp(allergies)}
+        value={allergies}
+        onChange={setAllergies}
+        typed={allergyTyped}
+        onTyped={setAllergyTyped}
+        error={allergyError}
+        onError={setAllergyError}
+        placeholder="Add an allergy"
+        addLabel="Add"
+        suggestions={COMMON_ALLERGENS}
+        allergy
+      />
       {error && (
         <p role="alert" className="text-[13px] text-sale">
           {error}
@@ -134,17 +210,43 @@ export function PersonEditor({
         <button type="button" onClick={onCancel} disabled={busy} className={pillButton}>
           Cancel
         </button>
-        {onDelete && (
+        {onDelete && !confirmingDelete && (
           <button
             type="button"
             disabled={busy}
-            onClick={() => run(onDelete)}
+            onClick={() => setConfirmingDelete(true)}
             className={`ml-auto h-11 rounded-full px-3 text-[14px] font-semibold text-sale ${focusRing}`}
           >
             Delete
           </button>
         )}
       </div>
+      {onDelete && confirmingDelete && (
+        <div role="group" aria-label="Confirm delete" className="grid gap-2 rounded-xl border border-[#A6261B] bg-white p-3">
+          <p className="text-[14px] font-semibold text-ink">
+            Delete {deleteLabel ?? initial.name}? This can’t be undone.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => run(onDelete)}
+              className={`inline-flex h-11 items-center rounded-full bg-[#A6261B] px-5 text-[14px] font-semibold text-white disabled:opacity-60 ${focusRing}`}
+            >
+              Delete
+            </button>
+            <button
+              ref={cancelDelete}
+              type="button"
+              disabled={busy}
+              onClick={() => setConfirmingDelete(false)}
+              className={pillButton}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

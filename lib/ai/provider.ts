@@ -23,7 +23,26 @@ export interface UsageReport {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** The model reported no token counts: these are the output limit, to be priced at the unknown-model rate. */
+  assumed?: boolean;
 }
+
+/**
+ * What a call cost. A model answer with no token counts is not free: it is billed as the whole output
+ * limit at the unknown-model rate, so a gateway that omits usage cannot make calls invisible to the cap.
+ */
+export function usageReport(
+  model: string,
+  usage: { inputTokens?: number; outputTokens?: number } | undefined,
+  maxOutputTokens: number,
+): UsageReport {
+  if (usage?.inputTokens == null || usage.outputTokens == null) {
+    return { model, inputTokens: 0, outputTokens: maxOutputTokens, assumed: true };
+  }
+  return { model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
+}
+
+export const MAX_OUTPUT_TOKENS = 4000;
 
 export interface GenerateArgs<T> {
   /** Called once per model call, including calls whose answer turns out unreadable (they cost money too). */
@@ -60,17 +79,17 @@ export async function generateStructured<T>(args: GenerateArgs<T>): Promise<Gene
       system: args.system,
       prompt: args.prompt,
       temperature: 0,
-      maxOutputTokens: 4000,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
       abortSignal: AbortSignal.timeout(30_000),
     });
-    const usage = { inputTokens: result.usage.inputTokens ?? 0, outputTokens: result.usage.outputTokens ?? 0 };
-    args.onUsage?.({ model, ...usage });
-    return { object: result.object as T, model, usage };
+    const report = usageReport(model, result.usage, MAX_OUTPUT_TOKENS);
+    args.onUsage?.(report);
+    return { object: result.object as T, model, usage: { inputTokens: report.inputTokens, outputTokens: report.outputTokens } };
   } catch (e) {
     if (NoObjectGeneratedError.isInstance(e)) {
-      const usage = { inputTokens: e.usage?.inputTokens ?? 0, outputTokens: e.usage?.outputTokens ?? 0 };
-      args.onUsage?.({ model, ...usage });
-      throw new UnreadableError(usage);
+      const report = usageReport(model, e.usage, MAX_OUTPUT_TOKENS);
+      args.onUsage?.(report);
+      throw new UnreadableError({ inputTokens: report.inputTokens, outputTokens: report.outputTokens });
     }
     throw e;
   }

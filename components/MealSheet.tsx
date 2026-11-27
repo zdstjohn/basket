@@ -3,18 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import { Sheet } from "@/components/Sheet";
+import { VerdictSheet } from "@/components/verdicts/VerdictSheet";
 import { CookDoubleRow } from "@/components/leftovers/CookDoubleRow";
 import { leftoverFailure } from "@/components/leftovers/errors";
 import { NightPicker } from "@/components/leftovers/NightPicker";
 import { useOnline } from "@/components/leftovers/useOnline";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { setMealPhoto, toMeal, updateMeal } from "@/lib/db/queries/meals";
+import { listVerdicts, saveVerdict } from "@/lib/db/queries/verdicts";
 import { cookDouble, DinnerGoneError, setWeekMeal, usualAmount } from "@/lib/db/queries/weeks";
 import type { MealRow, WeekMeal } from "@/lib/db/rows";
 import type { Database } from "@/lib/db/types";
 import { cookState, defaultChoice, doubleServings, nightChoices } from "@/lib/domain/leftovers";
 import { householdServings } from "@/lib/domain/portions";
 import type { Person } from "@/lib/domain/types";
+import { latestAnswer, verdictWords, type Verdict, type Vote } from "@/lib/domain/verdicts";
 import type { Day } from "@/lib/domain/weeks";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
 import { dangerPillButton, focusRing, pillButton } from "@/lib/ui";
@@ -57,6 +60,27 @@ export function MealSheet({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // How the family answered the last time they ate this (all dates). A failed read just leaves the line out.
+  const [last, setLast] = useState<Verdict | null>(null);
+  const [changing, setChanging] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    listVerdicts(sb, householdId, { mealId: meal.id })
+      .then((all) => {
+        if (alive) setLast(latestAnswer(all, meal.id));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sb, householdId, meal.id]);
+  const lastWords = last ? verdictWords(last) : null;
+
+  async function changeAnswer(votes: Record<string, Vote>) {
+    if (!last) return;
+    await saveVerdict(sb, householdId, { mealId: meal.id, date: last.eatenOn }, votes);
+    setLast({ ...last, status: "answered", votes });
+  }
   const base = householdServings(people);
   const override = weekMeal.servings_override === null ? null : Number(weekMeal.servings_override);
   const online = useOnline();
@@ -184,6 +208,16 @@ export function MealSheet({
         </div>
 
         <p className="text-sm text-muted">{dayNote(toMeal(meal), people, override, state.kind === "double")}</p>
+        {last && lastWords && (
+          <div className="flex items-center justify-between gap-3">
+            <p data-testid="last-time" className="min-w-0 text-sm text-muted">
+              Last time: {lastWords}
+            </p>
+            <button type="button" onClick={() => setChanging(true)} className={`${pillButton} shrink-0`}>
+              Change
+            </button>
+          </div>
+        )}
         {meal.source_url && (
           <a
             href={meal.source_url}
@@ -229,6 +263,9 @@ export function MealSheet({
           </p>
         )}
       </div>
+      {changing && last && (
+        <VerdictSheet mealName={meal.name} people={people} initial={last.votes} onSave={changeAnswer} onClose={() => setChanging(false)} />
+      )}
     </Sheet>
   );
 }

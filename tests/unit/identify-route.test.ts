@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const getUser = vi.fn();
 const getMyHousehold = vi.fn();
 const updateHousehold = vi.fn();
-const checkCap = vi.fn();
+const aiGate = vi.fn();
 const recordUsage = vi.fn();
 const searchRecipes = vi.fn();
 
@@ -13,8 +13,9 @@ vi.mock('@/lib/db/queries/household', () => ({
   getMyHousehold: (...a: unknown[]) => getMyHousehold(...a),
   updateHousehold: (...a: unknown[]) => updateHousehold(...a),
 }));
-vi.mock('@/lib/ai/usage', () => ({
-  checkCap: (...a: unknown[]) => checkCap(...a),
+vi.mock('@/lib/ai/usage', async (orig) => ({
+  ...(await orig<typeof import('@/lib/ai/usage')>()),
+  aiGate: (...a: unknown[]) => aiGate(...a),
   recordUsage: (...a: unknown[]) => recordUsage(...a),
 }));
 vi.mock('@/lib/recipes/search', () => ({ searchRecipes: (...a: unknown[]) => searchRecipes(...a) }));
@@ -31,6 +32,12 @@ const food = readFileSync('e2e/fixtures/food.jpg').toString('base64');
 const bytes = (head: number[], extra = '') => Buffer.concat([Buffer.from(head), Buffer.from(extra)]).toString('base64');
 const JPEG = [0xff, 0xd8, 0xff];
 
+/** A search that made one Brave call (it counts on the meter the route passes) and found `options`. */
+const braveFound = (options: unknown[]) => async (_q: string, source: string, meter?: { braveCalls: number }) => {
+  if (source === 'sites' && meter) meter.braveCalls++;
+  return { options, source, fellBack: false, toppedUp: false };
+};
+
 const req = (body: unknown) =>
   new Request('http://x.test/api', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
 
@@ -45,8 +52,8 @@ beforeEach(() => {
   process.env.AI_FAKE = '1';
   getUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
   getMyHousehold.mockResolvedValue({ id: 'h1', recipe_source: 'sites' });
-  checkCap.mockResolvedValue({ ok: true, spentCents: 0, capCents: 300 });
-  searchRecipes.mockResolvedValue({ options: [option], source: 'sites', fellBack: false, toppedUp: false });
+  aiGate.mockResolvedValue('ok');
+  searchRecipes.mockImplementation(braveFound([option]));
 });
 
 describe('POST /api/recipes/identify', () => {
@@ -55,8 +62,35 @@ describe('POST /api/recipes/identify', () => {
     expect((await POST(req({ image: food, source: 'sites' }))).status).toBe(401);
   });
 
+  it.each([['slow', 'slow_down'], ['busy', 'busy']])('429 %s without a model call or a search', async (why, error) => {
+    aiGate.mockResolvedValue(why);
+    const res = await POST(req({ image: food, source: 'sites' }));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error });
+    expect(identifyDish).not.toHaveBeenCalled();
+    expect(searchRecipes).not.toHaveBeenCalled();
+  });
+
+  it('takes the gate for its household before anything else, with a positive hold in fake mode off', async () => {
+    delete process.env.AI_FAKE;
+    aiGate.mockResolvedValue('cap');
+    await POST(req({ image: food, source: 'sites' }));
+    expect(aiGate).toHaveBeenCalledWith(expect.anything(), 'h1', 3);
+    process.env.AI_FAKE = '1';
+  });
+
+  it('a search that fails after Brave answered is still recorded', async () => {
+    searchRecipes.mockImplementation(async (_q: string, _s: string, meter?: { braveCalls: number }) => {
+      if (meter) meter.braveCalls += 2;
+      throw new SourceLimitError();
+    });
+    const res = await POST(req({ image: food, source: 'sites' }));
+    expect(res.status).toBe(429);
+    expect(recordUsage.mock.calls.filter((c) => c[2] === 'search')).toHaveLength(2);
+  });
+
   it('402 at the cap without a model call or a search', async () => {
-    checkCap.mockResolvedValue({ ok: false, spentCents: 300, capCents: 300 });
+    aiGate.mockResolvedValue('cap');
     const res = await POST(req({ image: food, source: 'sites' }));
     expect(res.status).toBe(402);
     expect(await res.json()).toEqual({ error: 'cap_reached' });
@@ -106,7 +140,7 @@ describe('POST /api/recipes/identify', () => {
     expect(json.guess).toMatchObject({ isFood: true, dish: 'Chicken tacos' });
     expect(json.options).toHaveLength(1);
     expect(json).toMatchObject({ source: 'sites', fellBack: false, toppedUp: false });
-    expect(searchRecipes).toHaveBeenCalledWith('chicken tacos', 'sites');
+    expect(searchRecipes).toHaveBeenCalledWith('chicken tacos', 'sites', expect.anything());
     expect(recordUsage).toHaveBeenCalledWith(expect.anything(), 'h1', 'identify', 'fake', expect.objectContaining({ inputTokens: expect.any(Number) }));
     expect(recordUsage).toHaveBeenCalledWith(expect.anything(), 'h1', 'search', 'brave', { inputTokens: 0, outputTokens: 0 });
   });
@@ -114,7 +148,7 @@ describe('POST /api/recipes/identify', () => {
   it('does not record a Brave search for Spoonacular, and passes the source on', async () => {
     searchRecipes.mockResolvedValue({ options: [], source: 'spoonacular', fellBack: false, toppedUp: false });
     await POST(req({ image: food, source: 'spoonacular' }));
-    expect(searchRecipes).toHaveBeenCalledWith('chicken tacos', 'spoonacular');
+    expect(searchRecipes).toHaveBeenCalledWith('chicken tacos', 'spoonacular', expect.anything());
     expect(recordUsage).not.toHaveBeenCalledWith(expect.anything(), 'h1', 'search', expect.anything(), expect.anything());
   });
 
@@ -149,13 +183,11 @@ describe('POST /api/recipes/identify', () => {
       isFood: true, dish: 'Teriyaki salmon bowl', searchQuery: 'teriyaki salmon brown rice spinach bowl',
       keyIngredients: [], confidence: 'high',
     });
-    searchRecipes
-      .mockResolvedValueOnce({ options: [], source: 'sites', fellBack: false, toppedUp: false })
-      .mockResolvedValueOnce({ options: [option], source: 'sites', fellBack: false, toppedUp: false });
+    searchRecipes.mockImplementationOnce(braveFound([])).mockImplementationOnce(braveFound([option]));
     const res = await POST(req({ image: food, source: 'sites' }));
     expect((await res.json()).options).toHaveLength(1);
-    expect(searchRecipes).toHaveBeenNthCalledWith(1, 'teriyaki salmon brown rice spinach bowl', 'sites');
-    expect(searchRecipes).toHaveBeenNthCalledWith(2, 'teriyaki salmon brown', 'sites');
+    expect(searchRecipes).toHaveBeenNthCalledWith(1, 'teriyaki salmon brown rice spinach bowl', 'sites', expect.anything());
+    expect(searchRecipes).toHaveBeenNthCalledWith(2, 'teriyaki salmon brown', 'sites', expect.anything());
     expect(recordUsage.mock.calls.filter((c) => c[2] === 'search')).toHaveLength(2);
   });
 

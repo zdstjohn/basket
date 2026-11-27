@@ -26,7 +26,9 @@ const ROLES: Role[] = [
   'meat', 'fish', 'veg_protein', 'produce', 'dairy', 'bakery', 'frozen', 'pantry', 'other',
 ];
 
-const norm = (s: string): string => s.trim().toLowerCase();
+/** One spelling per food: trimmed, lower case, spaces collapsed, NFC. Plurals stay apart (the name is the item's key). */
+export const normFood = (s: string): string => s.normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+const norm = normFood;
 
 /** Same-kind amounts add up under one of these. */
 const kindKey = (q: Quantity): string =>

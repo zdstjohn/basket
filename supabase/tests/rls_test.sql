@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(184);
+select plan(262);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -57,6 +57,7 @@ begin
     values (h, '70100001', '0001111041700', 399);
   insert into public.cart_sends (household_id, week_id, user_id, modality)
     values (h, w, (select user_id from public.members where household_id = h limit 1), 'PICKUP');
+  insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values (h, m, '2026-11-25', 'skipped');
   insert into t_kv values ('M_' || key, m::text), ('W_' || key, w::text);
 end $$;
 
@@ -331,6 +332,74 @@ update public.households set busy_days = '{}' where id = (select v::uuid from t_
 update public.weeks set busy_days = '{}' where id = (select v::uuid from t_kv where k = 'W_A');
 
 -- ---------------------------------------------------------------------------
+-- Family phase a (0009): allergies, meal facts, person changes, meal verdicts
+-- ---------------------------------------------------------------------------
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+
+select is((select count(*)::int from public.meal_verdicts), 1, 'A sees exactly the HA verdict');
+select is((select count(*)::int from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), 0, 'A sees no HB verdicts');
+select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values ((select v::uuid from t_kv where k = 'HB'), (select v::uuid from t_kv where k = 'M_B'), '2026-11-24', 'skipped')$q$, '42501', null, 'A cannot insert a verdict into HB');
+select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_B'), '2026-11-24', 'skipped')$q$, '23503', null, 'a verdict cannot point at HB''s meal');
+update public.meal_verdicts set status = 'answered', votes = '{"x":"up"}' where household_id = (select v::uuid from t_kv where k = 'HB');
+update public.meal_verdicts set status = 'answered', votes = '{"x":"up"}' where household_id = (select v::uuid from t_kv where k = 'HA');
+select is((select status from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HA')), 'answered', 'A can answer the HA verdict');
+
+reset role;
+select pg_temp.act_as('cccccccc-0000-4000-8000-00000000000c');
+select is((select status from public.meal_verdicts), 'answered', 'C, in the same household, reads the answer');
+update public.meal_verdicts set status = 'skipped';
+select is((select status from public.meal_verdicts), 'answered', 'a skip never downgrades an answer');
+select is((select votes from public.meal_verdicts), '{"x":"up"}'::jsonb, 'the votes survive the skip');
+select is((select updated_by from public.meal_verdicts), 'cccccccc-0000-4000-8000-00000000000c'::uuid, 'the update is stamped with whoever made it');
+reset role;
+
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-25', 'answered')$q$, '23505', null, 'a second verdict for the same meal and day is a unique violation');
+select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-24', 'maybe')$q$, '23514', null, 'an unknown verdict status violates the check');
+select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status, votes) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-24', 'answered', '[]')$q$, '23514', null, 'votes must be an object');
+select lives_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status, updated_by) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-20', 'skipped', 'cccccccc-0000-4000-8000-00000000000c')$q$, 'A can insert a verdict even while naming someone else');
+select is((select updated_by from public.meal_verdicts where eaten_on = '2026-11-20'), 'aaaaaaaa-0000-4000-8000-00000000000a'::uuid, 'the insert is stamped with whoever made it, not who the client named');
+select throws_ok($q$delete from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'nobody can delete a verdict, even in their own household');
+select throws_ok($q$delete from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '42501', null, 'A cannot delete an HB verdict');
+select throws_ok($q$update public.meal_verdicts set household_id = (select v::uuid from t_kv where k = 'HB') where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'A cannot move an HA verdict into HB');
+select throws_ok($q$update public.meal_verdicts set meal_id = (select v::uuid from t_kv where k = 'M_B') where household_id = (select v::uuid from t_kv where k = 'HA') and eaten_on = '2026-11-20'$q$, '23503', null, 'A cannot point an HA verdict at an HB meal');
+
+update public.people set allergies = array['tree nuts'] where household_id = (select v::uuid from t_kv where k = 'HA');
+select is((select allergies from public.people where household_id = (select v::uuid from t_kv where k = 'HA') limit 1), array['tree nuts'], 'A can set allergies on HA people');
+update public.people set allergies = array['tree nuts'] where household_id = (select v::uuid from t_kv where k = 'HB');
+select throws_ok($q$update public.people set allergies = (select array_agg('f' || i) from generate_series(1, 31) i) where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, '31 allergies violate the check');
+
+select throws_ok($q$update public.meals set method = 'microwave' where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'an unknown cook method violates the check');
+select throws_ok($q$update public.meals set total_minutes = 0 where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'zero total minutes violates the check');
+select throws_ok($q$update public.meals set rating = 9.2 where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'a rating above 5 violates the check');
+select throws_ok($q$update public.meals set steps = '{}' where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'steps must be an array');
+select throws_ok($q$update public.meals set person_changes = '{}' where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '23514', null, 'person_changes must be an array');
+select lives_ok($q$update public.meals set method = 'oven', total_minutes = 45, make_ahead = true, rating = 4.5, rating_count = 812, likes = 3, steps = '["Mix","Bake"]', person_changes = '[{"personId":"x","change":"leave_out"}]', facts_checked_at = now() where household_id = (select v::uuid from t_kv where k = 'HA')$q$, 'valid meal facts are accepted');
+select is((select method || total_minutes::text || rating::text from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 'oven454.5', 'the meal facts read back');
+select is((select jsonb_array_length(steps) from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 2, 'steps read back');
+
+reset role;
+
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is((select status from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), 'skipped', 'A''s update left the HB verdict alone');
+select is((select votes from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), '{}'::jsonb, 'A''s update left the HB votes alone');
+select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and method is not null), 0, 'A''s update did not reach an HB meal');
+select throws_ok($q$update public.meal_verdicts set household_id = (select v::uuid from t_kv where k = 'HA') where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '42501', null, 'B cannot move an HB verdict into HA');
+select is((select count(*)::int from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HA')), 0, 'B sees no HA verdicts');
+select is((select allergies from public.people where household_id = (select v::uuid from t_kv where k = 'HB') limit 1), '{}'::text[], 'A''s update left HB allergies alone');
+reset role;
+
+select pg_temp.act_as(null);
+select throws_ok($q$select count(*) from public.meal_verdicts$q$, '42501', null, 'anon cannot read meal_verdicts');
+reset role;
+
+-- New tables are not granted to anon or authenticated by default (audit SEC-9).
+create table public.t_probe (id int);
+select ok(not has_table_privilege('authenticated', 'public.t_probe', 'select'), 'a new table is not readable by authenticated by default');
+select ok(not has_table_privilege('anon', 'public.t_probe', 'select'), 'a new table is not readable by anon by default');
+drop table public.t_probe;
+
+-- ---------------------------------------------------------------------------
 -- Fred Meyer products and cart (0006)
 -- ---------------------------------------------------------------------------
 select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
@@ -460,6 +529,98 @@ select throws_ok($q$select public.ai_spend_since(gen_random_uuid(), '-infinity')
 reset role;
 
 -- ---------------------------------------------------------------------------
+-- One spend guard for every paid call (0008): ai_gate, trusted, the untrusted Kroger pool
+-- ---------------------------------------------------------------------------
+reset role;
+-- The local database may hold other untrusted usage from today: lift the pool so only the pool test hits it.
+update public.spend_limits set untrusted_day_cents = 1000000000;
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+insert into t_kv select 'HD', public.create_household('Delta family')::text;
+reset role;
+select is((select ai_cap_cents from public.households where id = (select v::uuid from t_kv where k = 'HD')), 50, 'a new household starts with a 50 cent AI cap');
+select is((select trusted from public.households where id = (select v::uuid from t_kv where k = 'HD')), false, 'a new household is not trusted');
+
+select pg_temp.act_as(null);
+select throws_ok($q$select public.ai_gate(gen_random_uuid(), 1)$q$, '42501', null, 'anon cannot call ai_gate');
+select throws_ok($q$select public.create_invite()$q$, '42501', null, 'anon cannot call create_invite');
+reset role;
+
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'not_member', 'ai_gate refuses a household the caller is not in');
+select throws_ok($q$select public.ai_gate((select v::uuid from t_kv where k = 'HA'), -1)$q$, 'P0001', 'bad_hold', 'ai_gate refuses a negative hold');
+select throws_ok($q$update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'a member cannot make their own household trusted');
+select throws_ok($q$select * from public.spend_limits$q$, '42501', null, 'members cannot read spend_limits');
+reset role;
+
+-- With 1 cent left: the first call holds it, the second is refused, and no real usage row appears.
+update public.households set ai_cap_cents = 10 where id = (select v::uuid from t_kv where k = 'HB');
+delete from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HB');
+insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HB'), 'parse', 'test', 9);
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'ok', 'with 1 cent left the first call is ok');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'cap', 'the second call is over the cap (the hold counts)');
+select is((select count(*)::int from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HB') and kind <> 'hold'), 1, 'the gate wrote no real usage row');
+select throws_ok($q$delete from public.ai_usage$q$, '42501', null, 'a member cannot erase a hold');
+reset role;
+select is((select count(*)::int from public.ai_usage where household_id = (select v::uuid from t_kv where k = 'HB') and kind = 'hold'), 1, 'exactly one hold was made');
+update public.ai_usage set created_at = now() - interval '91 seconds' where household_id = (select v::uuid from t_kv where k = 'HB') and kind = 'hold';
+select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HB'), 1), 'ok', 'a hold 91 seconds old is no longer counted');
+reset role;
+
+-- Rate: per minute, then per day. D's zone is also unknown to Postgres: it falls back to Pacific.
+update public.spend_limits set per_minute = 2;
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'per_minute: first call ok');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'per_minute: second call ok');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'slow', 'per_minute: the third call in a minute is slow');
+reset role;
+update public.spend_limits set per_minute = 20, per_day = 2;
+update public.ai_usage set created_at = greatest(date_trunc('day', now() at time zone 'utc') at time zone 'utc', now() - interval '5 minutes')
+  where household_id = (select v::uuid from t_kv where k = 'HD') and kind = 'hold';
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'slow', 'per_day: two holds today is the daily limit');
+reset role;
+update public.spend_limits set per_day = 300;
+update public.households set time_zone = 'nonsense' where id = (select v::uuid from t_kv where k = 'HD');
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HD'), 1), 'ok', 'an unknown time zone falls back instead of failing');
+reset role;
+
+-- The untrusted pool: busy for an untrusted household, ok for a trusted one.
+update public.households set ai_cap_cents = 2000000000 where id = (select v::uuid from t_kv where k = 'HA');
+insert into public.ai_usage (household_id, kind, model, cost_cents) values ((select v::uuid from t_kv where k = 'HA'), 'parse', 'test', 1500000000);
+update public.spend_limits set untrusted_day_cents = 1000000000;
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 1), 'busy', 'untrusted pool full: busy for an untrusted household');
+reset role;
+update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HA');
+select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
+select is(public.ai_gate((select v::uuid from t_kv where k = 'HA'), 1), 'ok', 'untrusted pool full: ok for a trusted household');
+reset role;
+
+-- The untrusted Kroger pool (600 a day for all untrusted households together).
+update public.kroger_global_calls set untrusted_calls = 598 where day = (now() at time zone 'utc')::date;
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HD'), 3), 0, 'Kroger pool: 3 more past 598 is refused, the household total is unchanged');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HD'), 2), 2, 'Kroger pool: exactly 600 is allowed');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HD'), 1), 2, 'Kroger pool: full, nothing more is added');
+reset role;
+update public.households set trusted = true where id = (select v::uuid from t_kv where k = 'HD');
+select pg_temp.act_as('dddddddd-0000-4000-8000-00000000000d');
+select is(public.kroger_spend((select v::uuid from t_kv where k = 'HD'), 1), 3, 'Kroger pool: a trusted household is not held by it');
+reset role;
+select is((select untrusted_calls from public.kroger_global_calls where day = (now() at time zone 'utc')::date), 600, 'a trusted household adds nothing to the untrusted pool');
+
+-- Every table in public has row-level security, and none is granted to anon or PUBLIC.
+select is((select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity), 0, 'every table in public has row-level security');
+select is((select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace,
+  lateral aclexplode(c.relacl) a
+  where n.nspname = 'public' and c.relkind in ('r', 'p')
+    and a.grantee in (0, (select oid from pg_roles where rolname = 'anon'))), 0, 'no table in public is granted to anon or PUBLIC');
+
+-- ---------------------------------------------------------------------------
 -- Photo bucket limits (0005)
 -- ---------------------------------------------------------------------------
 select is((select file_size_limit from storage.buckets where id = 'meal-photos'), 5242880::bigint, 'meal-photos is capped at 5 MB');
@@ -489,6 +650,50 @@ on conflict (week_id, item_key) do nothing;
 select is((select count(*)::int from public.week_item_state where item_key like 'beans%'), 1, '0007 folds the old beans rows into one row');
 select ok((select have_it and checked from public.week_item_state where item_key = 'beans'), '0007 keeps both flags on the folded beans row');
 select is((select count(*)::int from public.week_item_state where item_key like '%#%'), 0, '0007 leaves no row keyed food#kind');
+
+-- 0016: tidy stored food names (NFC, collapsed spaces, trimmed, lower case); a clash keeps the newest row.
+insert into public.always_have (household_id, canonical, created_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'Olive   Oil ', now() - interval '2 days'),
+  ((select v::uuid from t_kv where k = 'HA'), 'olive oil', now() - interval '1 day'),
+  ((select v::uuid from t_kv where k = 'HA'), E'jalapen\u0303o', now());
+insert into public.item_product_choice (household_id, canonical, search_term, updated_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'black  pepper', 'old words', now() - interval '3 days'),
+  ((select v::uuid from t_kv where k = 'HA'), 'black pepper', 'new words', now() - interval '1 day');
+insert into public.item_product_choice (household_id, canonical, search_term, updated_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'brown  sugar', 'kept words', now()),
+  ((select v::uuid from t_kv where k = 'HA'), 'brown sugar', 'older words', now() - interval '5 days');
+insert into public.week_item_state (household_id, week_id, item_key, have_it) values
+  ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), E'Sea  Salt', true);
+insert into public.item_product_choice (household_id, canonical, upc, search_term, updated_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'red  lentils', '1111111111111', 'old lentils', now() - interval '4 days'),
+  ((select v::uuid from t_kv where k = 'HA'), 'red lentils', null, null, now());
+insert into public.week_item_state (household_id, week_id, item_key, have_it, checked, outside_budget, pack_count, created_at) values
+  ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), E'oat  milk', true, false, false, 3, now() - interval '2 days'),
+  ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), 'oat milk', false, true, false, null, now());
+insert into public.item_product_choice (household_id, canonical, upc, search_term, updated_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'black  beans', '1231231231231', null, now() - interval '2 days'),
+  ((select v::uuid from t_kv where k = 'HA'), 'black beans', null, 'organic black beans', now());
+select public.tidy_food_names();
+select is((select count(*)::int from public.always_have where canonical = 'olive oil' and household_id = (select v::uuid from t_kv where k = 'HA')), 1, '0016 merges the two olive oil rows into one');
+select is((select count(*)::int from public.always_have where canonical = E'jalape\u00f1o'), 1, '0016 rewrites an NFD name as NFC');
+select is((select count(*)::int from public.always_have where canonical <> public.tidy_food(canonical)), 0, '0016 leaves no untidy always_have name');
+select is((select search_term from public.item_product_choice where canonical = 'black pepper' and household_id = (select v::uuid from t_kv where k = 'HA')), 'new words', '0016 keeps the newest row when names clash (tidy row newer)');
+select is((select search_term from public.item_product_choice where canonical = 'brown sugar' and household_id = (select v::uuid from t_kv where k = 'HA')), 'kept words', '0016 keeps the newest row when names clash (untidy row newer)');
+select is((select have_it from public.week_item_state where item_key = 'sea salt'), true, '0016 tidies a week_item_state key');
+create temp table t_tidy_before as
+  select (select count(*) from public.always_have) a, (select count(*) from public.item_product_choice) c, (select count(*) from public.week_item_state) w,
+         (select string_agg(canonical, ',' order by canonical) from public.always_have) names;
+select public.tidy_food_names();
+select is((select upc from public.item_product_choice where canonical = 'red lentils' and household_id = (select v::uuid from t_kv where k = 'HA')), '1111111111111', '0016 keeps a chosen product when the newest row has none');
+select is((select search_term from public.item_product_choice where canonical = 'red lentils' and household_id = (select v::uuid from t_kv where k = 'HA')), 'old lentils', '0016 keeps the wording when the newest row has none');
+select is((select search_term from public.item_product_choice where canonical = 'black beans' and household_id = (select v::uuid from t_kv where k = 'HA')), 'organic black beans', '0016 keeps a newer search wording');
+select is((select upc from public.item_product_choice where canonical = 'black beans' and household_id = (select v::uuid from t_kv where k = 'HA')), null, '0016 does not bring back a product a newer search cleared');
+select is((select count(*)::int from public.week_item_state where item_key = 'oat milk'), 1, '0016 folds two oat milk rows into one');
+select ok((select have_it and checked and not outside_budget and pack_count = 3 from public.week_item_state where item_key = 'oat milk'), '0016 keeps every tick and the pack count when folding');
+select ok((select a = (select count(*) from public.always_have) and c = (select count(*) from public.item_product_choice)
+                  and w = (select count(*) from public.week_item_state)
+                  and names = (select string_agg(canonical, ',' order by canonical) from public.always_have) from t_tidy_before),
+          '0016 run twice changes nothing');
 
 select * from finish();
 rollback;

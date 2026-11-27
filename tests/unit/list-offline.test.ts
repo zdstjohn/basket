@@ -348,3 +348,99 @@ describe('flushQueue', () => {
     });
   });
 });
+
+describe('flushQueue in batches', () => {
+  beforeEach(() => void vi.stubGlobal('localStorage', fakeStorage()));
+  afterEach(() => void vi.unstubAllGlobals());
+
+  const flags = { have_it: false, checked: true, outside_budget: false };
+  const many = (n: number, patch: QueuedPatch['patch'] = flags, weekId = 'w1') =>
+    Array.from({ length: n }, (_, i) => e(`k${i}`, patch, weekId));
+  const noSingle = async () => { throw new Error('should not send one by one'); };
+
+  it('sends 40 entries with the same week and columns as one batch', async () => {
+    saveQueue('h1', many(40));
+    const batch = vi.fn(async () => {});
+    expect(await flushQueue('h1', noSingle, undefined, undefined, batch)).toBe(0);
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect((batch.mock.calls[0] as unknown as [QueuedPatch[]])[0]).toHaveLength(40);
+    expect(loadQueue('h1')).toEqual([]);
+  });
+
+  it('sends at most 50 to a batch', async () => {
+    saveQueue('h1', many(120));
+    const sizes: number[] = [];
+    await flushQueue('h1', noSingle, undefined, undefined, async (b) => void sizes.push(b.length));
+    expect(sizes).toEqual([50, 50, 20]);
+  });
+
+  it('splits runs by week and by the exact set of columns, in order', async () => {
+    saveQueue('h1', [
+      e('a0', flags), e('a1', flags), e('a2', flags),
+      e('p0', { ...flags, pack_count: 3 }), e('p1', { ...flags, pack_count: 3 }),
+      e('w0', flags, 'w2'), e('w1', flags, 'w2'),
+    ]);
+    const seen: string[][] = [];
+    await flushQueue('h1', async (x) => void seen.push([x.itemKey]), undefined, undefined, async (b) => void seen.push(b.map((x) => x.itemKey)));
+    expect(seen).toEqual([['a0', 'a1', 'a2'], ['p0', 'p1'], ['w0', 'w1']]);
+  });
+
+  it('sends a lone entry with apply, not as a batch', async () => {
+    saveQueue('h1', many(1));
+    const batch = vi.fn(async () => {});
+    const one = vi.fn(async () => {});
+    await flushQueue('h1', one, undefined, undefined, batch);
+    expect(one).toHaveBeenCalledTimes(1);
+    expect(batch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the whole batch when it fails for a network reason', async () => {
+    saveQueue('h1', many(5));
+    const one = vi.fn(async () => {});
+    const left = await flushQueue('h1', one, undefined, undefined, async () => { throw offlineErr(); });
+    expect(left).toBe(5);
+    expect(one).not.toHaveBeenCalled();
+    expect(loadQueue('h1')).toHaveLength(5);
+  });
+
+  it('retries a refused batch one by one so one bad row drops only itself', async () => {
+    saveQueue('h1', many(40));
+    const dropped: string[] = [];
+    const sent: string[] = [];
+    const left = await flushQueue(
+      'h1',
+      async (x) => {
+        if (x.itemKey === 'k7') throw rlsErr();
+        sent.push(x.itemKey);
+      },
+      undefined,
+      (x) => void dropped.push(x.itemKey),
+      async () => { throw rlsErr(); },
+    );
+    expect(left).toBe(0);
+    expect(dropped).toEqual(['k7']);
+    expect(sent).toHaveLength(39);
+    expect(loadQueue('h1')).toEqual([]);
+  });
+
+  it('counts a code-less 500 on a batch per entry, by retrying one by one', async () => {
+    saveQueue('h1', many(3));
+    const s500 = () => Object.assign(new Error('Internal Server Error'), { status: 500 });
+    const one = vi.fn(async () => { throw s500(); });
+    const left = await flushQueue('h1', one, undefined, undefined, async () => { throw s500(); });
+    expect(left).toBe(3);
+    expect(one).toHaveBeenCalledTimes(1); // stops at the first kept failure, as before
+    expect(loadQueue('h1')[0].attempts).toBe(1);
+  });
+
+  it('keeps a change made while a batch is in flight', async () => {
+    saveQueue('h1', many(3));
+    const sent: string[][] = [];
+    await flushQueue('h1', async (x) => void sent.push([x.id]), undefined, undefined, async (b) => {
+      sent.push(b.map((x) => x.id));
+      saveQueue('h1', mergePatch(loadQueue('h1'), e('k1', { checked: false }, 'w1', 'newer')));
+    });
+    expect(sent).toEqual([['id-k0', 'id-k1', 'id-k2'], ['newer']]);
+    expect(loadQueue('h1')).toEqual([]);
+  });
+});

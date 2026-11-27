@@ -3,6 +3,8 @@ import { familyOfFive } from "@/lib/fixtures/household";
 import { tacos } from "@/lib/fixtures/tacos";
 import type { Meal } from "@/lib/domain/types";
 import { dayNote, mealTag } from "@/lib/week/note";
+import { soup } from "@/lib/fixtures/soup";
+import { withChange, withoutChange } from "@/lib/db/queries/meals";
 
 const veg: Meal = {
   ...tacos,
@@ -76,5 +78,24 @@ describe("mealTag", () => {
   it("never says cooking double for an empty household", () => {
     expect(dayNote(veg, [], 0, true)).toBe("Everyone vegetarian");
     expect(dayNote(veg, [], 0)).toBe("Everyone vegetarian");
+  });
+});
+
+describe("person changes in the note", () => {
+  const zucchini = { canonical: "zucchini", amountPerServing: 0.25, unit: "each", role: "produce" as const };
+  const leaveOut: Meal = { ...soup, personChanges: [{ personId: "daughter-4", food: "mushrooms", action: "leave_out" }] };
+  const swapped: Meal = { ...soup, personChanges: [{ personId: "daughter-4", food: "mushrooms", action: "swap", swap: zucchini }] };
+  const goneDad: Meal = { ...soup, personChanges: [{ personId: "gone", food: "mushrooms", action: "leave_out" }] };
+
+  it("says who gets what", () => {
+    expect(dayNote(leaveOut, familyOfFive, null)).toBe("Everyone vegetarian · Daughter (4): no mushrooms");
+    expect(dayNote(swapped, familyOfFive, null)).toBe("Everyone vegetarian · Daughter (4): zucchini instead of mushrooms");
+    expect(dayNote(goneDad, familyOfFive, null)).toBe("Everyone vegetarian");
+  });
+
+  it("replaces and removes a change", () => {
+    const a = withChange([], { personId: "x", food: "mushrooms", action: "leave_out" });
+    expect(withChange(a, { personId: "x", food: "mushrooms", action: "swap", swap: zucchini })).toHaveLength(1);
+    expect(withoutChange(a, "x", "mushrooms")).toEqual([]);
   });
 });

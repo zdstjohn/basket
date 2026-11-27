@@ -154,6 +154,7 @@ export type Database = {
           recipe_source: string
           slots: string[]
           time_zone: string
+          trusted: boolean
           week_start: string
         }
         Insert: {
@@ -171,6 +172,7 @@ export type Database = {
           recipe_source?: string
           slots?: string[]
           time_zone?: string
+          trusted?: boolean
           week_start?: string
         }
         Update: {
@@ -188,6 +190,7 @@ export type Database = {
           recipe_source?: string
           slots?: string[]
           time_zone?: string
+          trusted?: boolean
           week_start?: string
         }
         Relationships: []
@@ -330,14 +333,17 @@ export type Database = {
         Row: {
           calls: number
           day: string
+          untrusted_calls: number
         }
         Insert: {
           calls?: number
           day: string
+          untrusted_calls?: number
         }
         Update: {
           calls?: number
           day?: string
+          untrusted_calls?: number
         }
         Relationships: []
       }
@@ -408,51 +414,78 @@ export type Database = {
           base_servings: number
           created_at: string
           everyone_vegetarian: boolean
+          facts_checked_at: string | null
           household_id: string
           id: string
           ingredients: Json
           is_favorite: boolean
+          likes: number | null
+          make_ahead: boolean
+          method: string | null
           name: string
+          person_changes: Json
           photo_credit: string | null
           photo_credit_url: string | null
           photo_path: string | null
           photo_url: string | null
+          rating: number | null
+          rating_count: number | null
           source_url: string | null
+          steps: Json | null
           times_planned: number
+          total_minutes: number | null
           veg_swap: Json | null
         }
         Insert: {
           base_servings?: number
           created_at?: string
           everyone_vegetarian?: boolean
+          facts_checked_at?: string | null
           household_id: string
           id?: string
           ingredients?: Json
           is_favorite?: boolean
+          likes?: number | null
+          make_ahead?: boolean
+          method?: string | null
           name: string
+          person_changes?: Json
           photo_credit?: string | null
           photo_credit_url?: string | null
           photo_path?: string | null
           photo_url?: string | null
+          rating?: number | null
+          rating_count?: number | null
           source_url?: string | null
+          steps?: Json | null
           times_planned?: number
+          total_minutes?: number | null
           veg_swap?: Json | null
         }
         Update: {
           base_servings?: number
           created_at?: string
           everyone_vegetarian?: boolean
+          facts_checked_at?: string | null
           household_id?: string
           id?: string
           ingredients?: Json
           is_favorite?: boolean
+          likes?: number | null
+          make_ahead?: boolean
+          method?: string | null
           name?: string
+          person_changes?: Json
           photo_credit?: string | null
           photo_credit_url?: string | null
           photo_path?: string | null
           photo_url?: string | null
+          rating?: number | null
+          rating_count?: number | null
           source_url?: string | null
+          steps?: Json | null
           times_planned?: number
+          total_minutes?: number | null
           veg_swap?: Json | null
         }
         Relationships: [
@@ -462,6 +495,57 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "households"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      meal_verdicts: {
+        Row: {
+          created_at: string
+          eaten_on: string
+          household_id: string
+          id: string
+          meal_id: string
+          status: string
+          updated_at: string
+          updated_by: string | null
+          votes: Json
+        }
+        Insert: {
+          created_at?: string
+          eaten_on: string
+          household_id: string
+          id?: string
+          meal_id: string
+          status: string
+          updated_at?: string
+          updated_by?: string | null
+          votes?: Json
+        }
+        Update: {
+          created_at?: string
+          eaten_on?: string
+          household_id?: string
+          id?: string
+          meal_id?: string
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+          votes?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meal_verdicts_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meal_verdicts_meal_id_household_id_fkey"
+            columns: ["meal_id", "household_id"]
+            isOneToOne: false
+            referencedRelation: "meals"
+            referencedColumns: ["id", "household_id"]
           },
         ]
       }
@@ -500,6 +584,7 @@ export type Database = {
       people: {
         Row: {
           age: number | null
+          allergies: string[]
           appetite: number
           created_at: string
           diet: string
@@ -511,6 +596,7 @@ export type Database = {
         }
         Insert: {
           age?: number | null
+          allergies?: string[]
           appetite?: number
           created_at?: string
           diet?: string
@@ -522,6 +608,7 @@ export type Database = {
         }
         Update: {
           age?: number | null
+          allergies?: string[]
           appetite?: number
           created_at?: string
           diet?: string
@@ -634,6 +721,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      spend_limits: {
+        Row: {
+          only_row: boolean
+          per_day: number
+          per_minute: number
+          untrusted_day_cents: number
+          untrusted_kroger_day: number
+        }
+        Insert: {
+          only_row?: boolean
+          per_day?: number
+          per_minute?: number
+          untrusted_day_cents?: number
+          untrusted_kroger_day?: number
+        }
+        Update: {
+          only_row?: boolean
+          per_day?: number
+          per_minute?: number
+          untrusted_day_cents?: number
+          untrusted_kroger_day?: number
+        }
+        Relationships: []
       }
       staples: {
         Row: {
@@ -836,6 +947,7 @@ export type Database = {
     }
     Functions: {
       accept_invite: { Args: { p_token: string }; Returns: string }
+      ai_gate: { Args: { h: string; hold_cents: number }; Returns: string }
       ai_spend_since: { Args: { h: string; since: string }; Returns: number }
       create_household: { Args: { p_name: string }; Returns: string }
       create_invite: { Args: never; Returns: string }

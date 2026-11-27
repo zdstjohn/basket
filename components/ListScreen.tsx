@@ -15,17 +15,18 @@ import { checkedOffMessage, keysToCheck, keysToUntick } from "@/lib/list/check-a
 import { groupItems } from "@/lib/list/groups";
 import { STORE_NAMES } from "@/lib/list/prices";
 import { focusRing, pillButton, stickyAboveNav } from "@/lib/ui";
-import { useWeekId, useWeekList } from "@/lib/useWeekList";
+import { listView, useWeekId, useWeekList } from "@/lib/useWeekList";
 
 export function ListScreen({ household }: { household: Household }) {
-  const weekId = useWeekId(household);
-  const list = useWeekList(household, weekId);
+  const week = useWeekId(household);
+  const list = useWeekList(household, week.id);
   const { items, totals, state, checked, priceSource, priceDetail, products, productMode } = list;
   const [store, setStore] = useState<Store>("fred_meyer");
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [swapKey, setSwapKey] = useState<string | null>(null);
   const [swapBusy, setSwapBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const view = listView({ weekFailed: week.failed && week.id === null, error: list.error, loading: list.loading, itemCount: list.items.length });
   const offlineReady = useOfflineShell(!list.loading && !list.error);
 
   const choiceOf = (canonical: string) => list.choices.find((c) => c.canonical === canonical);
@@ -130,20 +131,20 @@ export function ListScreen({ household }: { household: Household }) {
       )}
 
       <div className="mx-5 mt-1.5 flex flex-col">
-        {list.error && list.items.length === 0 ? (
+        {view === "error" ? (
           <div role="alert" className="mt-3 rounded-[14px] border border-line bg-white p-4 text-[15px]">
             <p>We couldn&apos;t load your list.</p>
-            <button type="button" onClick={() => void list.reload()} className={`${pillButton} mt-2`}>
+            <button type="button" onClick={() => { week.retry(); void list.reload(); }} className={`${pillButton} mt-2`}>
               Try again
             </button>
           </div>
-        ) : list.loading ? (
+        ) : view === "skeleton" ? (
           <div className="mt-3 flex flex-col gap-2" aria-hidden="true">
             {[0, 1, 2, 3].map((n) => (
               <div key={n} className="h-[52px] animate-pulse rounded-[14px] bg-[#EDF0EC]" />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : view === "empty" ? (
           <p className="mt-4 text-[15px] text-muted">
             Nothing on your list yet. Plan some dinners on the Week tab, or add weekly staples in Household.
           </p>
