@@ -8,7 +8,7 @@ export default async function LoginPage({
 }) {
   const { next, error } = await searchParams;
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-10">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-10 pb-[var(--bk-safe-bottom)]">
       <h1 className="text-[30px] font-bold tracking-tight text-ink">Basket</h1>
       <p className="mt-1 text-[15px] text-muted">
         Family meals, planned and ordered.

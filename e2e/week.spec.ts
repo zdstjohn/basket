@@ -7,6 +7,7 @@ import { setBudget } from "./helpers/flows-b";
 import { getOrCreateWeek, setWeekMeal } from "../lib/db/queries/weeks";
 import { getMyHousehold } from "../lib/db/queries/household";
 import { listFavorites } from "../lib/db/queries/meals";
+import { formatDollars } from "../lib/domain/money-input";
 import { formatWeekRange, previousWeekStart } from "../lib/week/format";
 import { weekStartFor, type Day } from "../lib/domain/weeks";
 
@@ -101,16 +102,26 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
 test("budget: the week says on budget, a little over or over budget, with the amounts", async ({ page }) => {
   await createHousehold(page);
   await addFromSearch(page, "thu", "tacos", "Chicken tacos · Allrecipes");
-  // The dinner's estimate arrives a moment after the week opens.
+  // The dinner's estimate arrives a moment after the week opens; wait until the total stops moving.
   await expect.poll(async () => (await readWeekBudget(page)).totalCents).toBeGreaterThan(0);
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const now = (await readWeekBudget(page)).totalCents;
+      const stable = now === last;
+      last = now;
+      return stable;
+    }, { intervals: [500] })
+    .toBe(true);
   const { totalCents } = await readWeekBudget(page);
   const dollars = Math.ceil(totalCents / 100);
+  const total = formatDollars(totalCents);
 
   const says = async (target: number, words: string, left: RegExp) => {
     await weekBudget(page);
     await expect.poll(async () => (await readWeekBudget(page)).text).toContain(words);
     const budget = page.getByRole("region", { name: "Budget" });
-    await expect(budget).toContainText(`of $${target}`);
+    await expect(budget).toContainText(`${total} of $${target}`);
     await expect(budget).toContainText(left);
   };
 
@@ -119,10 +130,10 @@ test("budget: the week says on budget, a little over or over budget, with the am
   await says(dollars, "On budget", /left/);
   // Over the target by less than the wiggle room.
   await setBudget(page, { target: dollars - 1 });
-  await says(dollars - 1, "A little over", /over/);
+  await says(dollars - 1, "A little over", /\$\d[\d.]* over/);
   // Over by more than the wiggle room.
   await setBudget(page, { wiggle: 0 });
-  await says(dollars - 1, "Over budget", /over/);
+  await says(dollars - 1, "Over budget", /\$\d[\d.]* over/);
 });
 
 test("sources: the toggle, the Spoonacular footer, the fallback note and the limit message", async ({ page }) => {

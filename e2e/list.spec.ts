@@ -70,7 +70,7 @@ test("list: tabs, groups, scaled amounts and estimates", async ({ page }, testIn
   await page.screenshot({ path: `${shots}/list.png`, fullPage: true });
 
   // Favorites: "Under $15" keeps meals whose lines all have prices and add up to $15 or less.
-  expect(await favoritesKept(page, "Under $15")).toBe(1);
+  await expect(await favoritesKept(page, "Under $15")).toHaveCount(1);
 });
 
 test("list: have it moves an item to Skipped and drops the total; checking off crosses it out", async ({ page }) => {

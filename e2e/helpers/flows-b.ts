@@ -25,6 +25,8 @@ export async function setBudget(page: Page, { target, wiggle }: { target?: numbe
   ] as const) {
     if (value === undefined) continue;
     const field = page.getByLabel(label);
+    // Nothing is saved when the value is unchanged, so there would be no response to wait for.
+    if ((await field.inputValue()) === String(value)) continue;
     await field.fill(String(value));
     await Promise.all([saved(), field.press("Tab")]);
   }

@@ -31,7 +31,7 @@ export default async function InvitePage({
   if (!error) redirect("/week");
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-10">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-10 pb-[var(--bk-safe-bottom)]">
       <h1 className="text-[30px] font-bold tracking-tight text-ink">Invite</h1>
       <p role="alert" className="mt-4 rounded-2xl border border-line bg-white p-5 text-[16px] text-ink">
         {messageFor(error.message)}

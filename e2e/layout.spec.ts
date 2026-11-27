@@ -65,13 +65,21 @@ for (const variant of VARIANTS) {
       }
 
       // Text contrast (the ratios use the real contrastRatio, not a copy of the maths).
-      const weak = (await textPairs(page)).filter(([fg, bg]) => contrastRatio(fg, bg) < MIN_CONTRAST);
+      const { pairs, skipped } = await textPairs(page);
+      const weak = pairs.map((p) => ({ ...p, ratio: contrastRatio(p.fg, p.bg) })).filter((p) => p.ratio < MIN_CONTRAST);
+      // An image or gradient behind the text cannot be measured here; anything else unreadable is a failure to look into.
+      const unmeasured = skipped.filter((k) => !k.reason.startsWith("image"));
       if (screen.contrastPending) {
-        if (weak.length) testInfo.annotations.push({ type: "contrast-pending", description: `${screen.name}: ${weak.length} pair(s) under ${MIN_CONTRAST}` });
-      } else {
-        for (const [fg, bg, text] of weak) {
-          found.push(`${where}: contrast ${contrastRatio(fg, bg).toFixed(2)} for "${text}" (${fg} on ${bg})`);
+        const worklist = [
+          ...weak.map((p) => `${p.ratio.toFixed(2)} "${p.text}" ${p.fg} on ${p.bg}`),
+          ...unmeasured.map((k) => `unmeasured "${k.text}": ${k.reason}`),
+        ];
+        if (worklist.length) {
+          testInfo.annotations.push({ type: "contrast-pending", description: `${screen.name}: ${weak.length} pair(s) under ${MIN_CONTRAST}, ${unmeasured.length} unmeasured\n${worklist.join("\n")}` });
         }
+      } else {
+        for (const p of weak) found.push(`${where}: contrast ${p.ratio.toFixed(2)} for "${p.text}" (${p.fg} on ${p.bg})`);
+        for (const k of unmeasured) found.push(`${where}: contrast not measurable for "${k.text}": ${k.reason}`);
       }
       await page.screenshot({ path: `${shots}/layout-${screen.name}-${tag}.png`, fullPage: true });
     };
