@@ -19,6 +19,8 @@ export function krogerSb(opts: {
   /** Total the household has already used today; kroger_spend refuses past 400 and returns this unchanged. */
   used?: number;
   limited?: boolean;
+  /** Makes the kroger_matches upsert fail with this message. */
+  upsertError?: string;
 }) {
   let used = opts.used ?? 0;
   const matches = [...(opts.matches ?? [])];
@@ -55,6 +57,7 @@ export function krogerSb(opts: {
         }).then(res);
       b.upsert = async (rows: Record<string, unknown>[], o: unknown) => {
         (calls.upserts[table] ??= []).push({ rows, opts: o });
+        if (table === 'kroger_matches' && opts.upsertError) return { error: { message: opts.upsertError } };
         if (table === 'kroger_matches') {
           for (const r of rows) {
             const i = matches.findIndex((m) => m.canonical === r.canonical);

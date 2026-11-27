@@ -4,6 +4,7 @@ import {
   mealCostCents,
   priceSourceFor,
   storeFor,
+  storeSearchUrl,
   toPriceMap,
   userCentsPerBase,
   type PriceRow,
@@ -78,5 +79,17 @@ describe('mealCostCents', () => {
   });
   it('is zero for a meal with no lines', () => {
     expect(mealCostCents([], fm, prices)).toBe(0);
+  });
+});
+
+describe('storeSearchUrl', () => {
+  it('builds an Amazon search for the food', () => {
+    expect(storeSearchUrl('amazon', 'corn tortillas')).toBe('https://www.amazon.com/s?k=corn%20tortillas');
+  });
+
+  it('builds a Costco search, escaping what would end the query', () => {
+    expect(storeSearchUrl('costco', 'olive oil & salt')).toBe(
+      'https://www.costco.com/CatalogSearch?keyword=olive%20oil%20%26%20salt',
+    );
   });
 });

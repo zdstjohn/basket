@@ -2,6 +2,7 @@ import { matchFood } from './families';
 import { isAllergyChange } from './flags';
 import { eatsRole, householdServings, portionFactor } from './portions';
 import type { Meal, Person, PersonChange, Quantity, Role } from './types';
+import { normFood } from './list';
 import { quantityOrCount } from './units';
 
 export interface ScaledLine {
@@ -11,7 +12,7 @@ export interface ScaledLine {
   sources: string[];
 }
 
-const norm = (s: string): string => s.trim().toLowerCase();
+const norm = normFood;
 
 const factorOf = (p: Person): number => portionFactor(p.age, p.appetite);
 const sumFactors = (people: Person[]): number => people.reduce((sum, p) => sum + factorOf(p), 0);

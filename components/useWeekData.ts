@@ -8,6 +8,7 @@ import { findWeek, getOrCreateWeek, listWeekMeals } from "@/lib/db/queries/weeks
 import type { Household, MealRow, Week, WeekMeal } from "@/lib/db/rows";
 import type { Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
+import { singleFlight } from "@/lib/list/single-flight";
 import { subscribeHousehold } from "@/lib/realtime";
 import { previousWeekStart } from "@/lib/week/format";
 
@@ -32,7 +33,7 @@ export function useWeekData(household: Household) {
     latest.current++;
   }, []);
 
-  const load = useCallback(async () => {
+  const loadOnce = useCallback(async () => {
     const run = ++latest.current;
     try {
       const weekStart = weekStartFor(new Date(), household.week_start as Day, household.time_zone);
@@ -61,10 +62,12 @@ export function useWeekData(household: Household) {
       if (run === latest.current) setError(true);
     }
   }, [sb, household.id, household.week_start, household.time_zone]);
+  // One load at a time: a call while one is out joins it, and it repeats once at the end.
+  const [flight] = useState(() => singleFlight());
+  const load = useCallback(() => flight.run(loadOnce), [flight, loadOnce]);
 
   useEffect(() => {
     // Loading starts from an effect on purpose: the week depends on the phone's clock.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     const stop = subscribeHousehold(household.id, ["week_meals", "meals", "people"], () => void load(), setLive);
     return () => {

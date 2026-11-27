@@ -17,7 +17,7 @@ export function LoginForm({
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(
-    linkFailed ? "That sign-in link didn't work. Ask for a new one." : null,
+    linkFailed ? "That link didn't open here. Ask for a new email, then type its 6-digit code." : null,
   );
 
   const [code, setCode] = useState("");
@@ -83,7 +83,6 @@ export function LoginForm({
               inputMode="numeric"
               autoComplete="one-time-code"
               pattern="[0-9]*"
-              maxLength={6}
               required
               value={code}
               onChange={(e) => setCode(e.target.value)}

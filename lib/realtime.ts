@@ -1,12 +1,15 @@
 import { createBrowserClient } from '@/lib/db/client';
 
 const COALESCE_MS = 150;
+/** A phone coming back to the foreground within this long of a refetch does not ask for another. */
+const VISIBLE_QUIET_MS = 2000;
 
 /**
  * Calls `onChange` whenever one of `tables` changes for this household.
  * Deletes cannot be filtered by household, so a delete anywhere also triggers it;
  * the caller refetches, and never trusts the event's contents.
  * `onStatus(true)` fires once the connection is live (the caller should refetch then too).
+ * Coming back to the foreground refetches too, unless one just ran (a quick app switch is not news).
  * Returns the function that stops listening.
  */
 export function subscribeHousehold(
@@ -18,11 +21,14 @@ export function subscribeHousehold(
   const sb = createBrowserClient();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let lastRan = Date.now();
   const fire = () => {
     if (stopped || timer) return;
     timer = setTimeout(() => {
       timer = undefined;
-      if (!stopped) onChange();
+      if (stopped) return;
+      lastRan = Date.now();
+      onChange();
     }, COALESCE_MS);
   };
 
@@ -50,7 +56,7 @@ export function subscribeHousehold(
   });
 
   const onVisible = () => {
-    if (document.visibilityState === 'visible') fire();
+    if (document.visibilityState === 'visible' && Date.now() - lastRan >= VISIBLE_QUIET_MS) fire();
   };
   document.addEventListener('visibilitychange', onVisible);
   window.addEventListener('online', fire);

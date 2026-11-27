@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/db/types';
+import { normFood } from '@/lib/domain/list';
 import type { Candidate } from '@/lib/domain/packages';
 import type { Choice, MatchRow } from '@/lib/list/matches';
 
@@ -17,7 +18,7 @@ export async function listMatches(sb: Sb, householdId: string, locationId: strin
     .gte('fetched_at', since);
   if (error) throw new Error(error.message);
   return (data ?? []).map((r) => ({
-    canonical: r.canonical,
+    canonical: normFood(r.canonical),
     locationId: r.location_id,
     term: r.term,
     candidates: Array.isArray(r.candidates) ? (r.candidates as unknown as Candidate[]) : [],
@@ -32,5 +33,32 @@ export async function listChoices(sb: Sb, householdId: string): Promise<Choice[]
     .select('canonical, upc, search_term')
     .eq('household_id', householdId);
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({ canonical: r.canonical, upc: r.upc, searchTerm: r.search_term }));
+  return (data ?? []).map((r) => ({ canonical: normFood(r.canonical), upc: r.upc, searchTerm: r.search_term }));
+}
+
+/**
+ * Remembers the household's product and/or search wording for a food. Only the keys given are written, so
+ * choosing a product leaves the wording alone and a new search (`upc: null`) clears the product.
+ */
+export async function setChoice(
+  sb: Sb,
+  householdId: string,
+  canonical: string,
+  patch: { upc?: string | null; searchTerm?: string | null },
+): Promise<void> {
+  const row: Database['public']['Tables']['item_product_choice']['Insert'] = {
+    household_id: householdId,
+    canonical,
+    updated_at: new Date().toISOString(),
+  };
+  if ('upc' in patch) row.upc = patch.upc ?? null;
+  if ('searchTerm' in patch) row.search_term = patch.searchTerm ?? null;
+  const { error } = await sb.from('item_product_choice').upsert(row, { onConflict: 'household_id,canonical' });
+  if (error) throw new Error(error.message);
+}
+
+/** Forgets the household's product and wording for a food: Basket's own pick applies again. */
+export async function clearChoice(sb: Sb, householdId: string, canonical: string): Promise<void> {
+  const { error } = await sb.from('item_product_choice').delete().eq('household_id', householdId).eq('canonical', canonical);
+  if (error) throw new Error(error.message);
 }
