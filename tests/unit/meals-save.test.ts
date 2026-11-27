@@ -5,13 +5,14 @@ import { saveMeal } from '@/lib/db/queries/meals';
 import type { PersonChange } from '@/lib/domain/types';
 
 // A chainable stand-in for the Supabase query builder (as in household-queries.test.ts).
-function mockClient() {
+function mockClient(peopleRows: unknown[] = []) {
   const inserted: unknown[] = [];
+  let table = '';
   const builder: unknown = new Proxy(
     {},
     {
       get(_t, prop) {
-        if (prop === 'then') return (resolve: (v: unknown) => unknown) => resolve({ data: { id: 'm1' }, error: null });
+        if (prop === 'then') return (resolve: (v: unknown) => unknown) => resolve({ data: table === 'people' ? peopleRows : { id: 'm1' }, error: null });
         return (...args: unknown[]) => {
           if (prop === 'insert') inserted.push(args[0]);
           return builder;
@@ -19,7 +20,7 @@ function mockClient() {
       },
     },
   );
-  const sb = { from: () => builder } as unknown as SupabaseClient<Database>;
+  const sb = { from: (t: string) => { table = t; return builder; } } as unknown as SupabaseClient<Database>;
   return { sb, inserted };
 }
 
@@ -57,5 +58,15 @@ describe('saveMeal and person_changes', () => {
     const { sb, inserted } = mockClient();
     await saveMeal(sb, 'h', { ...draft, isFavorite: true });
     expect(inserted).toEqual([{ ...today, person_changes: [] }]);
+  });
+  it('drops a change that names that person’s allergy, and keeps the others', async () => {
+    const { sb, inserted } = mockClient([
+      { id: 'daughter-4', allergies: ['tree nuts'] },
+      { id: 'son', allergies: [] },
+    ]);
+    const nuts: PersonChange = { personId: 'daughter-4', food: 'almonds', action: 'leave_out' };
+    const sonOut: PersonChange = { personId: 'son', food: 'mushrooms', action: 'leave_out' };
+    await saveMeal(sb, 'h', { ...draft, personChanges: [nuts, sonOut, leaveOut], isFavorite: true });
+    expect((inserted[0] as { person_changes: unknown }).person_changes).toEqual([sonOut, leaveOut]);
   });
 });

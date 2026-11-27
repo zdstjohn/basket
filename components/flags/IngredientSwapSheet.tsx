@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { eatersLeft, ideaNote, inWords } from "@/components/flags/swap-notes";
+import { allergyHits, eatersLeft, ideaNote, inWords } from "@/components/flags/swap-notes";
 import { Sheet } from "@/components/Sheet";
 import { cleanFood, swapIdeas } from "@/lib/domain/families";
+import { AllergyBox } from "@/components/flags/AllergyBox";
 import { flagCopy, namesLabel, type Flag } from "@/lib/domain/flags";
 import type { Meal, Person, SwapIdea } from "@/lib/domain/types";
 import { focusRing, pillButton, textInput } from "@/lib/ui";
@@ -12,7 +13,8 @@ const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** "Mushrooms drop to four people’s worth." — one person and nobody are worded as such. */
 function dropNote(food: string, plural: boolean, n: number): string {
-  const worth = n === 0 ? "no one’s worth" : n === 1 ? "one person’s worth" : `${inWords(n)} people’s worth`;
+  if (n === 0) return `${capital(food)} ${plural ? "come" : "comes"} off the list.`;
+  const worth = n === 1 ? "one person’s worth" : `${inWords(n)} people’s worth`;
   return `${capital(food)} ${plural ? "drop" : "drops"} to ${worth}.`;
 }
 
@@ -43,6 +45,8 @@ export function IngredientSwapSheet({
       : typedFood
         ? { canonical: typedFood, amountPerServing: 1, unit: "each", role: "other" }
         : null;
+  // Anyone's allergy counts: the food goes on the one shared list. Swapping an allergen in is not offered from here.
+  const hits = allergyHits(swap, people);
   const plural = flagCopy(flag, people).pronoun === "them";
 
   return (
@@ -86,7 +90,7 @@ export function IngredientSwapSheet({
           <input
             value={typed}
             placeholder="Type a food"
-            maxLength={60}
+            maxLength={40}
             onChange={(e) => {
               setTyped(e.target.value);
               if (e.target.value.trim()) setChosen(null);
@@ -95,13 +99,15 @@ export function IngredientSwapSheet({
           />
         </label>
 
+        {hits.length > 0 && <AllergyBox flags={hits} people={people} className="" />}
+
         <p className="text-sm text-[#4A544F]">
           {dropNote(flag.food, plural, eatersLeft(flag, meal, people))} We’ll remember this for next time you make it.
         </p>
 
         <button
           type="button"
-          disabled={swap === null}
+          disabled={swap === null || hits.length > 0}
           onClick={() => swap && onPick(swap)}
           className={`inline-flex h-12 w-full items-center justify-center rounded-full bg-green px-5 text-[15px] font-semibold text-white disabled:opacity-60 ${focusRing}`}
         >

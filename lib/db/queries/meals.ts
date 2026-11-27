@@ -3,7 +3,7 @@ import type { Database } from '@/lib/db/types';
 import type { MealRow } from '@/lib/db/rows';
 import { PersonChangeSchema, type RecipeDraft } from '@/lib/ai/schemas';
 import { isAllergyChange } from '@/lib/domain/flags';
-import type { IngredientLine, Meal, PersonChange, VegSwap } from '@/lib/domain/types';
+import type { IngredientLine, Meal, Person, PersonChange, VegSwap } from '@/lib/domain/types';
 
 type Sb = SupabaseClient<Database>;
 
@@ -38,11 +38,31 @@ export function toMeal(row: MealRow): Meal {
   };
 }
 
+type AllergyRow = { id: string; allergies: string[] | null };
+
+/** The people named by these changes, with their allergies. */
+async function allergiesOf(sb: Sb, changes: PersonChange[]): Promise<AllergyRow[]> {
+  if (changes.length === 0) return [];
+  const ids = [...new Set(changes.map((c) => c.personId))];
+  const { data, error } = await sb.from('people').select('id, allergies').in('id', ids);
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? (data as AllergyRow[]) : [];
+}
+
+const asPerson = (r: AllergyRow): Person => ({ id: r.id, name: '', age: 0, diet: 'none', appetite: 1, dislikes: [], allergies: r.allergies ?? [] });
+
 export async function saveMeal(
   sb: Sb,
   householdId: string,
   draft: Omit<RecipeDraft, 'personChanges'> & Partial<Pick<RecipeDraft, 'personChanges'>> & { isFavorite: boolean; everyoneVegetarian?: boolean },
 ): Promise<MealRow> {
+  // A change that names someone's allergy is dropped here, as setPersonChanges refuses it: an allergy is only warned about.
+  const wanted = draft.personChanges ?? [];
+  const rows = await allergiesOf(sb, wanted);
+  const kept = wanted.filter((c) => {
+    const row = rows.find((r) => r.id === c.personId);
+    return !row || !isAllergyChange(c, asPerson(row));
+  });
   const { data, error } = await sb
     .from('meals')
     .insert({
@@ -57,7 +77,7 @@ export async function saveMeal(
       photo_url: draft.photo?.url ?? null,
       photo_credit: draft.photo?.credit ?? null,
       photo_credit_url: draft.photo?.creditUrl ?? null,
-      person_changes: (draft.personChanges ?? []) as unknown as Database['public']['Tables']['meals']['Insert']['person_changes'],
+      person_changes: kept as unknown as Database['public']['Tables']['meals']['Insert']['person_changes'],
     })
     .select()
     .single();
@@ -91,16 +111,10 @@ export function withoutChange(changes: PersonChange[], personId: string, food: s
  */
 export async function setPersonChanges(sb: Sb, mealId: string, changes: PersonChange[]): Promise<MealRow> {
   const clean = changes.map((c) => PersonChangeSchema.parse(c));
-  if (clean.length > 0) {
-    const ids = [...new Set(clean.map((c) => c.personId))];
-    const { data, error } = await sb.from('people').select('id, allergies').in('id', ids);
-    if (error) throw new Error(error.message);
-    for (const c of clean) {
-      const person = (data ?? []).find((p) => p.id === c.personId);
-      if (person && isAllergyChange(c, { id: person.id, name: '', age: 0, diet: 'none', appetite: 1, dislikes: [], allergies: person.allergies ?? [] })) {
-        throw new Error(`${c.food} is an allergy, so it can’t be left out or swapped`);
-      }
-    }
+  const rows = await allergiesOf(sb, clean);
+  for (const c of clean) {
+    const row = rows.find((r) => r.id === c.personId);
+    if (row && isAllergyChange(c, asPerson(row))) throw new Error(`${c.food} is an allergy, so it can’t be left out or swapped`);
   }
   return updateMeal(sb, mealId, { person_changes: clean as unknown as Database['public']['Tables']['meals']['Update']['person_changes'] });
 }

@@ -1,5 +1,5 @@
 import { matchFood } from "@/lib/domain/families";
-import { ingredientNames, type Flag } from "@/lib/domain/flags";
+import { findFlags, ingredientNames, type Flag } from "@/lib/domain/flags";
 import { eatersOf } from "@/lib/domain/scaling";
 import type { Meal, Person, Role, SwapIdea } from "@/lib/domain/types";
 
@@ -26,4 +26,9 @@ export function eatersLeft(flag: Flag, meal: Meal, people: Person[]): number {
   const line = lines.find((l) => matchFood(flag.food, l.canonical) !== null);
   if (!line) return Math.max(0, people.length - flag.people.length);
   return eatersOf(meal, line, people).filter((p) => !flag.people.some((f) => f.id === p.id)).length;
+}
+
+/** The allergy flags a food would raise if it went on the shared list. A swap that has any is not allowed from the swap sheet. */
+export function allergyHits(swap: SwapIdea | null, people: Person[]): Flag[] {
+  return swap ? findFlags([swap.canonical], people).filter((f) => f.kind === "allergy") : [];
 }

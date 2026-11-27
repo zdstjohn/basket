@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { draftAsMeal, draftFlags } from '@/components/add-meal/DraftPreview';
 import { boxState, doneCopy, ideaNote } from '@/components/flags/DislikeBox';
-import { inWords } from '@/components/flags/swap-notes';
+import { allergyHits, inWords } from '@/components/flags/swap-notes';
 import { findFlags, ingredientNames } from '@/lib/domain/flags';
 import { swapIdeas } from '@/lib/domain/families';
 import type { Person, PersonChange } from '@/lib/domain/types';
@@ -58,5 +58,32 @@ describe('a restored draft', () => {
     const peanutAllergy = people.map((p) => (p.id === 'son' ? { ...p, allergies: ['peanuts'] } : p));
     expect(draftFlags(cleaned, peanutAllergy).some((f) => f.kind === 'allergy')).toBe(false);
     expect(draftFlags(cleaned, peanutAllergy, ['peanuts']).some((f) => f.kind === 'allergy')).toBe(true);
+  });
+});
+
+describe('a swapped-in food', () => {
+  const walnuts = { canonical: 'walnuts', amountPerServing: 1, unit: 'each', role: 'other' as const };
+  const sonSwap: PersonChange = { personId: 'son', food: 'mushrooms', action: 'swap', swap: walnuts };
+  const withSon: Person[] = people.map((p) => (p.id === 'son' ? { ...p, dislikes: ['mushrooms'] } : p));
+
+  it('is checked against allergies like any other ingredient', () => {
+    expect(ingredientNames(soup)).not.toContain('walnuts');
+    const meal = { ...soup, personChanges: [sonSwap] };
+    expect(ingredientNames(meal)).toContain('walnuts');
+    const flags = findFlags(ingredientNames(meal), withSon);
+    expect(flags.filter((f) => f.kind === 'allergy').map((f) => f.people.map((p) => p.id))).toEqual([['daughter-4']]);
+    expect(draftFlags({ ...draft, personChanges: [sonSwap] }, withSon).some((f) => f.kind === 'allergy')).toBe(true);
+  });
+  it('is blocked in the swap sheet, and zucchini is not', () => {
+    expect(allergyHits(walnuts, withSon)).toHaveLength(1);
+    expect(allergyHits(zucchini, withSon)).toEqual([]);
+    expect(allergyHits(null, withSon)).toEqual([]);
+  });
+});
+
+describe('boxState matches like the list math', () => {
+  it('counts "mushroom" and "mushrooms" as the same food', () => {
+    expect(boxState(flag, [{ ...leaveOut, food: 'mushroom' }])).toBe('done');
+    expect(doneCopy(flag, [{ ...leaveOut, food: 'mushroom' }], people, 4).head).toBe('Daughter (4): no mushrooms');
   });
 });

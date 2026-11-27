@@ -2,17 +2,20 @@
 
 import { useState } from "react";
 import { IngredientSwapSheet } from "@/components/flags/IngredientSwapSheet";
+import { matchFood } from "@/lib/domain/families";
 import { eatersLeft, ideaNote } from "@/components/flags/swap-notes";
 import { flagCopy, namesLabel, type Flag } from "@/lib/domain/flags";
 import type { Meal, Person, PersonChange, SwapIdea } from "@/lib/domain/types";
 import { focusRing, pillButton } from "@/lib/ui";
-import { withChange, withoutChange } from "@/lib/db/queries/meals";
+import { withChange } from "@/lib/db/queries/meals";
 
 export { ideaNote };
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
+// The same matcher the list math uses, so "mushroom" and "mushrooms" are one food.
+const isFood = (c: PersonChange, food: string): boolean => matchFood(c.food, food) !== null;
 const hasChangeFor = (changes: PersonChange[], p: Person, food: string): boolean =>
-  changes.some((c) => c.personId === p.id && c.food === food);
+  changes.some((c) => c.personId === p.id && isFood(c, food));
 
 /** 'done' once every flagged person has a change for this food. ('kept' is only ever a choice made on screen, for one visit.) */
 export function boxState(flag: Flag, changes: PersonChange[]): "ask" | "done" | "kept" {
@@ -21,7 +24,7 @@ export function boxState(flag: Flag, changes: PersonChange[]): "ask" | "done" | 
 
 /** "Daughter (4): no mushrooms" / "Mushrooms cut to 4 people". `eaters` is how many people still eat it. */
 export function doneCopy(flag: Flag, changes: PersonChange[], people: Person[], eaters: number): { head: string; sub: string } {
-  const mine = changes.filter((c) => c.food === flag.food && flag.people.some((p) => p.id === c.personId));
+  const mine = changes.filter((c) => isFood(c, flag.food) && flag.people.some((p) => p.id === c.personId));
   const who = namesLabel(flag.people.filter((p) => hasChangeFor(mine, p, flag.food)), people);
   const swap = mine.find((c) => c.action === "swap" && c.swap)?.swap;
   return {
@@ -70,13 +73,15 @@ export function DislikeBox({
     }
   }
 
+  // Start from a list without these people's earlier changes for this food, however it was spelled.
+  const cleared = changes.filter((c) => !(flag.people.some((p) => p.id === c.personId) && isFood(c, flag.food)));
   const leaveOut = () =>
-    apply(flag.people.reduce((all, p) => withChange(all, { personId: p.id, food: flag.food, action: "leave_out" }), changes));
+    apply(flag.people.reduce((all, p) => withChange(all, { personId: p.id, food: flag.food, action: "leave_out" }), cleared));
   const pickSwap = (swap: SwapIdea) => {
     setSwapping(false);
-    return apply(flag.people.reduce((all, p) => withChange(all, { personId: p.id, food: flag.food, action: "swap", swap }), changes));
+    return apply(flag.people.reduce((all, p) => withChange(all, { personId: p.id, food: flag.food, action: "swap", swap }), cleared));
   };
-  const undo = () => apply(flag.people.reduce((all, p) => withoutChange(all, p.id, flag.food), changes));
+  const undo = () => apply(cleared);
 
   if (state === "done") {
     const done = doneCopy(flag, changes, people, eatersLeft(flag, meal, people));
