@@ -48,7 +48,14 @@ async function watch(page: Page, opts: { noViewTransitions?: boolean } = {}): Pr
 
     const ENTRANCES = ["bk-reveal", "bk-settle", "bk-fade-in"];
     const name = (el: Element) => el.getAttribute("data-testid") ?? el.tagName.toLowerCase();
+    // An element that arrives already classed is seen twice (as a new node and as a class change): log each class once.
+    const active = new WeakMap<Element, Set<string>>();
     const note = (el: Element, sign: string, cls: string) => {
+      const seen = active.get(el) ?? new Set<string>();
+      active.set(el, seen);
+      if (sign === "+" ? seen.has(cls) : !seen.has(cls)) return;
+      if (sign === "+") seen.add(cls);
+      else seen.delete(cls);
       const step = (el as HTMLElement).style?.getPropertyValue("--i");
       window.__log.push(`${sign}${cls} ${name(el)}${step ? ` i=${step}` : ""}`);
       if (ENTRANCES.filter((c) => el.classList.contains(c)).length > 1) window.__log.push(`DOUBLE ${name(el)}`);
