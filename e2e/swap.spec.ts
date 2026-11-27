@@ -73,7 +73,7 @@ test("swap: pick another product, keep it, go back, search with your own words",
   const options = sheet.getByTestId("swap-option");
   expect(await options.count()).toBeGreaterThanOrEqual(2);
   await expect(sheet.getByText("Cheapest", { exact: true })).toHaveCount(1);
-  await expect(sheet.getByRole("button", { name: "Back to Basket's pick" })).toHaveCount(0);
+  await expect(sheet.getByRole("button", { name: "Back to Basket’s pick" })).toHaveCount(0);
   await page.screenshot({ path: `${shots}/swap.png` });
 
   // Choose the other one: the row shows its name and total, the list total moves by the difference.
@@ -96,8 +96,8 @@ test("swap: pick another product, keep it, go back, search with your own words",
   await expect(sheet.getByText("Your usual", { exact: true })).toHaveCount(1);
   await expect(sheet.getByTestId("swap-option").filter({ hasText: "Your usual" })).toContainText(otherName);
 
-  // Back to Basket's pick brings the first product back.
-  await sheet.getByRole("button", { name: "Back to Basket's pick" }).click();
+  // Back to Basket’s pick brings the first product back.
+  await sheet.getByRole("button", { name: "Back to Basket’s pick" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(row(page, "Black beans")).toContainText(firstName);
   await expect(row(page, "Black beans")).not.toContainText(otherName);
@@ -107,18 +107,73 @@ test("swap: pick another product, keep it, go back, search with your own words",
   sheet = await openSwap(page);
   await sheet.getByLabel("Search with other words").fill("organic black beans");
   await sheet.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(sheet.getByText('Searching for "organic black beans"')).toBeVisible();
+  await expect(sheet.getByText('Searching for “organic black beans”')).toBeVisible();
   await expect(sheet.getByTestId("swap-option").first()).toBeVisible();
   await page.reload();
   sheet = await openSwap(page);
-  await expect(sheet.getByText('Searching for "organic black beans"')).toBeVisible();
-  await expect(sheet.getByRole("button", { name: "Back to Basket's pick" })).toBeVisible();
+  await expect(sheet.getByText('Searching for “organic black beans”')).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Back to Basket’s pick" })).toBeVisible();
 
   // Too short.
   await sheet.getByLabel("Search with other words").fill("a");
   await sheet.getByRole("button", { name: "Search", exact: true }).click();
   await expect(sheet.getByText("Use 2 to 80 letters.")).toBeVisible();
-  await expect(sheet.getByText('Searching for "organic black beans"')).toBeVisible();
+  await expect(sheet.getByText('Searching for “organic black beans”')).toBeVisible();
 
   await otherContext.close();
+});
+
+test("the item sheet has a Close button", async ({ page }) => {
+  await createHousehold(page);
+  await addTacos(page);
+  const sheet = await openItemSheet(page, "Black beans");
+  await expect(sheet.getByRole("heading", { name: "Black beans" })).toBeVisible();
+  await sheet.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // The exit has played and focus is back on the row that opened it.
+  await expect(row(page, "Black beans").getByRole("button", { name: /Black beans/ })).toBeFocused();
+});
+
+test("a long product name does not push the price off the row at 360 px", async ({ page }) => {
+  await createHousehold(page);
+  await chooseStore(page);
+  await addTacos(page);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(row(page, "Black beans").getByTestId("row-count")).toBeVisible();
+  const sheet = await openSwap(page);
+  const first = sheet.getByTestId("swap-option").first();
+  await expect(first).toBeVisible();
+
+  // A name far longer than the row can hold, with its line limit off so it really takes four lines or more.
+  await first.evaluate((btn) => {
+    const name = btn.querySelector(".line-clamp-2") as HTMLElement;
+    name.classList.remove("line-clamp-2");
+    name.textContent = "Simple Truth Organic Reduced Sodium Slow Cooked Black Beans With Roasted Garlic And Smoked Paprika, Family Size Value Pack, 6 Count Case";
+  });
+  expect((await first.boundingBox())!.height).toBeGreaterThanOrEqual(4 * 20);
+  const options = sheet.getByTestId("swap-option");
+  const n = await options.count();
+  for (let i = 0; i < n; i++) {
+    const rowBox = (await options.nth(i).boundingBox())!;
+    const price = (await options.nth(i).getByTestId("swap-price").boundingBox())!;
+    expect(price.height, `option ${i} price wrapped`).toBeLessThanOrEqual(17);
+    expect(price.x + price.width, `option ${i} price ran off the row`).toBeLessThanOrEqual(rowBox.x + rowBox.width + 0.5);
+    expect(price.x, `option ${i} price is squeezed under the name`).toBeGreaterThan(rowBox.x + rowBox.width / 2);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("typing .99 saves 99 cents", async ({ page }) => {
+  await createHousehold(page);
+  await addTacos(page);
+  const sheet = await openItemSheet(page, "Corn tortillas");
+  await sheet.getByRole("button", { name: "Set price" }).click();
+  await sheet.getByLabel("Price").fill("abc");
+  await sheet.getByRole("button", { name: "Save price" }).click();
+  await expect(sheet.getByText("Enter an amount like $3.00.")).toBeVisible();
+  await sheet.getByLabel("Price").fill(".99");
+  await sheet.getByRole("button", { name: "Save price" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // The list paints its offline copy first, so wait for the fresh value.
+  await expect(row(page, "Corn tortillas").getByTestId("row-total")).toHaveText("$0.99");
 });

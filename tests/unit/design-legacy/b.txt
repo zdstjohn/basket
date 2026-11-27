@@ -1,10 +1,8 @@
 app/(app)/household/HouseholdScreen.tsx
 app/(app)/household/PersonEditor.tsx
 components/BudgetMeter.tsx
-components/ListSheet.tsx
 components/PersonRow.tsx
 components/StorePicker.tsx
-components/SwapSheet.tsx
 components/household/AlwaysHaveSection.tsx
 components/household/FoodChips.tsx
 components/household/SignOutButton.tsx
