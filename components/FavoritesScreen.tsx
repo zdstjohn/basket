@@ -6,6 +6,7 @@ import { createBrowserClient } from "@/lib/db/client";
 import { getOrCreateWeek, listWeekMeals, setWeekMeal } from "@/lib/db/queries/weeks";
 import type { Household, MealRow } from "@/lib/db/rows";
 import { daysOfWeek, weekStartFor, type Day } from "@/lib/domain/weeks";
+import { markSettle } from "@/lib/motion/settle";
 import { dayName } from "@/lib/week/format";
 
 export function FavoritesScreen({ household }: { household: Household }) {
@@ -28,6 +29,7 @@ export function FavoritesScreen({ household }: { household: Household }) {
         return;
       }
       await setWeekMeal(sb, week.id, day, slot, meal.id);
+      markSettle(day);
       setMessage({ text: `Added ${meal.name} to ${dayName(day)}.`, bad: false });
     } catch {
       setMessage({ text: "We couldn't add that. Try again.", bad: true });

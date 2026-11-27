@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { ChevronRight, History } from "lucide-react";
 import { BudgetSentence } from "@/components/BudgetSentence";
 import { FlagLines } from "@/components/flags/FlagLines";
@@ -25,10 +26,28 @@ import { findFlags, ingredientNames } from "@/lib/domain/flags";
 import { householdServings } from "@/lib/domain/portions";
 import { dinnerDate, daysOfWeek, todayIn, type Day } from "@/lib/domain/weeks";
 import { useFlipList } from "@/lib/motion/flip";
+import { tick } from "@/lib/motion/haptics";
+import { DUR, prefersReducedMotion } from "@/lib/motion/motion";
+import { newlyFilled, takeSettle } from "@/lib/motion/settle";
+import { morph, supportsViewTransitions } from "@/lib/motion/view-transition";
 import { photoVerdict } from "@/lib/photos/verdict";
 import { barAboveNav, quietLink } from "@/lib/ui";
 import { dayShort, formatWeekRange } from "@/lib/week/format";
 import { dayNote } from "@/lib/week/note";
+
+// The open reveal plays once per page session: not on realtime reloads, not on coming back from a sheet or Add a meal.
+let revealedThisSession = false;
+const HERO = "hero";
+
+/** The photo box of a day's tile (or of tonight's hero), the thing that grows into the sheet. */
+const photoBoxOf = (d: Day): HTMLElement | null =>
+  document.querySelector<HTMLElement>(`[data-testid="day-row-${d}"] [data-photo-state]`);
+
+/** No element keeps a view-transition-name once a morph is over, whatever happened in the middle of it. */
+const clearPhotoNames = () =>
+  document.querySelectorAll<HTMLElement>('[style*="meal-photo"]').forEach((el) => {
+    el.style.viewTransitionName = "";
+  });
 
 const weekdayOf = (ymd: string): string =>
   new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(new Date(`${ymd}T00:00:00Z`));
@@ -43,6 +62,14 @@ export function WeekScreen({ household }: { household: Household }) {
   const card = held ?? ask;
   const list = useWeekList(household, data?.week.id ?? null);
   const [openDay, setOpenDay] = useState<Day | null>(null);
+  // The sheet opened by its photo growing, so it does not also slide in, and Close shrinks the photo back.
+  const [grown, setGrown] = useState(false);
+  const morphing = useRef(false);
+  // Keys (the hero, or a day) that play the open reveal, with their place in the stagger; emptied as each finishes.
+  const [reveal, setReveal] = useState<ReadonlyMap<string, number>>(new Map());
+  // Days whose tile is settling into place right now.
+  const [settling, setSettling] = useState<ReadonlySet<string>>(new Set());
+  const filledBefore = useRef<string[] | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState(false);
@@ -140,6 +167,107 @@ export function WeekScreen({ household }: { household: Household }) {
   const flipKey = data ? `${heroDay ?? "-"}|${cells.map((d) => `${d}${forDay(d)?.meal_id ?? ""}`).join(",")}` : "";
   useFlipList(boardRef, flipKey);
 
+  // The order the open reveal plays in: the hero first, then the pinboard in week order.
+  const orderKey = data ? [...(heroDay ? [HERO] : []), ...cells].join(",") : "";
+  const hasData = !!data;
+  const filledKey = data ? data.weekMeals.filter((m) => m.slot === slot).map((m) => m.day).join(",") : "";
+
+  // Each time week data arrives: the first time in this page session the pinboard reveals, and a dinner that just
+  // landed on a day (added here, or by the other phone) settles into it. Layout effect: the classes are on before the first paint.
+  useLayoutEffect(() => {
+    if (!hasData) return;
+    const filled = filledKey === "" ? [] : filledKey.split(",");
+    const marked = takeSettle();
+    const order = orderKey.split(",").filter((k) => k !== "");
+    // Only a day with its own tile settles (a hero has none, and its photo never moves).
+    const arrived = [...new Set([...(marked ? [marked] : []), ...newlyFilled(filledBefore.current, filled)])].filter(
+      (d) => filled.includes(d) && order.includes(d),
+    );
+    filledBefore.current = filled;
+    if (!revealedThisSession) {
+      revealedThisSession = true;
+      // A tile that settles does not also reveal: one entrance per element.
+      setReveal(new Map(order.flatMap((k, i) => (arrived.includes(k) ? [] : [[k, i] as [string, number]]))));
+      setTimeout(() => setReveal(new Map()), 1200); // a safety net if an animation never reports its end
+    }
+    if (arrived.length > 0) {
+      setSettling((prev) => new Set([...prev, ...arrived]));
+      if (marked && arrived.includes(marked)) setTimeout(() => tick(), 150);
+      setTimeout(() => setSettling((prev) => new Set([...prev].filter((d) => !arrived.includes(d)))), DUR.settle);
+    }
+  }, [hasData, filledKey, orderKey]);
+
+  const endReveal = (key: string) => (e: React.AnimationEvent) => {
+    if (e.target !== e.currentTarget) return;
+    setReveal((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+  /** The reveal's class and stagger step for a key, while it is still due. */
+  const revealProps = (key: string): { className: string; style?: React.CSSProperties; onAnimationEnd?: (e: React.AnimationEvent) => void } => {
+    const step = reveal.get(key);
+    return step === undefined
+      ? { className: "" }
+      : { className: "bk-reveal", style: { "--i": step } as React.CSSProperties, onAnimationEnd: endReveal(key) };
+  };
+
+  /** Opens a dinner: its photo grows into the sheet where the browser can do that, otherwise the sheet slides up. */
+  async function openDinner(d: Day) {
+    if (openDay || morphing.current) return;
+    const from = photoBoxOf(d);
+    if (!from || prefersReducedMotion() || !supportsViewTransitions()) {
+      setGrown(false);
+      setOpenDay(d);
+      return;
+    }
+    morphing.current = true;
+    try {
+      await morph({
+        from,
+        to: () => document.querySelector<HTMLElement>("[data-sheet-photo]"),
+        update: () =>
+          flushSync(() => {
+            setGrown(true);
+            setOpenDay(d);
+          }),
+      });
+    } finally {
+      morphing.current = false;
+      clearPhotoNames();
+    }
+  }
+
+  /** Close on a sheet the photo grew into: the photo shrinks back to its tile. A tap while a morph runs just closes. */
+  async function closeDinner() {
+    const d = openDay;
+    if (!d) return;
+    if (morphing.current) {
+      setOpenDay(null);
+      setGrown(false);
+      clearPhotoNames();
+      return;
+    }
+    morphing.current = true;
+    try {
+      await morph({
+        from: document.querySelector<HTMLElement>("[data-sheet-photo]"),
+        to: () => photoBoxOf(d),
+        update: () =>
+          flushSync(() => {
+            setOpenDay(null);
+            setGrown(false);
+          }),
+      });
+    } finally {
+      morphing.current = false;
+      clearPhotoNames();
+      document.querySelector<HTMLElement>(`[data-testid="day-row-${d}"] button`)?.focus({ preventScroll: true });
+    }
+  }
+
   const demote = (id: string) => setDemoted((prev) => new Set(prev).add(id));
 
   const tile = (d: Day) => {
@@ -158,7 +286,7 @@ export function WeekScreen({ household }: { household: Household }) {
         note={info.tileNote}
         lines={info.lines}
         favorite={meal.is_favorite}
-        onOpen={() => setOpenDay(d)}
+        onOpen={() => void openDinner(d)}
         imgRef={widthRef(meal.id)}
       />
     );
@@ -203,7 +331,8 @@ export function WeekScreen({ household }: { household: Household }) {
             note={tonightInfo.note}
             lines={tonightInfo.flags.length > 0 ? <FlagLines flags={tonightInfo.flags} people={data.people} onPhoto /> : null}
             favorite={tonightInfo.meal.is_favorite}
-            onOpen={() => setOpenDay(heroDay)}
+            onOpen={() => void openDinner(heroDay)}
+            reveal={revealProps(HERO)}
             onDemote={() => demote(tonightInfo.meal.id)}
             imgRef={widthRef(tonightInfo.meal.id)}
           />
@@ -249,11 +378,20 @@ export function WeekScreen({ household }: { household: Household }) {
             // A two-column grid in week order, row by row (tonight first when it is a tile or an open row). Cells
             // stretch to the tallest in their row, so a short tile or an Add row never leaves a hole beside a tall one.
             <div ref={boardRef} className="grid grid-cols-2 items-stretch gap-2">
-              {cells.map((d) => (
-                <div key={d} data-testid={`day-row-${d}`} data-flip-key={d} className={`flex ${d === tonight && !forDay(d) ? "col-span-2" : ""}`}>
-                  {tile(d)}
-                </div>
-              ))}
+              {cells.map((d) => {
+                const { className, ...rest } = revealProps(d);
+                return (
+                  <div
+                    key={d}
+                    data-testid={`day-row-${d}`}
+                    data-flip-key={d}
+                    {...rest}
+                    className={`flex rounded-md ${d === tonight && !forDay(d) ? "col-span-2" : ""} ${className} ${settling.has(d) ? "bk-settle" : ""}`}
+                  >
+                    {tile(d)}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -282,7 +420,12 @@ export function WeekScreen({ household }: { household: Household }) {
           day={openDay}
           photo={data.photos[openMeal.id] ?? null}
           people={data.people}
-          onClose={() => setOpenDay(null)}
+          enter={grown ? "none" : "slide"}
+          onGrownClose={grown ? () => void closeDinner() : undefined}
+          onClose={() => {
+            setOpenDay(null);
+            setGrown(false);
+          }}
           onChanged={reload}
         />
       )}

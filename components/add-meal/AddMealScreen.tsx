@@ -18,6 +18,7 @@ import type { Household, MealRow } from "@/lib/db/rows";
 import { ingredientNames } from "@/lib/domain/flags";
 import type { Meal, Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
+import { markSettle } from "@/lib/motion/settle";
 import { watchPeople } from "@/lib/people-watch";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts";
 import { matchedWords, parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
@@ -207,6 +208,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     const week = await getOrCreateWeek(sb, household.id, weekStart as string);
     await setWeekMeal(sb, week.id, day, slot, mealId);
     if (key) clearDraft(key);
+    markSettle(day);
     router.push("/week");
   }
 
