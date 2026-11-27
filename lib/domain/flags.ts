@@ -1,5 +1,5 @@
 import { familiesFor, matchFood } from './families';
-import type { Meal, Person } from './types';
+import type { Meal, Person, PersonChange } from './types';
 import { singular } from './words';
 
 export interface Flag {
@@ -63,16 +63,26 @@ function mergeSame(list: Built[], wide: boolean): Built[] {
       && familiesFor(o.flag.food, { wide }).families.some((f) => ids.includes(f.id)));
     if (!twin) { out.push(b); continue; }
     const hits = [...twin.hits, ...b.hits].sort((x, y) => x.index - y.index);
+    // Keep the food that covers more families ("eggs and dairy" over "milk"); on a tie, the first.
+    const covers = (food: string): number => familiesFor(food, { wide }).families.length;
+    const food = covers(b.flag.food) > covers(twin.flag.food) ? b.flag.food : twin.flag.food;
     twin.hits = hits;
     twin.first = hits[0].index;
     twin.indexes = new Set(hits.map((h) => h.index));
     twin.flag = {
       ...twin.flag,
+      food,
       found: [...new Set(hits.map((h) => h.found))],
       often: hits.every((h) => h.often),
     };
   }
   return out;
+}
+
+/** True when a change names one of this person's allergies, in either direction ("almonds" for "tree nuts"). */
+export function isAllergyChange(change: PersonChange, person: Person): boolean {
+  return (person.allergies ?? []).some((a) => matchFood(a, change.food, { wide: true }) !== null
+    || matchFood(change.food, a, { wide: true }) !== null);
 }
 
 /** Allergies first, then dislikes; within each, recipe order of the first hit. One flag per (kind, food). */

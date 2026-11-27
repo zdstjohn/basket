@@ -45,6 +45,13 @@ export interface VegSwap {
 
 export type SwapIdea = VegSwap;
 
+export interface PersonChange {
+  personId: string;
+  food: string;
+  action: 'leave_out' | 'swap';
+  swap?: SwapIdea;
+}
+
 export interface Meal {
   id: string;
   name: string;
@@ -53,4 +60,5 @@ export interface Meal {
   vegSwap: VegSwap | null;
   everyoneVegetarian: boolean;
   isFavorite: boolean;
+  personChanges?: PersonChange[]; // optional on purpose: read as `?? []` (cached lists and old rows have none)
 }

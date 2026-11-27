@@ -170,4 +170,12 @@ describe('flags', () => {
     expect(ingredientNames({ ingredients: ['1 cup a'], structured: null })).toEqual(['1 cup a']);
     expect(ingredientNames({ ingredients: ['1 cup a'], structured: [] })).toEqual(['1 cup a']);
   });
+  it('when two allergies merge, keeps the food that covers more families', () => {
+    const both = people.map((p) => (p.id === 'son' ? { ...p, allergies: ['milk', 'eggs and dairy'] } : p));
+    const flags = findFlags(['eggs', 'sharp cheddar'], both);
+    expect(flags).toHaveLength(1);
+    expect(flagCopy(flags[0], both).cardHead).toBe('Eggs and dairy allergy: Son');
+    const flipped = people.map((p) => (p.id === 'son' ? { ...p, allergies: ['eggs and dairy', 'milk'] } : p));
+    expect(flagCopy(findFlags(['eggs', 'sharp cheddar'], flipped)[0], flipped).cardHead).toBe('Eggs and dairy allergy: Son');
+  });
 });

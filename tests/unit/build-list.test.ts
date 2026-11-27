@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { familyOfFive } from '@/lib/fixtures/household';
+import { soup } from '@/lib/fixtures/soup';
+import type { Meal, PersonChange } from '@/lib/domain/types';
 import { listTotals } from '@/lib/domain/list';
 import type { Candidate } from '@/lib/domain/packages';
 import { parseSize } from '@/lib/kroger/size';
@@ -162,5 +165,35 @@ describe('buildList reads an old cache', () => {
     const b = buildList(old as ListInputs);
     expect(b.productMode).toBe(false);
     expect(b.items).toHaveLength(3);
+  });
+});
+
+describe('buildList with a person’s changes', () => {
+  const zucchini = { canonical: 'zucchini', amountPerServing: 0.25, unit: 'each', role: 'produce' as const };
+  const withChanges = (personChanges: PersonChange[]): ListInputs =>
+    base({ staples: [], entries: [{ meal: { ...soup, personChanges }, servings: null }], people: familyOfFive });
+  const row = (b: ReturnType<typeof buildList>, k: string) => b.items.find((i) => i.key === k);
+
+  it('buys less of a food one person has left out', () => {
+    const plain = buildList(withChanges([]));
+    const b = buildList(withChanges([{ personId: 'daughter-4', food: 'mushrooms', action: 'leave_out' }]));
+    // 8 oz x (3.8 / 4) x (3.3 / 3.8) = 6.6 oz
+    expect(row(b, 'cremini mushrooms')!.qty.amount).toBeCloseTo(6.6 * 28.3495, 1);
+    expect(row(b, 'white beans')!.qty).toEqual(row(plain, 'white beans')!.qty);
+  });
+  it('adds a row for the swap', () => {
+    const b = buildList(withChanges([{ personId: 'daughter-4', food: 'mushrooms', action: 'swap', swap: zucchini }]));
+    expect(row(b, 'zucchini')).toBeDefined();
+  });
+  it('has no row when all five leave the food out', () => {
+    const b = buildList(withChanges(familyOfFive.map((p) => ({ personId: p.id, food: 'mushrooms', action: 'leave_out' as const }))));
+    expect(row(b, 'cremini mushrooms')).toBeUndefined();
+  });
+  it('opens a list cached before this release', () => {
+    const cachedMeal: Meal = { id: soup.id, name: soup.name, baseServings: 4, ingredients: soup.ingredients, vegSwap: null, everyoneVegetarian: false, isFavorite: false };
+    const cachedPeople = familyOfFive.map(({ id, name, age, diet, appetite, dislikes }) => ({ id, name, age, diet, appetite, dislikes }));
+    const old = base({ staples: [], entries: [{ meal: cachedMeal, servings: null }], people: cachedPeople });
+    expect(() => buildList(old)).not.toThrow();
+    expect(buildList(old)).toEqual(buildList(withChanges([])));
   });
 });

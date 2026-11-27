@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { scaleMeal } from '@/lib/domain/scaling';
+import { eatersOf, scaleMeal } from '@/lib/domain/scaling';
+import { soup } from '@/lib/fixtures/soup';
+import { changeNotes, dayNote } from '@/lib/week/note';
 import { tacos } from '@/lib/fixtures/tacos';
 import { familyOfFive } from '@/lib/fixtures/household';
 import type { Meal, Person } from '@/lib/domain/types';
 
+const zucchini = { canonical: 'zucchini', amountPerServing: 0.25, unit: 'each', role: 'produce' as const };
+/** The line's amount divided by its amount with nothing left out. */
 const line = (lines: ReturnType<typeof scaleMeal>, canonical: string) =>
   lines.find((l) => l.canonical === canonical);
+
+const grams = (l: { qty: { amount: number } }) => l.qty.amount;
+/** The line's amount as a fraction of what the whole household (3.8 servings) would need, given a recipe amount in base units. */
+const share = (m: Meal, canonical: string, fullBase: number): number =>
+  grams(line(scaleMeal(m, familyOfFive), canonical)!) / (fullBase * (3.8 / m.baseServings));
 
 describe('scaleMeal', () => {
   const lines = scaleMeal(tacos, familyOfFive);
@@ -122,5 +131,50 @@ describe('scaleMeal', () => {
       expect(tofu.qty.amount).toBeCloseTo(0.25, 9);
       expect(tofu.qty.countUnit).toBe('pack');
     });
+  });
+});
+
+describe('scaleMeal with a person’s changes', () => {
+  it('buys less of a food one person has left out', () => {
+    const m = { ...soup, personChanges: [{ personId: 'daughter-4', food: 'mushrooms', action: 'leave_out' as const }] };
+    // 8 oz x (3.8 / 4) x (3.3 / 3.8) = 6.6 oz
+    expect(grams(line(scaleMeal(m, familyOfFive), 'cremini mushrooms')!)).toBeCloseTo(6.6 * 28.3495, 1);
+    expect(grams(line(scaleMeal(m, familyOfFive), 'white beans')!)).toBe(grams(line(scaleMeal(soup, familyOfFive), 'white beans')!));
+  });
+  it('adds the swap for that person only', () => {
+    const m = { ...soup, personChanges: [{ personId: 'daughter-4', food: 'mushrooms', action: 'swap' as const, swap: zucchini }] };
+    expect(line(scaleMeal(m, familyOfFive), 'zucchini')!.qty.amount).toBeCloseTo(0.25 * 3.8 * (0.5 / 3.8), 5);
+  });
+  it('drops the line when everyone has left it out', () => {
+    const m = { ...soup, personChanges: familyOfFive.map((p) => ({ personId: p.id, food: 'mushrooms', action: 'leave_out' as const })) };
+    expect(line(scaleMeal(m, familyOfFive), 'cremini mushrooms')).toBeUndefined();
+  });
+  it('ignores a change for someone no longer in the household, or a food not in the meal', () => {
+    const m = { ...soup, personChanges: [{ personId: 'gone', food: 'mushrooms', action: 'leave_out' as const }, { personId: 'son', food: 'olives', action: 'leave_out' as const }] };
+    expect(scaleMeal(m, familyOfFive)).toEqual(scaleMeal(soup, familyOfFive));
+  });
+  it('combines with the vegetarian rule on meat', () => {
+    const m = { ...tacos, personChanges: [{ personId: 'son', food: 'chicken', action: 'leave_out' as const }] };
+    // chicken eaters: Dad 1 + Daughter 0.6 + Daughter 0.5 = 2.1 of 3.8
+    expect(share(m, 'boneless chicken thighs', 453.59237)).toBeCloseTo(2.1 / 3.8, 5);
+  });
+  it('has one rule for who eats a line', () => {
+    const m = { ...soup, personChanges: [{ personId: 'daughter-4', food: 'mushrooms', action: 'leave_out' as const }] };
+    expect(eatersOf(m, soup.ingredients[0], familyOfFive).map((p) => p.id)).toEqual(['dad', 'mom', 'son', 'daughter-6']);
+    expect(eatersOf(m, soup.ingredients[1], familyOfFive)).toHaveLength(5);
+  });
+  it('puts a person’s swap before the vegetarian swap line', () => {
+    const m = { ...tacos, personChanges: [{ personId: 'son', food: 'onion', action: 'swap' as const, swap: zucchini }] };
+    expect(scaleMeal(m, familyOfFive).map((l) => l.canonical).slice(-2)).toEqual(['zucchini', 'black beans']);
+  });
+  it('applies a change to the vegetarian swap food too', () => {
+    const m = { ...tacos, personChanges: [{ personId: 'mom', food: 'black beans', action: 'leave_out' as const }] };
+    expect(line(scaleMeal(m, familyOfFive), 'black beans')).toBeUndefined();
+    expect(dayNote(m, familyOfFive, null)).toBe('Mom: no black beans');
+  });
+  it('scales a meal cached before this release, and people cached before allergies', () => {
+    const old: Meal = { id: soup.id, name: soup.name, baseServings: 4, ingredients: soup.ingredients, vegSwap: null, everyoneVegetarian: false, isFavorite: false };
+    expect(scaleMeal(old, familyOfFive)).toEqual(scaleMeal({ ...soup, personChanges: [] }, familyOfFive));
+    expect(changeNotes(old, familyOfFive)).toEqual([]);
   });
 });

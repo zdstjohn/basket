@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PersonChange } from '@/lib/domain/types';
 
 /** http(s) only: these become links other household members click. */
 export const HttpUrlSchema = z
@@ -31,6 +32,16 @@ export const VegSwapSchema = z.object({
   unit: z.string().min(1).max(30),
   role: RoleSchema,
 });
+
+/** One person's change to one food in a dinner. A swap carries the replacement food. */
+export const PersonChangeSchema: z.ZodType<PersonChange> = z
+  .object({
+    personId: z.string().min(1).max(80),
+    food: z.string().min(1).max(40),
+    action: z.enum(['leave_out', 'swap']),
+    swap: VegSwapSchema.optional(),
+  })
+  .refine((c) => c.action !== 'swap' || c.swap !== undefined, { message: 'a swap needs a swap food', path: ['swap'] });
 
 export const RecipeDraftSchema = z.object({
   name: z.string().min(1).max(120),

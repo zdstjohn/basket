@@ -415,6 +415,7 @@ export type Database = {
           photo_path: string | null
           photo_url: string | null
           source_url: string | null
+          person_changes?: Json | null
           times_planned: number
           veg_swap: Json | null
         }
@@ -432,6 +433,7 @@ export type Database = {
           photo_path?: string | null
           photo_url?: string | null
           source_url?: string | null
+          person_changes?: Json | null
           times_planned?: number
           veg_swap?: Json | null
         }
@@ -449,6 +451,7 @@ export type Database = {
           photo_path?: string | null
           photo_url?: string | null
           source_url?: string | null
+          person_changes?: Json | null
           times_planned?: number
           veg_swap?: Json | null
         }
