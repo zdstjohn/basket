@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(219);
+select plan(227);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -238,12 +238,19 @@ select is((select status from public.meal_verdicts), 'answered', 'C, in the same
 update public.meal_verdicts set status = 'skipped';
 select is((select status from public.meal_verdicts), 'answered', 'a skip never downgrades an answer');
 select is((select votes from public.meal_verdicts), '{"x":"up"}'::jsonb, 'the votes survive the skip');
+select is((select updated_by from public.meal_verdicts), 'cccccccc-0000-4000-8000-00000000000c'::uuid, 'the update is stamped with whoever made it');
 reset role;
 
 select pg_temp.act_as('aaaaaaaa-0000-4000-8000-00000000000a');
 select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-25', 'answered')$q$, '23505', null, 'a second verdict for the same meal and day is a unique violation');
 select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-24', 'maybe')$q$, '23514', null, 'an unknown verdict status violates the check');
 select throws_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status, votes) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-24', 'answered', '[]')$q$, '23514', null, 'votes must be an object');
+select lives_ok($q$insert into public.meal_verdicts (household_id, meal_id, eaten_on, status, updated_by) values ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'M_A'), '2026-11-20', 'skipped', 'cccccccc-0000-4000-8000-00000000000c')$q$, 'A can insert a verdict even while naming someone else');
+select is((select updated_by from public.meal_verdicts where eaten_on = '2026-11-20'), 'aaaaaaaa-0000-4000-8000-00000000000a'::uuid, 'the insert is stamped with whoever made it, not who the client named');
+select throws_ok($q$delete from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'nobody can delete a verdict, even in their own household');
+select throws_ok($q$delete from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '42501', null, 'A cannot delete an HB verdict');
+select throws_ok($q$update public.meal_verdicts set household_id = (select v::uuid from t_kv where k = 'HB') where household_id = (select v::uuid from t_kv where k = 'HA')$q$, '42501', null, 'A cannot move an HA verdict into HB');
+select throws_ok($q$update public.meal_verdicts set meal_id = (select v::uuid from t_kv where k = 'M_B') where household_id = (select v::uuid from t_kv where k = 'HA') and eaten_on = '2026-11-20'$q$, '23503', null, 'A cannot point an HA verdict at an HB meal');
 
 update public.people set allergies = array['tree nuts'] where household_id = (select v::uuid from t_kv where k = 'HA');
 select is((select allergies from public.people where household_id = (select v::uuid from t_kv where k = 'HA') limit 1), array['tree nuts'], 'A can set allergies on HA people');
@@ -258,13 +265,14 @@ select throws_ok($q$update public.meals set person_changes = '{}' where househol
 select lives_ok($q$update public.meals set method = 'oven', total_minutes = 45, make_ahead = true, rating = 4.5, rating_count = 812, likes = 3, steps = '["Mix","Bake"]', person_changes = '[{"personId":"x","change":"leave_out"}]', facts_checked_at = now() where household_id = (select v::uuid from t_kv where k = 'HA')$q$, 'valid meal facts are accepted');
 select is((select method || total_minutes::text || rating::text from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 'oven454.5', 'the meal facts read back');
 select is((select jsonb_array_length(steps) from public.meals where household_id = (select v::uuid from t_kv where k = 'HA')), 2, 'steps read back');
-select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and method is not null), 0, 'A''s update did not reach an HB meal');
 
 reset role;
 
 select pg_temp.act_as('bbbbbbbb-0000-4000-8000-00000000000b');
 select is((select status from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), 'skipped', 'A''s update left the HB verdict alone');
 select is((select votes from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HB')), '{}'::jsonb, 'A''s update left the HB votes alone');
+select is((select count(*)::int from public.meals where household_id = (select v::uuid from t_kv where k = 'HB') and method is not null), 0, 'A''s update did not reach an HB meal');
+select throws_ok($q$update public.meal_verdicts set household_id = (select v::uuid from t_kv where k = 'HA') where household_id = (select v::uuid from t_kv where k = 'HB')$q$, '42501', null, 'B cannot move an HB verdict into HA');
 select is((select count(*)::int from public.meal_verdicts where household_id = (select v::uuid from t_kv where k = 'HA')), 0, 'B sees no HA verdicts');
 select is((select allergies from public.people where household_id = (select v::uuid from t_kv where k = 'HB') limit 1), '{}'::text[], 'A''s update left HB allergies alone');
 reset role;
