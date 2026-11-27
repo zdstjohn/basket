@@ -31,24 +31,31 @@ function spring(): string {
   }
 }
 
-function play(el: HTMLElement, frames: Keyframe[], duration: number, easing: string) {
+type Slides = WeakMap<HTMLElement, Animation>;
+
+function play(slides: Slides, el: HTMLElement, frames: Keyframe[], duration: number, easing: string) {
   if (typeof el.animate !== "function") return;
+  let a: Animation;
   try {
-    el.animate(frames, { duration, easing });
+    a = el.animate(frames, { duration, easing });
   } catch {
-    el.animate(frames, { duration, easing: "ease-out" });
+    a = el.animate(frames, { duration, easing: "ease-out" });
   }
+  if (a) slides.set(el, a);
 }
 
 /** When `signature` changes, every [data-flip-key] that moved slides from its old place (a fade under reduced motion). */
 export function useFlipList(ref: React.RefObject<HTMLElement | null>, signature: string): void {
   const prev = useRef<Map<string, Pos> | null>(null);
+  // Only the slides this hook started are cancelled; CSS animations (reveal, settle) are left alone.
+  const slides = useRef<Slides>(new WeakMap());
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;
     // A slide still running would put its in-flight transform into the measurement.
     root.querySelectorAll<HTMLElement>("[data-flip-key]").forEach((el) => {
-      if (typeof el.getAnimations === "function") el.getAnimations().forEach((a) => a.cancel());
+      slides.current.get(el)?.cancel();
+      slides.current.delete(el);
     });
     const now = measureKeys(root);
     const before = prev.current;
@@ -60,8 +67,8 @@ export function useFlipList(ref: React.RefObject<HTMLElement | null>, signature:
         if (!old) return;
         const { dx, dy } = invert(old, pos);
         if (dx === 0 && dy === 0) return;
-        if (reduced) play(el, [{ opacity: 0 }, { opacity: 1 }], DUR.fast, "linear");
-        else play(el, [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], DUR.snap, easing);
+        if (reduced) play(slides.current, el, [{ opacity: 0 }, { opacity: 1 }], DUR.fast, "linear");
+        else play(slides.current, el, [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], DUR.snap, easing);
       });
     }
     const next = new Map<string, Pos>();

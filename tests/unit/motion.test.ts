@@ -267,6 +267,31 @@ describe("flip", () => {
     expect(calls[1].key).toBe("b");
     expect(calls[1].frames[0]).toEqual({ transform: "translate(0px, -50px)" });
   });
+
+  it("leaves a CSS animation from another source running", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const css = { cancelled: false, cancel() { css.cancelled = true; } };
+    const slides: { cancelled: boolean; cancel(): void }[] = [];
+    Element.prototype.animate = function () {
+      const a = { cancelled: false, cancel() { a.cancelled = true; } };
+      slides.push(a);
+      return a as unknown as Animation;
+    } as never;
+    // getAnimations would list the CSS animation too; the hook must not use it to cancel.
+    (Element.prototype as { getAnimations?: unknown }).getAnimations = () => [css, ...slides.filter((a) => !a.cancelled)];
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const top = Number(this.getAttribute("data-top") ?? 0);
+      return { left: 0, top, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: top, toJSON() {} } as DOMRect;
+    };
+    window.matchMedia = (() => ({ matches: false })) as never;
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Harness, { sig: "1", tops: { a: 0, b: 50 } })));
+    await act(async () => root.render(createElement(Harness, { sig: "2", tops: { a: 50, b: 50 } })));
+    await act(async () => root.render(createElement(Harness, { sig: "3", tops: { a: 0, b: 50 } })));
+    await act(async () => root.unmount());
+    expect(css.cancelled).toBe(false);
+    expect(slides[0].cancelled).toBe(true);
+  });
 });
 
 describe("globals.css reduced motion", () => {
