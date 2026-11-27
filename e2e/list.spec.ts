@@ -536,40 +536,63 @@ test("back online says Saved only when the queue emptied", async ({ page, contex
   await expect(page.getByRole("checkbox", { name: "Got Yellow onion" })).toBeChecked();
 });
 
-test("back online says only Back online when the server refused a change", async ({ page, context }) => {
-  await tickOffline(page, context);
-  // Every write is refused as bad data (a real answer, not a dropped connection).
-  await page.route("**/rest/v1/week_item_state*", (route) =>
-    route.request().method() === "GET"
-      ? route.continue()
-      : route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ code: "23514", message: "refused", details: null, hint: null }) }),
-  );
-  await context.setOffline(false);
-  await page.clock.runFor(12_000);
-  await expect(page.getByText("Back online.", { exact: true })).toBeVisible();
-  await expect(page.getByText("Back online. Saved.")).toHaveCount(0);
-  await page.clock.runFor(2500);
-  await expect(page.getByText("Back online.", { exact: true })).toHaveCount(0);
-});
+// page.route does not see requests of a page its service worker controls (WebKit), so these two block the worker.
+test.describe("with the service worker blocked, so every request can be routed", () => {
+  test.use({ serviceWorkers: "block" });
 
-test("the stale-prices line and the offline line can show together", async ({ page, context }) => {
-  await createHousehold(page);
-  await chooseStore(page);
-  // Every Fred Meyer lookup fails, so the prices on screen may be old.
-  await page.route("**/api/kroger/match", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
-  await planTacos(page);
-  await openList(page);
-  const stale = page.getByText("Fred Meyer prices may be out of date.");
-  await expect(stale).toBeVisible();
+  test("back online says only Back online when the server refused a change", async ({ page, context }) => {
+    await createHousehold(page);
+    await planTacos(page);
+    await openList(page);
+    await expect(page.getByTestId("list-row")).toHaveCount(4);
+    // The clock is installed before the signal drops, so the next look for it is ours to step.
+    await page.clock.install();
+    await page.reload();
+    await expect(page.getByTestId("list-row")).toHaveCount(4);
+    await context.setOffline(true);
+    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+    await expect(page.getByText("Offline. Showing your last list.")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Got Yellow onion" }).check();
+    await expect(page.getByRole("checkbox", { name: "Got Yellow onion" })).toBeChecked();
 
-  await context.setOffline(true);
-  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
-  const offline = page.getByText("Offline. Showing your last list.");
-  await expect(offline).toBeVisible();
-  await expect(stale).toBeVisible();
-  // The offline line comes first.
-  const [a, b] = [(await offline.boundingBox())!, (await stale.boundingBox())!];
-  expect(a.y).toBeLessThan(b.y);
+    // Every write is refused as bad data (a real answer, not a dropped connection).
+    await page.route("**/rest/v1/week_item_state*", (route) =>
+      route.request().method() === "GET"
+        ? route.continue()
+        : route.fulfill({
+            status: 400,
+            contentType: "application/json",
+            headers: { "access-control-allow-origin": "*", "access-control-expose-headers": "*" },
+            body: JSON.stringify({ code: "23514", message: "refused", details: null, hint: null }),
+          }),
+    );
+    await context.setOffline(false);
+    await page.clock.runFor(12_000);
+    await expect(page.getByText("Back online.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Back online. Saved.")).toHaveCount(0);
+    await page.clock.runFor(2500);
+    await expect(page.getByText("Back online.", { exact: true })).toHaveCount(0);
+  });
+
+  test("the stale-prices line and the offline line can show together", async ({ page, context }) => {
+    await createHousehold(page);
+    await chooseStore(page);
+    // Every Fred Meyer lookup fails, so the prices on screen may be old.
+    await page.route("**/api/kroger/match", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+    await planTacos(page);
+    await openList(page);
+    const stale = page.getByText("Fred Meyer prices may be out of date.");
+    await expect(stale).toBeVisible();
+
+    await context.setOffline(true);
+    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+    const offline = page.getByText("Offline. Showing your last list.");
+    await expect(offline).toBeVisible();
+    await expect(stale).toBeVisible();
+    // The offline line comes first.
+    const [a, b] = [(await offline.boundingBox())!, (await stale.boundingBox())!];
+    expect(a.y).toBeLessThan(b.y);
+  });
 });
 
 test("Check off all shows Undo without moving the list", async ({ page }) => {
