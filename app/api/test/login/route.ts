@@ -2,8 +2,18 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/db/server";
 
 // Test-only sign-in for e2e runs. It does not exist unless E2E=1, and never on Vercel.
+// It also refuses to run unless the database is local, so a test run can never create users elsewhere.
+const localDatabase = (): boolean => {
+  try {
+    const host = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname;
+    return host === "127.0.0.1" || host === "localhost";
+  } catch {
+    return false;
+  }
+};
+
 const enabled = () =>
-  process.env.E2E === "1" && process.env.VERCEL !== "1";
+  process.env.E2E === "1" && process.env.VERCEL !== "1" && localDatabase();
 
 const notFound = () => new NextResponse(null, { status: 404 });
 
