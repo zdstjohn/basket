@@ -64,6 +64,14 @@ export function enqueuePatch(householdId: string, entry: Omit<QueuedPatch, 'id'>
   saveQueue(householdId, mergePatch(loadQueue(householdId), { ...entry, id: newEntryId() }));
 }
 
+/** Adds many changes with one read and one write of the queue: still one entry per item, in the given order. */
+export function enqueuePatches(householdId: string, entries: Omit<QueuedPatch, 'id'>[]): void {
+  if (entries.length === 0) return;
+  let queue = loadQueue(householdId);
+  for (const e of entries) queue = mergePatch(queue, { ...e, id: newEntryId() });
+  saveQueue(householdId, queue);
+}
+
 const inflight = new Map<string, Promise<number>>();
 
 /**

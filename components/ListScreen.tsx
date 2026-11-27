@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BUDGET_LOOK } from "@/components/BudgetMeter";
 import { ListRow } from "@/components/ListRow";
 import { ListSheet } from "@/components/ListSheet";
@@ -9,9 +9,10 @@ import { useOfflineShell } from "@/components/useOfflineShell";
 import type { Household } from "@/lib/db/rows";
 import type { Store } from "@/lib/domain/list";
 import { formatDollars } from "@/lib/domain/money-input";
+import { checkedOffMessage, keysToCheck, keysToUntick } from "@/lib/list/check-all";
 import { groupItems } from "@/lib/list/groups";
 import { STORE_NAMES } from "@/lib/list/prices";
-import { pillButton, stickyAboveNav } from "@/lib/ui";
+import { focusRing, pillButton, stickyAboveNav } from "@/lib/ui";
 import { useWeekId, useWeekList } from "@/lib/useWeekList";
 
 export function ListScreen({ household }: { household: Household }) {
@@ -29,6 +30,29 @@ export function ListScreen({ household }: { household: Household }) {
   const skipped = useMemo(() => here.filter((i) => i.haveIt), [here]);
   const buyCount = items.filter((i) => !i.haveIt).length;
   const look = BUDGET_LOOK[state];
+  const toCheck = useMemo(() => keysToCheck(items, store, checked), [items, store, checked]);
+  const [undo, setUndo] = useState<string[] | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+  }, []);
+
+  function checkOffAll() {
+    const keys = toCheck;
+    if (keys.length === 0) return;
+    void run(() => list.updateMany(keys, { checked: true }));
+    setUndo(keys);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndo(null), 8000);
+  }
+
+  function undoCheckOff() {
+    if (!undo) return;
+    const keys = keysToUntick(undo, checked);
+    setUndo(null);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    if (keys.length > 0) void run(() => list.updateMany(keys, { checked: false }));
+  }
 
   async function run(fn: () => Promise<void>) {
     setProblem(null);
@@ -97,6 +121,22 @@ export function ListScreen({ household }: { household: Household }) {
           </p>
         ) : (
           <>
+            <div role="status" aria-live="polite">
+              {undo && (
+                <p data-testid="check-all-undo" className="mt-2.5 flex min-h-11 items-center gap-2 text-[13px] font-medium text-[#4A544F]">
+                  <span>{checkedOffMessage(undo.length)}</span>
+                  <span aria-hidden="true">·</span>
+                  <button type="button" onClick={undoCheckOff} className={`-my-1 min-h-11 px-1 font-semibold text-green underline ${focusRing}`}>
+                    Undo
+                  </button>
+                </p>
+              )}
+            </div>
+            {toCheck.length > 0 && (
+              <button type="button" onClick={checkOffAll} className={`${pillButton} mt-2.5 self-start`}>
+                Check off all ({toCheck.length})
+              </button>
+            )}
             {toBuy.length === 0 && (
               <p className="mt-4 text-[15px] text-muted">Nothing to buy at {STORE_NAMES[store]} this week.</p>
             )}

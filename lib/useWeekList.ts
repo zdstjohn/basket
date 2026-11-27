@@ -18,7 +18,7 @@ import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { loadDraft, saveDraft } from "@/lib/drafts";
 import { groupMissing, requestEstimates } from "@/lib/list/estimates-client";
 import {
-  enqueuePatch, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
+  enqueuePatches, flushQueue, isNetworkError, loadListCache, loadQueue, saveListCache, type ItemPatch,
 } from "@/lib/list/offline";
 import {
   estimateFor, KROGER_PRICE_MAX_AGE_MS, priceKey, storeFor, toPriceMap, userCentsPerBase,
@@ -263,23 +263,19 @@ export function useWeekList(household: Household, weekId: string | null) {
   }, [raw, items, offline, household.kroger_location_id]);
 
   /** Sets have-it, got-it or outside-budget for an item. Offline, it waits in the queue. */
-  const update = useCallback(
-    async (itemKey: string, patch: ItemPatch) => {
-      if (!weekId) return;
-      setRaw((r) =>
-        r
-          ? {
-              ...r,
-              itemState: {
-                ...r.itemState,
-                [itemKey]: { ...(r.itemState[itemKey] ?? NO_FLAGS), ...patch },
-              },
-            }
-          : r,
-      );
+  const updateMany = useCallback(
+    async (itemKeys: string[], patch: ItemPatch) => {
+      if (!weekId || itemKeys.length === 0) return;
+      // One state update for the whole batch, so 40+ rows render once.
+      setRaw((r) => {
+        if (!r) return r;
+        const itemState = { ...r.itemState };
+        for (const k of itemKeys) itemState[k] = { ...(itemState[k] ?? NO_FLAGS), ...patch };
+        return { ...r, itemState };
+      });
       latest.current++; // a load already under way would bring back the old value
-      // Every change goes through the queue, so an older queued write can never land after a newer one.
-      enqueuePatch(household.id, { weekId, itemKey, patch });
+      // Every change goes through the queue (one entry per item), so an older queued write can never land after a newer one.
+      enqueuePatches(household.id, itemKeys.map((itemKey) => ({ weekId, itemKey, patch })));
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         setOffline(true);
         return;
@@ -296,6 +292,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     },
     [weekId, household.id, flushPending, load],
   );
+  const update = useCallback((itemKey: string, patch: ItemPatch) => updateMany([itemKey], patch), [updateMany]);
 
   /** A price you typed: the total for the quantity on the list. Throws when it can't be saved. */
   const setPrice = useCallback(
@@ -335,6 +332,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     priceSource: built?.priceSource ?? ({} as Record<string, PriceSource>),
     priceDetail: built?.priceDetail ?? ({} as Record<string, PriceRow>),
     update,
+    updateMany,
     setPrice,
     moveItem,
     reload: load,

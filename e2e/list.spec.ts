@@ -338,3 +338,83 @@ test("sign out: the saved list is wiped, and offline the next person sees none o
   await page.goto("/list");
   await expect(page).toHaveURL(/\/login/);
 });
+
+const checkAll = (page: Page): Locator => page.getByRole("button", { name: /^Check off all \(\d+\)$/ });
+
+test("check off all: ticks this store only, skips I-have-it, and Undo puts back just those", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+
+  // Corn tortillas move to Amazon; the onion is already in the house; the beans were ticked by hand.
+  await (await openSheet(page, "Corn tortillas")).getByRole("button", { name: "Move to Amazon" }).click();
+  await (await openSheet(page, "Yellow onion")).getByRole("button", { name: "I have it" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Got Black beans" }).check();
+
+  const button = checkAll(page);
+  await expect(button).toHaveText("Check off all (1)"); // chicken only
+  expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  const before = await dollars(total(page));
+  await button.click();
+
+  const message = page.getByTestId("check-all-undo");
+  await expect(message).toContainText("Checked off 1 item");
+  await expect(page.getByRole("status").filter({ hasText: "Checked off 1 item" })).toBeVisible();
+  await expect(button).toHaveCount(0);
+  await expect(row(page, "Boneless chicken thighs")).toHaveAttribute("data-checked", "true");
+  await expect(row(page, "Black beans")).toHaveAttribute("data-checked", "true");
+  expect(await dollars(total(page))).toBe(before); // ticking never changes the estimate
+  await expect(page.getByRole("tab", { name: /^Fred Meyer.*· 2$/ })).toBeVisible();
+
+  // The other tab is untouched.
+  await page.getByRole("tab", { name: /^Amazon/ }).click();
+  await expect(row(page, "Corn tortillas")).not.toHaveAttribute("data-checked", "true");
+  await expect(checkAll(page)).toHaveText("Check off all (1)");
+
+  // Undo unticks the chicken, not the beans that were ticked before.
+  await page.getByRole("tab", { name: /^Fred Meyer/ }).click();
+  await message.getByRole("button", { name: "Undo" }).click();
+  await expect(message).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Got Boneless chicken thighs" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Got Black beans" })).toBeChecked();
+  await expect(checkAll(page)).toHaveText("Check off all (1)");
+
+  // A row still works by itself afterwards, and the skipped onion stayed unchecked.
+  await page.getByRole("checkbox", { name: "Got Boneless chicken thighs" }).check();
+  await expect(row(page, "Boneless chicken thighs")).toHaveAttribute("data-checked", "true");
+  await expect(checkAll(page)).toHaveCount(0);
+  await page.getByTestId("skipped").locator("summary").click();
+  await expect(page.getByRole("checkbox", { name: "Got Yellow onion" })).not.toBeChecked();
+
+  // It lasts: reload shows the same.
+  await page.reload();
+  await expect(page.getByRole("checkbox", { name: "Got Black beans" })).toBeChecked();
+  await expect(checkAll(page)).toHaveCount(0);
+});
+
+test("check off all works offline, and Undo too, then everything is sent", async ({ page, context }) => {
+  const email = await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await expect(page.getByTestId("list-row")).toHaveCount(4);
+  await expect(page.locator('[data-offline-ready="on"]')).toBeAttached({ timeout: 15_000 });
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByText("Offline, showing your last list")).toBeVisible();
+
+  await checkAll(page).click();
+  await expect(page.getByTestId("check-all-undo")).toContainText("Checked off 4 items");
+  await expect(page.locator('[data-testid="list-row"][data-checked="true"]')).toHaveCount(4);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.locator('[data-testid="list-row"][data-checked="true"]')).toHaveCount(0);
+  await checkAll(page).click();
+  await expect(page.locator('[data-testid="list-row"][data-checked="true"]')).toHaveCount(4);
+
+  await context.setOffline(false);
+  await expect(page.getByText("Offline, showing your last list")).toHaveCount(0, { timeout: 15_000 });
+  const sb = await clientFor(email);
+  await expect
+    .poll(async () => (await sb.from("week_item_state").select("checked").eq("checked", true)).data?.length)
+    .toBe(4);
+});
