@@ -135,6 +135,19 @@ describe("<Photo>", () => {
     expect(state()).toBe("ready");
   });
 
+  it("with a stored width of 0, a tiny photo that loads is still the fallback", () => {
+    render(<Photo src="/tiny.jpg" name="Tacos" crop="tile" width={0} />);
+    load(q<HTMLImageElement>("img"), 120);
+    expect(state()).toBe("fallback");
+  });
+
+  it("with a stored width of 0, a mid-size hero that loads still asks to be demoted", () => {
+    const onDemote = vi.fn();
+    render(<Photo src="/mid.jpg" name="Tacos" crop="hero" width={0} onDemote={onDemote} />);
+    load(q<HTMLImageElement>("img"), 450);
+    expect(onDemote).toHaveBeenCalledTimes(1);
+  });
+
   it("a hero under 300 wide is the fallback, not a demotion", () => {
     const onDemote = vi.fn();
     render(<Photo src="/tiny.jpg" name="Tacos" crop="hero" onDemote={onDemote} />);

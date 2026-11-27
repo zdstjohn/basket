@@ -78,7 +78,7 @@ export function Photo({
     const key = `${src}|${crop}`;
     if (judged.current === key) return;
     judged.current = key;
-    const verdict = photoVerdict(crop, width ?? img.naturalWidth);
+    const verdict = photoVerdict(crop, width || img.naturalWidth);
     if (verdict === "fallback") {
       setState("fallback");
       return;
