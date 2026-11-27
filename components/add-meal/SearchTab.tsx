@@ -52,7 +52,7 @@ export function SearchTab({
   onSource: (s: RecipeSource) => void;
   hideResults: boolean;
   /** Foods on this week's list from the other planned meals; null until known. */
-  week: { foods: string[] } | null;
+  week: { foods: string[]; otherMeals: number } | null;
   /** Called when "Fits this week" is chosen, so the week is only read when it is wanted. */
   onNeedWeek: () => void;
   picking: boolean;
@@ -239,7 +239,9 @@ export function SearchTab({
                   }}
                 />
                 {sort === "fits" && week !== null && foods.length === 0 && (
-                  <p data-testid="fits-empty" className="mb-2.5 text-sm text-muted">Add another dinner first to see what fits</p>
+                  <p data-testid="fits-empty" className="mb-2.5 text-sm text-muted">
+                    {week.otherMeals === 0 ? "Add another dinner first to see what fits" : "Nothing on this week's list to match yet"}
+                  </p>
                 )}
                 <ul className="flex flex-col gap-2">
                   {shown.map(({ option: o, shared }) => {

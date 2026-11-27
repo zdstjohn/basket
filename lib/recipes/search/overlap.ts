@@ -24,27 +24,29 @@ function singular(w: string): string {
 const words = (s: string): string[] =>
   s.toLowerCase().split(/[^\p{L}]+/u).filter(Boolean).map(singular);
 
-// Bare "pepper" is a basic, but bell pepper is not, so it is handled apart from the subset rule below.
-const BASIC_WORDS = PANTRY_BASICS.map((b) => words(b)).filter((w) => w.join(' ') !== 'pepper');
-const ALWAYS_BASIC_LAST = new Set(['salt', 'sugar', 'flour', 'water']);
-const PEPPER_KINDS = new Set(['black', 'ground', 'white']);
+const BASIC_WORDS = PANTRY_BASICS.map((b) => words(b));
+// Words that may sit around a basic without making a different food ("kosher salt", "warm water").
+const BASIC_MODIFIERS = new Set(
+  [
+    'extra', 'virgin', 'light', 'pure', 'unsalted', 'salted', 'kosher', 'sea', 'table', 'fine', 'coarse', 'ground',
+    'black', 'white', 'all-purpose', 'all', 'purpose', 'granulated', 'brown', 'dark', 'powdered', 'cold', 'warm',
+    'hot', 'canola', 'vegetable', 'olive', 'neutral', 'cooking',
+  ].flatMap(words),
+);
 
 /**
- * True for salt, oil, flour and the rest of the pantry basics, and for their everyday variants:
+ * True for salt, oil, flour and the rest of the pantry basics, and for a basic with only everyday modifiers:
  * "kosher salt", "extra virgin olive oil", "unsalted butter", "ground black pepper", "brown sugar".
+ * Flour tortillas, peanut butter, sesame oil and bell pepper are different foods, so they are not basics.
  */
 export function isBasic(food: string): boolean {
   const w = words(food);
-  const last = w[w.length - 1];
-  if (!last) return false;
-  if (ALWAYS_BASIC_LAST.has(last)) return true;
-  if (last === 'pepper' && (w.length === 1 || PEPPER_KINDS.has(w[w.length - 2]))) return true;
-  return BASIC_WORDS.some((b) => b.every((x) => w.includes(x)));
+  return BASIC_WORDS.some((b) => b.every((x) => w.includes(x)) && w.every((x) => b.includes(x) || BASIC_MODIFIERS.has(x)));
 }
 
-// A recipe word like these next to a food makes a different food: "green onions" are not onions.
+// A recipe word like these next to a food makes a different food: "cream cheese" is not cheese.
 const QUALIFIERS = new Set(
-  ['green', 'cream', 'broth', 'stock', 'paste', 'vinegar', 'noodle', 'tortilla', 'powder', 'sauce', 'juice'].map(singular),
+  ['cream', 'broth', 'stock', 'paste', 'vinegar', 'noodle', 'tortilla', 'powder', 'sauce', 'juice'].map(singular),
 );
 
 /**
@@ -101,6 +103,8 @@ export function sharedFoods(o: RecipeOption, foods: string[]): string[] {
         if (!fits) continue;
         const before = lw[start - 1];
         const after = lw[start + f.w.length];
+        // Green onions are their own thing on a list, so a plain "onion" does not match them.
+        if (f.w.length === 1 && f.w[0] === 'onion' && before === 'green') continue;
         if ((before !== undefined && QUALIFIERS.has(before)) || (after !== undefined && QUALIFIERS.has(after))) continue;
         f.w.forEach((_, k) => (used[li][start + k] = true));
         found.add(f.index);

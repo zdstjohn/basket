@@ -50,12 +50,16 @@ describe('pantry basics by variant', () => {
   const week = (food: string) => weekFoods([{ meal: meal('m', [[food, 'pantry']]), servings: null }], [adult], []);
   it.each([
     'extra virgin olive oil', 'unsalted butter', 'kosher salt', 'sea salt', 'ground black pepper', 'white pepper',
-    'all-purpose flour', 'brown sugar', 'cooking spray', 'cornstarch', 'pepper', 'cold water',
+    'all-purpose flour', 'brown sugar', 'cooking spray', 'cornstarch', 'pepper', 'cold water', 'warm water',
+    'dark brown sugar', 'canola oil', 'granulated sugar',
   ])('%s is a basic', (food) => {
     expect(week(food)).toEqual([]);
     expect(sharedFoods(opt({ ingredients: [food] }), [food])).toEqual([]);
   });
-  it.each(['bell pepper', 'red pepper flakes', 'garlic', 'sour cream'])('%s is not a basic', (food) => {
+  it.each([
+    'bell pepper', 'red pepper flakes', 'garlic', 'sour cream', 'flour tortillas', 'sugar snap peas', 'water chestnuts',
+    'peanut butter', 'almond butter', 'sesame oil', 'coconut oil', 'chili oil', 'butter beans', 'salt pork',
+  ])('%s is not a basic', (food) => {
     expect(week(food)).toEqual([food]);
   });
 });
@@ -63,6 +67,7 @@ describe('pantry basics by variant', () => {
 describe('sharedFoods qualifiers', () => {
   it.each([
     ['onion', '3 green onions'],
+    ['onion', '1 bunch green onion'],
     ['cheese', '4 oz cream cheese'],
     ['corn', '12 corn tortillas'],
     ['chicken', '2 cups chicken broth'],
@@ -78,6 +83,11 @@ describe('sharedFoods qualifiers', () => {
     expect(sharedFoods(opt({ ingredients: ['1 yellow onion', '1 cup heavy cream'] }), ['onion', 'cream'])).toEqual(['onion', 'cream']);
     expect(sharedFoods(opt({ ingredients: ['3 green onions'] }), ['green onion'])).toEqual(['green onion']);
     expect(sharedFoods(opt({ ingredients: ['4 oz cream cheese'] }), ['cream cheese'])).toEqual(['cream cheese']);
+  });
+  it('only treats green as a qualifier for onions', () => {
+    expect(sharedFoods(opt({ ingredients: ['1 green bell pepper'] }), ['bell pepper'])).toEqual(['bell pepper']);
+    expect(sharedFoods(opt({ ingredients: ['1 head green cabbage'] }), ['cabbage'])).toEqual(['cabbage']);
+    expect(sharedFoods(opt({ ingredients: ['3 scallions'] }), ['onion'])).toEqual([]);
   });
   it('matches leaves with leaf', () => {
     expect(sharedFoods(opt({ ingredients: ['2 bay leaves'] }), ['bay leaf'])).toEqual(['bay leaf']);

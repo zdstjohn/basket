@@ -109,7 +109,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const week = useMemo(
     () =>
       others && people.length > 0
-        ? { foods: weekFoods(others.entries, people, others.alwaysHave) }
+        ? { foods: weekFoods(others.entries, people, others.alwaysHave), otherMeals: others.entries.length }
         : null,
     [others, people],
   );
