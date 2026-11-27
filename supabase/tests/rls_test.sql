@@ -2,7 +2,7 @@
 -- Runs with `supabase test db` and also as one SQL call; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(149);
+select plan(156);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the superuser)
@@ -377,6 +377,35 @@ on conflict (week_id, item_key) do nothing;
 select is((select count(*)::int from public.week_item_state where item_key like 'beans%'), 1, '0007 folds the old beans rows into one row');
 select ok((select have_it and checked from public.week_item_state where item_key = 'beans'), '0007 keeps both flags on the folded beans row');
 select is((select count(*)::int from public.week_item_state where item_key like '%#%'), 0, '0007 leaves no row keyed food#kind');
+
+-- 0016: tidy stored food names (NFC, collapsed spaces, trimmed, lower case); a clash keeps the newest row.
+insert into public.always_have (household_id, canonical, created_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'Olive   Oil ', now() - interval '2 days'),
+  ((select v::uuid from t_kv where k = 'HA'), 'olive oil', now() - interval '1 day'),
+  ((select v::uuid from t_kv where k = 'HA'), E'jalapen\u0303o', now());
+insert into public.item_product_choice (household_id, canonical, search_term, updated_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'black  pepper', 'old words', now() - interval '3 days'),
+  ((select v::uuid from t_kv where k = 'HA'), 'black pepper', 'new words', now() - interval '1 day');
+insert into public.item_product_choice (household_id, canonical, search_term, updated_at) values
+  ((select v::uuid from t_kv where k = 'HA'), E'brown  sugar', 'kept words', now()),
+  ((select v::uuid from t_kv where k = 'HA'), 'brown sugar', 'older words', now() - interval '5 days');
+insert into public.week_item_state (household_id, week_id, item_key, have_it) values
+  ((select v::uuid from t_kv where k = 'HA'), (select v::uuid from t_kv where k = 'W_A'), E'Sea  Salt', true);
+select public.tidy_food_names();
+select is((select count(*)::int from public.always_have where canonical = 'olive oil' and household_id = (select v::uuid from t_kv where k = 'HA')), 1, '0016 merges the two olive oil rows into one');
+select is((select count(*)::int from public.always_have where canonical = E'jalape\u00f1o'), 1, '0016 rewrites an NFD name as NFC');
+select is((select count(*)::int from public.always_have where canonical <> public.tidy_food(canonical)), 0, '0016 leaves no untidy always_have name');
+select is((select search_term from public.item_product_choice where canonical = 'black pepper' and household_id = (select v::uuid from t_kv where k = 'HA')), 'new words', '0016 keeps the newest row when names clash (tidy row newer)');
+select is((select search_term from public.item_product_choice where canonical = 'brown sugar' and household_id = (select v::uuid from t_kv where k = 'HA')), 'kept words', '0016 keeps the newest row when names clash (untidy row newer)');
+select is((select have_it from public.week_item_state where item_key = 'sea salt'), true, '0016 tidies a week_item_state key');
+create temp table t_tidy_before as
+  select (select count(*) from public.always_have) a, (select count(*) from public.item_product_choice) c, (select count(*) from public.week_item_state) w,
+         (select string_agg(canonical, ',' order by canonical) from public.always_have) names;
+select public.tidy_food_names();
+select ok((select a = (select count(*) from public.always_have) and c = (select count(*) from public.item_product_choice)
+                  and w = (select count(*) from public.week_item_state)
+                  and names = (select string_agg(canonical, ',' order by canonical) from public.always_have) from t_tidy_before),
+          '0016 run twice changes nothing');
 
 select * from finish();
 rollback;

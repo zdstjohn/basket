@@ -150,3 +150,48 @@ describe('unit spellings', () => {
     expect(toQuantity(1, 'bags')).toBeNull();
   });
 });
+
+describe('more unit spellings', () => {
+  const ml = (unit: string): number | undefined => {
+    const r = toQuantity(1, unit);
+    return r?.kind === 'volume' ? r.amount : undefined;
+  };
+  it('reads quarts, pints, gallons and litres', () => {
+    for (const u of ['qt', 'qts', 'quart', 'Quarts', 'qt.']) expect(ml(u)).toBeCloseTo(946.35, 1);
+    for (const u of ['pt', 'pts', 'pints', 'pt.']) expect(ml(u)).toBeCloseTo(473.18, 1);
+    for (const u of ['gal', 'gals', 'gallons', 'gal.']) expect(ml(u)).toBeCloseTo(3785.41, 1);
+    for (const u of ['litre', 'litres', 'Liters']) expect(ml(u)).toBe(1000);
+  });
+  it('reads fl.oz with no space', () => {
+    expect(ml('fl.oz')).toBeCloseTo(29.57, 1);
+    expect(ml('fl.oz.')).toBeCloseTo(29.57, 1);
+  });
+  it('reads pkg and pkgs as packages', () => {
+    expect(toQuantity(2, 'pkg')).toEqual({ amount: 2, kind: 'count', base: 'each', countUnit: 'package' });
+    expect(toQuantity(2, 'pkgs.')!.countUnit).toBe('package');
+  });
+  it('reads capital T as tablespoon and small t as teaspoon, by the original case', () => {
+    expect(ml('T')).toBeCloseTo(14.79, 1);
+    expect(ml('T.')).toBeCloseTo(14.79, 1);
+    expect(ml('t')).toBeCloseTo(4.93, 1);
+    expect(ml('t.')).toBeCloseTo(4.93, 1);
+    expect(ml(' T ')).toBeCloseTo(14.79, 1);
+  });
+  it('leaves other single letters and odd cases unknown', () => {
+    expect(toQuantity(1, 'Ts')).toBeNull();
+    expect(toQuantity(1, 'ts')).toBeNull();
+    expect(toQuantity(1, 'x')).toBeNull();
+  });
+  it('reads a bare "#" as pounds, but not "#10 can"', () => {
+    const r = toQuantity(2, '#')!;
+    expect(r.kind).toBe('mass');
+    expect(r.amount).toBeCloseTo(907.18, 1);
+    expect(toQuantity(1, '#10 can')).toBeNull();
+    expect(toQuantity(1, 'no.#')).toBeNull();
+  });
+  it('gives one count key to "pinch." and "pinch"', () => {
+    expect(quantityOrCount(1, 'pinch.').countUnit).toBe('pinch');
+    expect(quantityOrCount(1, ' Pinch ').countUnit).toBe('pinch');
+    expect(quantityOrCount(1, 'sprigs.').countUnit).toBe('sprigs');
+  });
+});

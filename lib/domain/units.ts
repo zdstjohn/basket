@@ -19,14 +19,14 @@ const MASS: Record<string, number> = {
 
 const VOLUME: Record<string, number> = {
   ml: 1, milliliter: 1, milliliters: 1,
-  l: 1000, liter: 1000, liters: 1000,
+  l: 1000, liter: 1000, liters: 1000, litre: 1000, litres: 1000,
   tsp: ML_PER_TSP, teaspoon: ML_PER_TSP, teaspoons: ML_PER_TSP,
   tbsp: ML_PER_TBSP, tablespoon: ML_PER_TBSP, tablespoons: ML_PER_TBSP,
-  'fl oz': ML_PER_FLOZ, 'fluid ounce': ML_PER_FLOZ, 'fluid ounces': ML_PER_FLOZ,
+  'fl oz': ML_PER_FLOZ, floz: ML_PER_FLOZ, 'fluid ounce': ML_PER_FLOZ, 'fluid ounces': ML_PER_FLOZ,
   cup: ML_PER_CUP, cups: ML_PER_CUP, c: ML_PER_CUP,
-  pint: ML_PER_PINT, pints: ML_PER_PINT,
-  quart: ML_PER_QUART, quarts: ML_PER_QUART,
-  gallon: ML_PER_GALLON, gallons: ML_PER_GALLON,
+  pint: ML_PER_PINT, pints: ML_PER_PINT, pt: ML_PER_PINT,
+  quart: ML_PER_QUART, quarts: ML_PER_QUART, qt: ML_PER_QUART,
+  gallon: ML_PER_GALLON, gallons: ML_PER_GALLON, gal: ML_PER_GALLON,
 };
 
 /** Count-unit aliases mapped to their singular form; undefined = bare number. */
@@ -35,20 +35,26 @@ const COUNT: Record<string, string | undefined> = {
   can: 'can', cans: 'can',
   jar: 'jar', jars: 'jar',
   pack: 'pack', packs: 'pack',
-  package: 'package', packages: 'package',
+  package: 'package', packages: 'package', pkg: 'package',
   bunch: 'bunch', bunches: 'bunch',
   clove: 'clove', cloves: 'clove',
   head: 'head', heads: 'head',
   slice: 'slice', slices: 'slice',
 };
 
-/** Recipes write "Tbsps", "lbs.", "c.", "fl. oz": lower-case, drop dots, squeeze spaces. */
-const tidyUnit = (unit: string): string => unit.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+/** Recipes write "Tbsps", "lbs.", "c.", "fl.oz": lower-case, dots become spaces, spaces squeezed. */
+const tidyUnit = (unit: string): string => unit.toLowerCase().replace(/\./g, ' ').replace(/\s+/g, ' ').trim();
 
 const known = (u: string): boolean => Object.hasOwn(MASS, u) || Object.hasOwn(VOLUME, u) || Object.hasOwn(COUNT, u);
 
 /** The table spelling of a unit: the tidy form, else the tidy form without a trailing "s" ("tbsps", "ozs"). */
 function unitKey(unit: string): string {
+  // One letter is only known by its original case ("T" tablespoon, "t" teaspoon), so decide before lower-casing.
+  // A bare "#" is a pound: units always follow a number here, and "#10 can" is not a bare "#".
+  const raw = unit.trim().replace(/\.+$/, '');
+  if (raw === 'T') return 'tbsp';
+  if (raw === 't') return 'tsp';
+  if (raw === '#') return 'lb';
   const u = tidyUnit(unit);
   if (known(u) || u.length < 3 || !u.endsWith('s')) return u;
   const singular = u.slice(0, -1);
@@ -109,7 +115,7 @@ export function quantityOrCount(amount: number, unit: string): Quantity {
       amount,
       kind: 'count',
       base: 'each',
-      countUnit: unit.trim().toLowerCase(),
+      countUnit: tidyUnit(unit),
     }
   );
 }
