@@ -27,7 +27,8 @@ export const SCREENS_A: Screen[] = [
   {
     // The recipe page: a picked result with its ingredients, the household's portions and the pinned bar.
     name: "recipe-page",
-    path: "/week/add?day=thu&slot=dinner",
+    // Saturday, so the half-finished draft it leaves does not hide the search on the Thursday screens after it.
+    path: "/week/add?day=sat&slot=dinner",
     setup: async (page) => {
       await page.getByLabel(/What.s for dinner\?/).fill("tacos");
       await page.getByRole("button", { name: "Search" }).click();

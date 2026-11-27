@@ -244,6 +244,8 @@ test("interruption: a half-finished meal comes back after a reload, and is clear
   await page.getByRole("button", { name: /Chicken pot pie/ }).click();
   const draft = page.getByRole("region", { name: "Draft recipe" });
   await expect(draft).toBeVisible();
+  // The page opens at once; the draft is kept once the recipe has been read.
+  await expect(draft.getByRole("button", { name: "Edit ingredients" })).toBeVisible();
 
   await page.reload();
   await expect(page.getByLabel("What’s for dinner?")).toHaveValue("Chicken pot pie");
