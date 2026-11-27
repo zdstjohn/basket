@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoffDelay, retryAfter, singleFlight } from "@/lib/list/single-flight";
+import { backoffDelay, retryAfter, retryWithBackoff, singleFlight } from "@/lib/list/single-flight";
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
@@ -125,5 +125,52 @@ describe("retryAfter", () => {
     expect(retryAfter(61_000, 61_000)).toBe(0);
     expect(retryAfter(61_000, 90_000)).toBe(0);
     expect(retryAfter(Infinity, 90_000)).toBe(Infinity);
+  });
+});
+
+describe("a tap during a load", () => {
+  it("reports a run in flight, and a run() at tap time makes the discarded load repeat once with the new state", async () => {
+    const f = singleFlight();
+    expect(f.busy()).toBe(false);
+    let state = "old";
+    const seen: string[] = [];
+    const task = async () => {
+      const mine = state;
+      await new Promise((r) => setTimeout(r, 10));
+      seen.push(mine);
+    };
+    const p = f.run(task);
+    await tick();
+    expect(f.busy()).toBe(true);
+    state = "tapped"; // the tap
+    void f.run(task); // what updateMany does when busy
+    await p;
+    expect(seen).toEqual(["old", "tapped"]);
+    expect(f.busy()).toBe(false);
+  });
+});
+
+describe("retryWithBackoff", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("tries after 5, 10, 20, 30, 30 s until it succeeds, then stops", async () => {
+    const times: number[] = [];
+    const t0 = Date.now();
+    const cancel = retryWithBackoff(async () => {
+      times.push(Date.now() - t0);
+      return times.length === 6;
+    });
+    await vi.advanceTimersByTimeAsync(5000 + 10_000 + 20_000 + 30_000 + 30_000 + 30_000 + 60_000);
+    expect(times).toEqual([5000, 15_000, 35_000, 65_000, 95_000, 125_000]);
+    cancel();
+  });
+  it("stops when cancelled", async () => {
+    const attempt = vi.fn(async () => false);
+    const cancel = retryWithBackoff(attempt);
+    await vi.advanceTimersByTimeAsync(5000);
+    cancel();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(attempt).toHaveBeenCalledTimes(1);
   });
 });
