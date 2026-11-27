@@ -41,10 +41,10 @@ for (const variant of VARIANTS) {
     const visit = async (screen: Screen) => {
       await page.goto(screen.path);
       await page.waitForLoadState("networkidle");
-      // The week's open reveal moves each tile 8 px for 240 ms; measure where they rest (once the tiles are there).
+      await screen.setup?.(page);
+      // The week's open reveal moves each tile 8 px for 240 ms; measure where they rest (after any setup that landed on the week).
       if (screen.path === "/week") await page.locator('[data-testid^="day-row-"]').first().waitFor();
       await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a instanceof CSSAnimation && a.effect?.getComputedTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))));
-      await screen.setup?.(page);
       const where = `${screen.path}`;
 
       for (const p of await audit(page)) found.push(`${where}: ${p.what}: ${p.detail}`);
