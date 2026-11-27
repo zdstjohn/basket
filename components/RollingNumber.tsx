@@ -41,14 +41,14 @@ export function RollingNumber({ value, direction, testId }: { value: string; dir
       <span
         aria-hidden="true"
         className={`inline-flex whitespace-nowrap tabular-nums ${shown.fade ? "bk-fade-in" : ""}`}
-        style={shown.fade ? { animationDuration: "120ms" } : undefined}
+        style={shown.fade ? { animationDuration: "var(--bk-dur-fast)" } : undefined}
         key={shown.fade ? shown.value : "row"}
       >
         {digits.map((d, i) =>
           d.from === null ? (
             <span key={i}>{d.char}</span>
           ) : (
-            <span key={i} className="bk-roll">
+            <span key={`${shown.value}:${i}`} className="bk-roll">
               {(up ? [d.from, d.char] : [d.char, d.from]).map((c, k) => {
                 const isOld = up ? k === 0 : k === 1;
                 // up: both lines slide up one line; down: both slide down from one line above.

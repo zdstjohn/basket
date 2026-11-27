@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { budgetState } from '@/lib/domain/budget';
+import { budgetSentence, budgetState } from '@/lib/domain/budget';
 
 describe('budgetState', () => {
   it('is green up to and including the target', () => {
@@ -14,8 +14,6 @@ describe('budgetState', () => {
     expect(budgetState(22501, 20000, 2500)).toBe('red');
   });
 });
-
-import { budgetSentence } from '@/lib/domain/budget';
 
 describe('budgetSentence', () => {
   it('under, estimated', () => {
@@ -36,5 +34,19 @@ describe('budgetSentence', () => {
   });
   it('thousands', () => {
     expect(budgetSentence(123456, 1000000, 0, { exact: true })).toMatchObject({ total: '$1,234.56', of: ' of $10,000' });
+  });
+  it('zero cushion past reads "over"', () => {
+    expect(budgetSentence(21200, 20000, 0, { exact: true })).toMatchObject({ state: 'past', note: '$12 over.', noteAmount: '$12' });
+  });
+  it('rounds fractional cents and survives NaN', () => {
+    const f = budgetSentence(20000.4, 20000, 2500, { exact: true });
+    expect(f).toMatchObject({ state: 'under', total: '$200.00' });
+    expect(f.note).toContain('$0 left');
+    const n = budgetSentence(NaN, 20000, 2500, { exact: true });
+    expect(n.total).toBe('$0.00');
+    expect(JSON.stringify(n)).not.toContain('NaN');
+  });
+  it('no budget: neutral, total only', () => {
+    expect(budgetSentence(5000, 0, 0, { exact: true })).toEqual({ state: 'under', lead: 'This week’s total: ', total: '$50.00', of: '', note: '', noteAmount: null, caveat: null });
   });
 });

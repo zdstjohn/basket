@@ -27,11 +27,15 @@ export function budgetSentence(
   cushionCents: number,
   opts: { exact: boolean },
 ): BudgetSentenceParts {
-  const s = budgetState(totalCents, targetCents, cushionCents);
-  const total = formatMoney(totalCents);
+  const t = Number.isFinite(totalCents) ? Math.round(totalCents) : 0;
+  const s = budgetState(t, targetCents, cushionCents);
+  const total = formatMoney(t);
   const caveat = opts.exact ? null : 'Estimated total, for the amounts you’ll use';
+  if (!(targetCents > 0)) {
+    return { state: 'under', lead: opts.exact ? 'This week’s total: ' : 'In the basket so far: ', total, of: '', note: '', noteAmount: null, caveat };
+  }
   if (s === 'green') {
-    const left = typed(targetCents - totalCents);
+    const left = typed(targetCents - t);
     return {
       state: 'under',
       lead: opts.exact ? 'This week’s total: ' : 'In the basket so far: ',
@@ -44,9 +48,9 @@ export function budgetSentence(
   }
   const of = ` of ${typed(targetCents)}.`;
   if (s === 'amber') {
-    return { state: 'wiggle', lead: '', total, of, note: `${typed(totalCents - targetCents)} into the wiggle room.`, noteAmount: null, caveat };
+    return { state: 'wiggle', lead: '', total, of, note: `${typed(t - targetCents)} into the wiggle room.`, noteAmount: null, caveat };
   }
-  const past = typed(totalCents - targetCents - cushionCents);
+  const past = typed(t - targetCents - cushionCents);
   return {
     state: 'past',
     lead: '',

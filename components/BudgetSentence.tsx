@@ -31,9 +31,11 @@ export function BudgetSentence({ totalCents, targetCents, cushionCents, exact, t
         </strong>
         {p.of}
       </p>
-      <p key={p.note} className="bk-fade-in text-ink-soft" style={{ animationDelay: "120ms" }}>
-        {note}
-      </p>
+      {p.note && (
+        <p key={p.note} className="bk-fade-in text-ink-soft" style={{ animationDelay: "120ms" }}>
+          {note}
+        </p>
+      )}
       {p.caveat && <p className="text-label text-ink-soft">{p.caveat}</p>}
     </section>
   );
