@@ -80,24 +80,30 @@ export async function listCartSends(sb: Sb, weekId: string): Promise<CartSend[]>
     .eq('week_id', weekId)
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({
-    id: r.id,
-    sentAt: r.created_at,
-    userId: r.user_id,
-    profileId: r.profile_id,
-    modality: r.modality === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
-    status: r.status === 'sent' || r.status === 'failed' ? r.status : 'pending',
-    items: Array.isArray(r.items) ? (r.items as unknown[]).filter(isLine) : [],
-    totalCents: r.total_cents,
-  }));
+  return (data ?? []).map((r) => {
+    const raw = Array.isArray(r.items) ? (r.items as unknown[]) : [];
+    const items = raw.filter(isLine);
+    if (items.length < raw.length) console.error('cart send has unreadable lines');
+    return {
+      id: r.id,
+      sentAt: r.created_at,
+      userId: r.user_id,
+      profileId: r.profile_id,
+      modality: r.modality === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
+      status: r.status === 'sent' || r.status === 'failed' ? r.status : 'pending',
+      items,
+      totalCents: r.total_cents,
+    };
+  });
 }
 
-/** How many sends the household has started since `sinceIso` (any outcome). */
+/** How many sends the household has started since `sinceIso` that were sent or may have been (failed ones never reached Kroger). */
 export async function countCartSendsSince(sb: Sb, householdId: string, sinceIso: string): Promise<number> {
   const { count, error } = await sb
     .from('cart_sends')
     .select('id', { count: 'exact', head: true })
     .eq('household_id', householdId)
+    .in('status', ['pending', 'sent'])
     .gte('created_at', sinceIso);
   if (error) throw new Error(error.message);
   return count ?? 0;
@@ -141,7 +147,7 @@ export async function insertPendingSend(
 export async function settleSend(
   sb: Sb,
   id: string,
-  result: { status: 'sent' | 'failed'; items?: CartLine[]; totalCents?: number },
+  result: { status: 'pending' | 'sent' | 'failed'; items?: CartLine[]; totalCents?: number },
 ): Promise<void> {
   const patch: Database['public']['Tables']['cart_sends']['Update'] = { status: result.status };
   if (result.items) patch.items = result.items as unknown as Json;

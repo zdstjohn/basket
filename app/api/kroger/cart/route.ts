@@ -5,8 +5,8 @@ import { isResponse, readJson, requireHousehold } from '@/lib/api/household-cont
 import type { Database } from '@/lib/db/types';
 import { countCartSendsSince, insertPendingSend, listCartSends, listMatches, listPendingSendsSince, settleSend } from '@/lib/db/queries/kroger';
 import { cartDiff, type CartLine } from '@/lib/domain/cart';
-import { addToCart, KrogerAuth, KrogerLimited, KrogerUnsure } from '@/lib/kroger/cart';
-import { deleteLink, getUserAccess } from '@/lib/kroger/link';
+import { addToCart, KrogerAuth, KrogerLimited, KrogerNotAdded, KrogerUnsure } from '@/lib/kroger/cart';
+import { getUserAccess } from '@/lib/kroger/link';
 import { isCartConfigured } from '@/lib/kroger/oauth';
 
 type Sb = SupabaseClient<Database>;
@@ -14,7 +14,9 @@ type Sb = SupabaseClient<Database>;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SENDS_PER_DAY = 20;
 /** A send still `pending` this long after it started is taken to be an unanswered one, not one in flight. */
-const IN_FLIGHT_MS = 2 * 60 * 1000;
+const IN_FLIGHT_MS = 5 * 60 * 1000;
+/** The slowest send (150 single calls, 4 at once, 10 s each) is cut off by cart.ts at 240 s; Vercel's limit is 300 s. */
+export const maxDuration = 300;
 const SPEND_CHUNK = 60; // kroger_spend takes at most 60 per call
 
 const fail = (error: string, status: number, headers?: Record<string, string>) => NextResponse.json({ error }, { status, headers });
@@ -114,8 +116,6 @@ export async function POST(req: Request) {
       if (toSend.length === 0) return fail('already_sent', 409);
     }
 
-    if (!(await charge(sb, household.id, 1))) return fail('slow_down', 429, { 'retry-after': '3600' });
-
     try {
       sendId = (
         await insertPendingSend(sb, {
@@ -136,12 +136,18 @@ export async function POST(req: Request) {
     try {
       const pending = await listPendingSendsSince(sb, household.id, new Date(Date.now() - IN_FLIGHT_MS).toISOString());
       const mine = pending.find((p) => p.id === sendId);
+      // A send of the same list yields to an earlier one. A resend, which skips the "already sent" check, yields
+      // to any other send in flight, whichever started first: the later one may already have passed its own check.
       const earlier = pending.some(
-        (p) => p.id !== sendId && (!mine || p.createdAt < mine.createdAt || (p.createdAt === mine.createdAt && p.id < sendId)),
+        (p) =>
+          p.id !== sendId &&
+          (body.resend || !mine || p.createdAt < mine.createdAt || (p.createdAt === mine.createdAt && p.id < sendId)),
       );
+      const startedBefore = (at: string, id: string) =>
+        !mine || at < mine.createdAt || (at === mine.createdAt && id < sendId);
       let changed = false;
       if (!body.resend) {
-        const fresh = cartDiff(lines, (await listCartSends(sb, body.weekId)).filter((s) => s.id !== sendId), me).toSend;
+        const fresh = cartDiff(lines, (await listCartSends(sb, body.weekId)).filter((s) => s.id !== sendId && (s.status !== 'pending' || startedBefore(s.sentAt, s.id))), me).toSend;
         changed = !sameLines(fresh, toSend);
       }
       if (earlier || changed) {
@@ -175,16 +181,20 @@ export async function POST(req: Request) {
       }
       if (!fresh) {
         await markFailed(sb, sendId);
-        await deleteLink(sb, userId).catch(() => undefined);
         return fail('not_connected', 409);
       }
       answer = await addToCart(fresh.access, items, opts);
     }
   } catch (e) {
     if (e instanceof KrogerAuth) {
+      // Dropping a link is getUserAccess's job (only when Kroger says the refresh token is dead).
       await markFailed(sb, sendId);
-      await deleteLink(sb, userId).catch(() => undefined);
       return fail('not_connected', 409);
+    }
+    if (e instanceof KrogerNotAdded) {
+      console.error('kroger cart refused');
+      await markFailed(sb, sendId);
+      return e.status === 429 ? fail('slow_down', 429, { 'retry-after': '3600' }) : fail('rejected', 502);
     }
     if (e instanceof KrogerLimited) {
       await markFailed(sb, sendId);
@@ -192,7 +202,19 @@ export async function POST(req: Request) {
     }
     // Timeout, network error, 5xx or anything unexpected: Kroger may have added the items. The row stays pending.
     console.error(e instanceof KrogerUnsure ? 'kroger cart unsure' : 'kroger cart unexpected failure');
-    return fail('unsure', 504);
+    const known = e instanceof KrogerUnsure ? e.outcome : undefined;
+    if (!known) return fail('unsure', 504);
+    // Some single calls were answered before it stopped: keep ok and unknown lines on the pending row (they may be
+    // in the cart), and leave the refused ones off it so a repeat send tries them again.
+    const refused = new Set(known.rejected);
+    const kept = toSend.filter((l) => !refused.has(l.upc));
+    try {
+      await settleSend(sb, sendId, { status: 'pending', items: kept, totalCents: kept.reduce((n, l) => n + l.cents, 0) });
+    } catch {
+      console.error('kroger cart row not trimmed');
+    }
+    const names = toSend.filter((l) => refused.has(l.upc)).map((l) => ({ key: l.key, name: l.name }));
+    return NextResponse.json(names.length > 0 ? { error: 'unsure', rejected: names } : { error: 'unsure' }, { status: 504 });
   }
 
   const added = new Set(answer.ok);

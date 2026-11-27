@@ -19,12 +19,13 @@ vi.mock('@/lib/kroger/cart', async (orig) => ({
 
 import { NextResponse } from 'next/server';
 import { POST } from '@/app/api/kroger/cart/route';
-import { KrogerAuth, KrogerLimited, KrogerUnsure } from '@/lib/kroger/cart';
+import { KrogerAuth, KrogerLimited, KrogerNotAdded, KrogerUnsure } from '@/lib/kroger/cart';
 
 const WEEK = '6f1c2f6e-5b0e-4c43-8f4e-0a7d3d9a1b11';
 const SECRET = 'tok-secret-123';
 const MILK = '0001111041700';
 const EGGS = '0001111060903';
+const RICE = '0001111087001';
 const cand = (upc: string, name: string, regularCents: number, promoCents: number | null = null) => ({
   upc, name, brand: null, sizeText: '1 ea', size: null, soldBy: 'UNIT', regularCents, promoCents,
   imageUrl: null, relevant: true, inStock: true,
@@ -43,6 +44,7 @@ function world(opts: { week?: boolean; insertError?: boolean; existing?: Row[]; 
     kroger_matches: [
       { household_id: 'h1', canonical: 'milk', location_id: 'L1', term: 'milk', fetched_at: new Date().toISOString(), candidates: [cand(MILK, 'Milk 1 gal', 400, 350)] },
       { household_id: 'h1', canonical: 'eggs', location_id: 'L1', term: 'eggs', fetched_at: new Date().toISOString(), candidates: [cand(EGGS, 'Eggs 12', 300)] },
+      { household_id: 'h1', canonical: 'rice', location_id: 'L1', term: 'rice', fetched_at: new Date().toISOString(), candidates: [cand(RICE, 'Rice 2 lb', 200)] },
     ],
     cart_sends: sends,
   };
@@ -57,13 +59,14 @@ function world(opts: { week?: boolean; insertError?: boolean; existing?: Row[]; 
     from: (table: string) => {
       const eqs: [string, unknown][] = [];
       const gtes: [string, string][] = [];
+      const ins: [string, unknown[]][] = [];
       let head = false;
       let patch: Row | null = null;
       let inserted: Row | null = null;
       let ordered = false;
       const match = () =>
         tables[table]
-          .filter((r) => eqs.every(([c, v]) => r[c] === v) && gtes.every(([c, v]) => String(r[c]) >= v))
+          .filter((r) => eqs.every(([c, v]) => r[c] === v) && ins.every(([c, v]) => v.includes(r[c])) && gtes.every(([c, v]) => String(r[c]) >= v))
           .sort((a, b) => (ordered ? String(b.created_at).localeCompare(String(a.created_at)) || String(b.id).localeCompare(String(a.id)) : 0));
       const run = async () => {
         await Promise.resolve();
@@ -86,6 +89,7 @@ function world(opts: { week?: boolean; insertError?: boolean; existing?: Row[]; 
       b.select = (_c?: string, o?: { head?: boolean }) => ((head = Boolean(o?.head)), b);
       b.eq = (c: string, v: unknown) => (eqs.push([c, v]), b);
       b.gte = (c: string, v: string) => (gtes.push([c, v]), b);
+      b.in = (c: string, v: unknown[]) => (ins.push([c, v]), b);
       b.order = () => ((ordered = true), b);
       b.insert = (r: Row) => ((inserted = r), b);
       b.update = (p: Row) => ((patch = p), b);
@@ -202,13 +206,19 @@ describe('POST /api/kroger/cart', () => {
   });
 
   it('429 too_many on the 21st send in a day, before any Kroger call', async () => {
-    const recent = Array.from({ length: 20 }, (_, i) => ({ id: `old${i}`, household_id: 'h1', week_id: WEEK, user_id: 'u1', status: 'failed', items: [], created_at: new Date(Date.now() - 3_600_000).toISOString() }));
+    const recent = Array.from({ length: 20 }, (_, i) => ({ id: `old${i}`, household_id: 'h1', week_id: WEEK, user_id: 'u1', status: i % 2 ? 'sent' : 'pending', items: [], created_at: new Date(Date.now() - 3_600_000).toISOString() }));
     setup({ existing: recent });
     const res = await post(body());
     expect(res.status).toBe(429);
     expect((await res.json()).error).toBe('too_many');
     expect(addToCart).not.toHaveBeenCalled();
     expect(getUserAccess).not.toHaveBeenCalled();
+  });
+
+  it('failed and stood-down sends do not count against the daily limit', async () => {
+    const failed = Array.from({ length: 25 }, (_, i) => ({ id: `f${i}`, household_id: 'h1', week_id: 'other', user_id: 'u1', status: 'failed', items: [], created_at: new Date(Date.now() - 3_600_000).toISOString() }));
+    setup({ existing: failed });
+    expect((await post(body())).status).toBe(200);
   });
 
   it('sends from a day ago do not count against the limit', async () => {
@@ -291,6 +301,35 @@ describe('POST /api/kroger/cart', () => {
     expect((await next.json()).error).toBe('already_sent');
   });
 
+  it('an unsure fan-out keeps ok and unknown lines on the pending row, drops the rejected, and a repeat sends only those', async () => {
+    addToCart.mockRejectedValueOnce(new KrogerUnsure('timeout', { ok: [MILK], rejected: [RICE], unknown: [EGGS] }));
+    const three = body({ lines: lines(['milk#volume', MILK, 2], ['eggs#count', EGGS, 1], ['rice#mass', RICE, 1]) });
+    const res = await post(three);
+    expect(res.status).toBe(504);
+    expect(await res.json()).toEqual({ error: 'unsure', rejected: [{ key: 'rice#mass', name: 'Rice 2 lb' }] });
+    const row = w.sends[0] as { status: string; total_cents: number; items: { upc: string }[] };
+    expect(row.status).toBe('pending');
+    expect(row.items.map((i) => i.upc)).toEqual([MILK, EGGS]);
+    expect(row.total_cents).toBe(700 + 300);
+    // (An unanswered send looks like one in flight for five minutes: age it so the repeat is not stood down.)
+    (w.sends[0] as { created_at: string }).created_at = new Date(Date.now() - 6 * 60_000).toISOString();
+    addToCart.mockClear();
+    addToCart.mockImplementation(async (_a: string, items: { upc: string }[]) => ({ ok: items.map((i) => i.upc), rejected: [] }));
+    expect((await post(three)).status).toBe(200);
+    expect(addToCart.mock.calls[0][1]).toEqual([{ upc: RICE, quantity: 1, modality: 'PICKUP' }]);
+  });
+
+  it('a definite refusal of the whole batch marks the row failed', async () => {
+    addToCart.mockRejectedValueOnce(new KrogerNotAdded('429', 429));
+    const res = await post(body());
+    expect(res.status).toBe(429);
+    expect((await res.json()).error).toBe('slow_down');
+    expect((w.sends[0] as { status: string }).status).toBe('failed');
+    addToCart.mockRejectedValueOnce(new KrogerNotAdded('404', 404));
+    expect((await post(body())).status).toBe(502);
+    expect((w.sends[1] as { status: string }).status).toBe('failed');
+  });
+
   it('a 401 is retried once with a forced refresh', async () => {
     getUserAccess.mockResolvedValueOnce({ access: SECRET, profileId: 'p1' }).mockResolvedValueOnce({ access: 'tok-fresh-456', profileId: 'p1' });
     addToCart.mockRejectedValueOnce(new KrogerAuth('401'));
@@ -303,21 +342,21 @@ describe('POST /api/kroger/cart', () => {
     expect(JSON.stringify(logs)).not.toContain('tok-fresh-456');
   });
 
-  it('when the refresh also fails: row failed, link deleted, 409 not_connected', async () => {
+  it('when the refresh also fails: row failed, link kept, 409 not_connected', async () => {
     addToCart.mockRejectedValue(new KrogerAuth('401'));
     const res = await post(body());
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('not_connected');
     expect((w.sends[0] as { status: string }).status).toBe('failed');
-    expect(deleteLink).toHaveBeenCalledWith(w.sb, 'u1');
+    expect(deleteLink).not.toHaveBeenCalled();
   });
 
-  it('when the forced refresh finds no link: row failed, link deleted, 409', async () => {
+  it('when the forced refresh finds no link: row failed, link not deleted here, 409', async () => {
     getUserAccess.mockResolvedValueOnce({ access: SECRET, profileId: 'p1' }).mockResolvedValueOnce(null);
     addToCart.mockRejectedValueOnce(new KrogerAuth('401'));
     expect((await post(body())).status).toBe(409);
     expect((w.sends[0] as { status: string }).status).toBe('failed');
-    expect(deleteLink).toHaveBeenCalled();
+    expect(deleteLink).not.toHaveBeenCalled();
     expect(addToCart).toHaveBeenCalledTimes(1);
   });
 
@@ -366,7 +405,7 @@ describe('POST /api/kroger/cart', () => {
   });
 
   it('two requests at once make one Kroger call', async () => {
-    const [a, b] = await Promise.all([post(body({ resend: true })), post(body({ resend: true }))]);
+    const [a, b] = await Promise.all([post(body()), post(body())]);
     expect([a.status, b.status].sort()).toEqual([200, 409]);
     const loser = a.status === 409 ? a : b;
     expect((await loser.json()).error).toBe('already_sending');
@@ -374,8 +413,24 @@ describe('POST /api/kroger/cart', () => {
     expect(w.sends.map((s) => s.status).sort()).toEqual(['failed', 'sent']);
   });
 
+  it('two resends at once never both call Kroger', async () => {
+    const [a, b] = await Promise.all([post(body({ resend: true })), post(body({ resend: true }))]);
+    expect(addToCart.mock.calls.length).toBeLessThanOrEqual(1);
+    expect([a.status, b.status].filter((s) => s === 200).length).toBe(addToCart.mock.calls.length);
+    expect(w.sends.filter((s) => s.status === 'pending')).toHaveLength(0);
+  });
+
+  it('a resend stands down for any send still in flight, even one that started later', async () => {
+    const live = { id: 'zzz', household_id: 'h1', week_id: WEEK, user_id: 'u1', status: 'pending', items: [], created_at: new Date(Date.now() + 1_000).toISOString() };
+    setup({ existing: [live] });
+    const res = await post(body({ resend: true }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('already_sending');
+    expect(addToCart).not.toHaveBeenCalled();
+  });
+
   it('a send from another week still in flight blocks this one', async () => {
-    const live = { id: 'live1', household_id: 'h1', week_id: 'other', user_id: 'u2', status: 'pending', items: [], created_at: new Date(Date.now() - 5_000).toISOString() };
+    const live = { id: 'live1', household_id: 'h1', week_id: 'other', user_id: 'u2', status: 'pending', items: [], created_at: new Date(Date.now() - 200_000).toISOString() };
     setup({ existing: [live] });
     const res = await post(body());
     expect(res.status).toBe(409);
@@ -385,20 +440,25 @@ describe('POST /api/kroger/cart', () => {
   });
 
   it('an old unanswered send does not block a new one', async () => {
-    const stale = { id: 'stale1', household_id: 'h1', week_id: 'other', user_id: 'u1', status: 'pending', items: [], created_at: new Date(Date.now() - 600_000).toISOString() };
+    const stale = { id: 'stale1', household_id: 'h1', week_id: 'other', user_id: 'u1', status: 'pending', items: [], created_at: new Date(Date.now() - 400_000).toISOString() };
     setup({ existing: [stale] });
     expect((await post(body())).status).toBe(200);
   });
 
-  it('charges the cap before calling Kroger, and 429s without a call when it is spent', async () => {
+  it('the single batch call is not charged to the lookup allowance, even when that is spent', async () => {
     expect((await post(body())).status).toBe(200);
-    expect(w.spent()).toBe(1);
+    expect(w.spent()).toBe(0);
     addToCart.mockClear();
     setup({ spendUsed: 400 });
-    const res = await post(body());
-    expect(res.status).toBe(429);
-    expect(addToCart).not.toHaveBeenCalled();
-    expect(w.sends).toHaveLength(0);
+    expect((await post(body())).status).toBe(200);
+    expect(addToCart).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands the retry after a refresh the same charge', async () => {
+    getUserAccess.mockResolvedValueOnce({ access: SECRET, profileId: 'p1' }).mockResolvedValueOnce({ access: 'tok-fresh-456', profileId: 'p1' });
+    addToCart.mockRejectedValueOnce(new KrogerAuth('401'));
+    await post(body());
+    expect(typeof addToCart.mock.calls[1][2].charge).toBe('function');
   });
 
   it('hands addToCart a charge for the single calls, and marks the row failed when the cap refuses them', async () => {
@@ -408,8 +468,9 @@ describe('POST /api/kroger/cart', () => {
     });
     const res = await post(body());
     expect(res.status).toBe(429);
+    expect((await res.json()).error).toBe('slow_down');
     expect((w.sends[0] as { status: string }).status).toBe('failed');
-    expect(w.spent()).toBe(3);
+    expect(w.spent()).toBe(2);
   });
 
   it('503 not_configured when the cart is switched off', async () => {

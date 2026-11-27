@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addToCart, KrogerAuth, KrogerLimited, KrogerUnsure } from '@/lib/kroger/cart';
+import { addToCart, KrogerAuth, KrogerLimited, KrogerNotAdded, KrogerUnsure } from '@/lib/kroger/cart';
 
 const fetchMock = vi.fn();
 const item = (n: number, quantity = 1) => ({ upc: `00200000000${String(n).padStart(2, '0')}`, quantity, modality: 'PICKUP' as const });
@@ -89,6 +89,37 @@ describe('addToCart', () => {
     fetchMock.mockImplementation(async (_u: string, init: { body: string }) => (JSON.parse(init.body).items.length > 1 ? res(400) : res(500)));
     await expect(addToCart('tok', items)).rejects.toBeInstanceOf(KrogerUnsure);
     expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(1 + 4);
+  });
+
+  it('an unsure fan-out carries what Kroger answered for sure', async () => {
+    const items = [item(1), item(2), item(3)];
+    fetchMock.mockImplementation(async (_u: string, init: { body: string }) => {
+      const sent = JSON.parse(init.body).items as { upc: string }[];
+      if (sent.length > 1) return res(400);
+      if (sent[0].upc === items[0].upc) return res(204);
+      if (sent[0].upc === items[1].upc) return res(400);
+      throw new DOMException('timed out', 'TimeoutError');
+    });
+    const err = await addToCart('tok', items).catch((e) => e);
+    expect(err).toBeInstanceOf(KrogerUnsure);
+    expect(err.outcome).toEqual({ ok: [items[0].upc], rejected: [items[1].upc], unknown: [items[2].upc] });
+  });
+
+  it('the items never tried after a failure are unknown too', async () => {
+    const items = Array.from({ length: 12 }, (_, i) => item(i));
+    fetchMock.mockImplementation(async (_u: string, init: { body: string }) => (JSON.parse(init.body).items.length > 1 ? res(400) : res(500)));
+    const err = await addToCart('tok', items).catch((e) => e);
+    expect(err.outcome.ok).toEqual([]);
+    expect(err.outcome.unknown).toHaveLength(12);
+  });
+
+  it('a definite 4xx for the whole batch, even 429, means nothing was added', async () => {
+    for (const status of [404, 422, 429]) {
+      fetchMock.mockResolvedValue(res(status));
+      const err = await addToCart('tok', [item(1), item(2)]).catch((e) => e);
+      expect(err).toBeInstanceOf(KrogerNotAdded);
+      expect(err.status).toBe(status);
+    }
   });
 
   it('asks to be charged for the single calls, and stops when refused', async () => {
