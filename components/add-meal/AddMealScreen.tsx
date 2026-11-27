@@ -260,7 +260,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const cantAdd = adding || !weekStart || people === null;
 
   return (
-    <section className={`flex flex-1 flex-col ${showPreview ? "" : "pb-[var(--bk-safe-bottom)]"}`}>
+    <section className={`flex flex-1 flex-col ${showPreview ? "" : "mb-[var(--bk-safe-bottom)]"}`}>
       <header className="flex items-center gap-2 px-5 pb-2.5 pt-4">
         <Link href="/week" aria-label="Close" className={`-ml-2.5 flex size-11 items-center justify-center rounded-full text-ink ${focusRing}`}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
