@@ -46,6 +46,10 @@ export function useFlipList(ref: React.RefObject<HTMLElement | null>, signature:
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;
+    // A slide still running would put its in-flight transform into the measurement.
+    root.querySelectorAll<HTMLElement>("[data-flip-key]").forEach((el) => {
+      if (typeof el.getAnimations === "function") el.getAnimations().forEach((a) => a.cancel());
+    });
     const now = measureKeys(root);
     const before = prev.current;
     if (before) {

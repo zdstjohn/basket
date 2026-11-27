@@ -278,13 +278,15 @@ body {
 .bk-fade-in { animation: bk-fade-in var(--bk-dur-base) var(--bk-ease-out) both; }
 .bk-strike { position: absolute; inset: 0; color: transparent; text-decoration: line-through; text-decoration-color: var(--bk-ink-soft); text-decoration-thickness: 1.5px; clip-path: inset(0 100% 0 0); transition: clip-path var(--bk-dur-base) var(--bk-ease-out); pointer-events: none; }
 .bk-strike[data-on] { clip-path: inset(0); transition-delay: 60ms; }
-.bk-roll { display: inline-block; overflow: hidden; height: 1lh; vertical-align: bottom; }
+.bk-roll { display: inline-block; overflow: hidden; height: 1.5em; height: 1lh; vertical-align: bottom; }
 .bk-roll > span { display: block; transition: transform var(--bk-dur-settle) var(--bk-spring-settle); }
 ::view-transition { pointer-events: none; }
 ::view-transition-group(meal-photo) { animation-duration: var(--bk-dur-slow); animation-timing-function: var(--bk-spring-snap); }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--bk-dur-base); animation-timing-function: var(--bk-ease-out); }
 @media (prefers-reduced-motion: reduce) {
   .bk-skeleton { animation: none; }
+  .bk-settle::after { animation: none; box-shadow: none; }
+  .bk-roll > span { transform: none !important; transition: opacity var(--bk-dur-fast) linear; }
   .bk-strike, .bk-strike[data-on] { clip-path: inset(0); opacity: 0; transition: opacity var(--bk-dur-fast) linear; transition-delay: 0ms; }
   .bk-strike[data-on] { opacity: 1; }
 }

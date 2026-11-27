@@ -1,3 +1,5 @@
+import { prefersReducedMotion } from "./motion";
+
 type VTDoc = Document & { startViewTransition?: (cb: () => void) => { finished: Promise<unknown> } };
 
 export function supportsViewTransitions(doc?: Document): boolean {
@@ -7,7 +9,7 @@ export function supportsViewTransitions(doc?: Document): boolean {
 
 /**
  * Grow one element into another (a photo into its page). `update` must be synchronous (callers wrap
- * state changes in flushSync). Without the API, or under reduced motion, it just calls `update`.
+ * state changes in flushSync). Without the API, or under reduced motion (the default follows the phone), it just calls `update`.
  */
 export async function morph(opts: {
   from: HTMLElement | null;
@@ -20,16 +22,22 @@ export async function morph(opts: {
   const { from, to, update } = opts;
   const name = opts.name ?? "meal-photo";
   const doc = (opts.doc ?? (typeof document === "undefined" ? undefined : document)) as VTDoc | undefined;
-  if (!from || opts.reduced || !doc || !supportsViewTransitions(doc)) {
+  if (!from || (opts.reduced ?? prefersReducedMotion()) || !doc || !supportsViewTransitions(doc)) {
     update();
     return;
   }
   let dest: HTMLElement | null = null;
+  let failure: { error: unknown } | null = null;
   from.style.viewTransitionName = name;
   try {
     const t = doc.startViewTransition!(() => {
       from.style.viewTransitionName = "";
-      update();
+      try {
+        update();
+      } catch (error) {
+        failure = { error };
+        return;
+      }
       dest = to();
       if (dest) dest.style.viewTransitionName = name;
     });
@@ -39,4 +47,7 @@ export async function morph(opts: {
     const d = dest as HTMLElement | null;
     if (d) d.style.viewTransitionName = "";
   }
+  // The browser swallows errors from the update callback; throw it like the plain path does.
+  const f = failure as { error: unknown } | null;
+  if (f) throw f.error;
 }

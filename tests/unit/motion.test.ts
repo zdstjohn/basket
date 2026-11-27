@@ -2,7 +2,8 @@
 import { createElement, useRef } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DUR, prefersReducedMotion } from "@/lib/motion/motion";
 import { tick } from "@/lib/motion/haptics";
 import { shouldDismiss, velocity } from "@/lib/motion/sheet-gesture";
@@ -95,6 +96,10 @@ describe("settle", () => {
   });
 });
 
+afterEach(() => {
+  delete (window as { matchMedia?: unknown }).matchMedia;
+});
+
 describe("morph", () => {
   const els = () => ({ from: document.createElement("div"), dest: document.createElement("div") });
   it("without the API, calls update once and names nothing", async () => {
@@ -142,6 +147,31 @@ describe("morph", () => {
     } as unknown as Document;
     await expect(morph({ from, to: () => dest, update: () => {}, doc, name: "x" })).resolves.toBeUndefined();
     expect(dest.style.viewTransitionName).toBe("");
+  });
+  it("defaults to the phone's reduced-motion setting when `reduced` is not passed", async () => {
+    window.matchMedia = (() => ({ matches: true })) as never;
+    const { from, dest } = els();
+    const update = vi.fn();
+    const start = vi.fn();
+    await morph({ from, to: () => dest, update, doc: { startViewTransition: start } as unknown as Document });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(start).not.toHaveBeenCalled();
+    expect(from.style.viewTransitionName).toBeFalsy();
+  });
+  it("throws an error from update on both paths", async () => {
+    const { from, dest } = els();
+    const boom = () => {
+      throw new Error("boom");
+    };
+    await expect(morph({ from, to: () => dest, update: boom, doc: {} as Document })).rejects.toThrow("boom");
+    const doc = {
+      startViewTransition(cb: () => void) {
+        cb();
+        return { finished: Promise.resolve() };
+      },
+    } as unknown as Document;
+    await expect(morph({ from, to: () => dest, update: boom, doc })).rejects.toThrow("boom");
+    expect(from.style.viewTransitionName).toBe("");
   });
   it("with from: null just calls update", async () => {
     const update = vi.fn();
@@ -205,5 +235,47 @@ describe("flip", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].frames).toEqual([{ opacity: 0 }, { opacity: 1 }]);
     expect(calls[0].opts.duration).toBe(120);
+  });
+
+  it("cancels a running slide before measuring, so a second change lands at the true place", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const live = new WeakMap<Element, { cancelled: boolean; offset: number }[]>();
+    const calls: { key: string; frames: Keyframe[] }[] = [];
+    Element.prototype.animate = function (this: Element, frames: Keyframe[]) {
+      const a = { cancelled: false, offset: 100, cancel() { a.cancelled = true; } };
+      live.set(this, [...(live.get(this) ?? []), a]);
+      calls.push({ key: this.getAttribute("data-flip-key")!, frames });
+      return a as unknown as Animation;
+    } as never;
+    (Element.prototype as { getAnimations?: unknown }).getAnimations = function (this: Element) {
+      return (live.get(this) ?? []).filter((a) => !a.cancelled);
+    };
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      // An uncancelled slide adds its in-flight offset to the measured top.
+      const top = Number(this.getAttribute("data-top") ?? 0) + (live.get(this) ?? []).reduce((n, a) => n + (a.cancelled ? 0 : a.offset), 0);
+      return { left: 0, top, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: top, toJSON() {} } as DOMRect;
+    };
+    window.matchMedia = (() => ({ matches: false })) as never;
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Harness, { sig: "1", tops: { a: 0, b: 50 } })));
+    await act(async () => root.render(createElement(Harness, { sig: "2", tops: { a: 50, b: 50 } })));
+    expect(calls).toHaveLength(1);
+    // Second change while the first slide is still running: a stays at 50, b moves 50 -> 100.
+    await act(async () => root.render(createElement(Harness, { sig: "3", tops: { a: 50, b: 100 } })));
+    await act(async () => root.unmount());
+    expect(calls).toHaveLength(2);
+    expect(calls[1].key).toBe("b");
+    expect(calls[1].frames[0]).toEqual({ transform: "translate(0px, -50px)" });
+  });
+});
+
+describe("globals.css reduced motion", () => {
+  it("has a reduced-motion block that stills the roll, settle shadow and strike", () => {
+    const css = readFileSync("app/globals.css", "utf8");
+    const blocks = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]).join("\n");
+    expect(blocks).toMatch(/\.bk-roll > span/);
+    expect(blocks).toMatch(/\.bk-settle::after/);
+    expect(blocks).toMatch(/\.bk-strike/);
+    expect(css).toMatch(/height: 1\.5em;\s*height: 1lh;/);
   });
 });
