@@ -84,10 +84,10 @@ describe('recordUsage', () => {
     expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(6);
   });
 
-  it('charges a Spoonacular request SPOONACULAR_COST_CENTS, default 0.5', async () => {
+  it('charges a Spoonacular request SPOONACULAR_COST_CENTS, default 1', async () => {
     const m = mockSb();
     await recordUsage(m.sb, 'h', 'search', 'spoonacular', { inputTokens: 0, outputTokens: 0 });
-    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(0.5);
+    expect((m.inserts[0] as { row: { cost_cents: number } }).row.cost_cents).toBe(1);
     process.env.SPOONACULAR_COST_CENTS = '0.2';
     const m2 = mockSb();
     await recordUsage(m2.sb, 'h', 'search', 'spoonacular', { inputTokens: 0, outputTokens: 0 });

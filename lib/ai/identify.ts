@@ -2,7 +2,7 @@ import 'server-only';
 import { generateObject, NoObjectGeneratedError } from 'ai';
 import { z } from 'zod';
 import { fakeIdentify } from './fake';
-import { getModel, UnreadableError, usageReport, type UsageReport } from './provider';
+import { getModel, thrownUsage, UnreadableError, usageReport, type UsageReport } from './provider';
 
 const MAX_OUTPUT_TOKENS = 300;
 import type { DishGuess } from './schemas';
@@ -88,8 +88,8 @@ export async function identifyDish(
       opts.onUsage?.(report);
       throw new UnreadableError({ inputTokens: report.inputTokens, outputTokens: report.outputTokens });
     }
-    // The request went out, so it cost something even though it never answered: see generateStructured.
-    opts.onUsage?.(usageReport(model, undefined, MAX_OUTPUT_TOKENS));
+    const thrown = thrownUsage(model, e, MAX_OUTPUT_TOKENS);
+    if (thrown) opts.onUsage?.(thrown);
     throw e;
   }
 }

@@ -46,6 +46,10 @@ create index ai_usage_created_at_idx on public.ai_usage (created_at);
 
 -- Members may add usage rows but only choose these columns: id and created_at are the database's.
 -- Otherwise one future-dated row would count against the shared pool for good.
+-- No real call costs more than 50 cents (the dearest is a missing-usage answer at 6), so one inserted
+-- row cannot fill the shared pool by itself.
+alter table public.ai_usage add constraint ai_usage_cost_max check (cost_cents <= 50);
+
 revoke insert on public.ai_usage from authenticated;
 grant insert (household_id, kind, model, input_tokens, output_tokens, cost_cents)
   on public.ai_usage to authenticated;
@@ -61,6 +65,7 @@ begin
   return new;
 end;
 $$;
+revoke execute on function public.households_check_time_zone() from public, anon, authenticated;
 create trigger households_time_zone before insert or update of time_zone on public.households
   for each row execute function public.households_check_time_zone();
 

@@ -44,6 +44,22 @@ export function usageReport(
 
 export const MAX_OUTPUT_TOKENS = 4000;
 
+const hasStatus = (v: unknown): boolean => {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as { statusCode?: unknown; status?: unknown; cause?: unknown };
+  return typeof o.statusCode === 'number' || typeof o.status === 'number' || (o.cause !== undefined && o.cause !== v && hasStatus(o.cause));
+};
+
+/**
+ * What a model call that threw cost. An error that came back with an HTTP status (a bad key, a gateway
+ * outage, a 429) was refused and bills nothing, so an outage cannot use up the month. One with no
+ * status (a timeout, an abort, a dropped connection) may have run to the end: it is billed as the whole
+ * output limit at the configured model's own rate. Returns null for nothing to bill.
+ */
+export function thrownUsage(model: string, e: unknown, maxOutputTokens: number): UsageReport | null {
+  return hasStatus(e) ? null : { model, inputTokens: 0, outputTokens: maxOutputTokens };
+}
+
 export interface GenerateArgs<T> {
   /** Called once per model call, including calls whose answer turns out unreadable (they cost money too). */
   onUsage?: (u: UsageReport) => void;
@@ -91,9 +107,8 @@ export async function generateStructured<T>(args: GenerateArgs<T>): Promise<Gene
       args.onUsage?.(report);
       throw new UnreadableError({ inputTokens: report.inputTokens, outputTokens: report.outputTokens });
     }
-    // The request went out, so it cost something even though it never answered (a timeout, a gateway
-    // error): bill it as the whole output limit at the unknown-model rate.
-    args.onUsage?.(usageReport(model, undefined, MAX_OUTPUT_TOKENS));
+    const thrown = thrownUsage(model, e, MAX_OUTPUT_TOKENS);
+    if (thrown) args.onUsage?.(thrown);
     throw e;
   }
 }

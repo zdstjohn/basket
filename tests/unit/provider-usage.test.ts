@@ -38,23 +38,45 @@ describe('a model answer that reports no token counts', () => {
   });
 });
 
-describe('a model call that throws something else once the request was sent', () => {
+describe('a model call that throws something else', () => {
   const timeout = () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+  const withStatus = (statusCode: number) => Object.assign(new Error(`gateway ${statusCode}`), { statusCode });
+  const schema = z.object({ a: z.number() });
+  const gen = (onUsage: () => void) => generateStructured({ task: 'text', schema, system: 's', prompt: 'p', onUsage });
 
-  it('generateStructured still reports assumed usage, and rethrows', async () => {
+  it('no HTTP status (a timeout, a dropped connection): billed at the model\'s own rate times the output limit', async () => {
     generateObject.mockRejectedValue(timeout());
     const onUsage = vi.fn();
-    await expect(
-      generateStructured({ task: 'text', schema: z.object({ a: z.number() }), system: 's', prompt: 'p', onUsage }),
-    ).rejects.toThrow('timeout');
+    await expect(gen(onUsage)).rejects.toThrow('timeout');
     expect(onUsage).toHaveBeenCalledTimes(1);
-    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ inputTokens: 0, outputTokens: 4000, assumed: true }));
+    const report = onUsage.mock.calls[0][0];
+    expect(report).toMatchObject({ inputTokens: 0, outputTokens: 4000 });
+    expect(report.assumed).toBeUndefined(); // not the 6-cent unknown-model rate
   });
 
-  it('identifyDish too', async () => {
-    generateObject.mockRejectedValue(timeout());
+  it.each([401, 429, 500, 503])('an answer with HTTP status %i bills nothing', async (code) => {
+    generateObject.mockRejectedValue(withStatus(code));
     const onUsage = vi.fn();
+    await expect(gen(onUsage)).rejects.toThrow('gateway');
+    expect(onUsage).not.toHaveBeenCalled();
+  });
+
+  it('a status on the cause counts too', async () => {
+    generateObject.mockRejectedValue(Object.assign(new Error('wrapped'), { cause: withStatus(502) }));
+    const onUsage = vi.fn();
+    await expect(gen(onUsage)).rejects.toThrow('wrapped');
+    expect(onUsage).not.toHaveBeenCalled();
+  });
+
+  it('identifyDish: no status bills at its own limit, a status bills nothing', async () => {
+    const onUsage = vi.fn();
+    generateObject.mockRejectedValue(timeout());
     await expect(identifyDish({ base64: 'AAAA', mediaType: 'image/jpeg' }, { onUsage })).rejects.toThrow('timeout');
-    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ outputTokens: 300, assumed: true }));
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ inputTokens: 0, outputTokens: 300 }));
+    expect(onUsage.mock.calls[0][0].assumed).toBeUndefined();
+    onUsage.mockClear();
+    generateObject.mockRejectedValue(withStatus(401));
+    await expect(identifyDish({ base64: 'AAAA', mediaType: 'image/jpeg' }, { onUsage })).rejects.toThrow('gateway');
+    expect(onUsage).not.toHaveBeenCalled();
   });
 });
