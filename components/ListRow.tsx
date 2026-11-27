@@ -92,7 +92,8 @@ export function ListRow({
         : source === "ai"
           ? { text: "estimate", tone: "text-estimate" }
           : { text: "no price yet", tone: "text-ink-soft" };
-  const struck = checked ? "line-through text-ink-soft" : "";
+  // A checked row's text eases to ink-soft; the line itself is the name's overlay (.bk-strike), not text-decoration.
+  const dim = checked ? "text-ink-soft" : "";
   return (
     <li
       data-testid="list-row"
@@ -106,7 +107,12 @@ export function ListRow({
       <button type="button" onClick={onOpen} className="flex min-h-11 min-w-0 flex-1 items-center gap-3 py-2 text-left">
         <Packshot src={photo} alt={productName ?? ""} />
         <span className="min-w-0 flex-1">
-          <span className={`line-clamp-2 block text-small font-semibold ${struck}`}>{name}</span>
+          <span className="relative inline-block max-w-full align-top text-small font-semibold">
+            <span className={`line-clamp-2 block transition-colors duration-[var(--bk-dur-base)] ease-out ${dim}`}>{name}</span>
+            <span aria-hidden="true" data-testid="strike" data-on={checked ? "" : undefined} className="bk-strike line-clamp-2">
+              {name}
+            </span>
+          </span>
           <span className="block text-label text-ink-soft">
             <Need parts={item.parts} />
             {item.alwaysHave ? " · always have" : ""}
@@ -127,7 +133,7 @@ export function ListRow({
         </span>
         {!skipped && !searchLink && (
           <span className="shrink-0 whitespace-nowrap text-right">
-            <span data-testid="row-total" className={`bk-price block text-small font-semibold ${struck}`}>
+            <span data-testid="row-total" className={`bk-price block text-small font-semibold transition-colors duration-[var(--bk-dur-base)] ease-out ${dim}`}>
               {item.estimateCents === null ? "—" : `${offer?.approx ? "about " : ""}${formatMoney(item.estimateCents)}`}
             </span>
             {countLine && (

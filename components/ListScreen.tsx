@@ -22,11 +22,18 @@ import { loadQueue } from "@/lib/list/offline";
 import { reconnectedStrip, STRIP_MS } from "@/lib/list/offline-strip";
 import { STORE_NAMES } from "@/lib/list/prices";
 import { reviewLines } from "@/lib/list/review";
+import { tick } from "@/lib/motion/haptics";
+import { useFlipList } from "@/lib/motion/flip";
+import { prefersReducedMotion } from "@/lib/motion/motion";
 import { barAboveNav } from "@/lib/ui";
 import { listView, useWeekId, useWeekList } from "@/lib/useWeekList";
 
 const PANEL = "list-panel";
+/** How long the strike has to draw before the row leaves for "Got it". */
+const MOVE_DELAY_MS = 300;
 const heading = "mb-2 mt-6 text-heading";
+
+const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => a.size === b.size && [...a].every((k) => b.has(k));
 
 export function ListScreen({ household }: { household: Household }) {
   const week = useWeekId(household);
@@ -51,7 +58,23 @@ export function ListScreen({ household }: { household: Household }) {
   const swapping = swapKey ? (items.find((i) => i.key === swapKey) ?? null) : null;
   const here = useMemo(() => items.filter((i) => i.store === store), [items, store]);
   const toBuyHere = useMemo(() => here.filter((i) => !i.haveIt), [here]);
-  const { toBuy, gotIt } = useMemo(() => splitGotIt(toBuyHere, checked), [toBuyHere, checked]);
+  // Which rows sit in "Got it". It starts equal to `checked` once the list has loaded (nothing slides on open) and
+  // follows it 300 ms later (at once under reduced motion), so the strike draws before the row moves. The data write
+  // has already happened at the tap; this only decides where the row is drawn.
+  const [settled, setSettled] = useState<ReadonlySet<string>>(checked);
+  const [primed, setPrimed] = useState(false);
+  if (!primed && !list.loading) {
+    setPrimed(true);
+    setSettled(checked);
+  }
+  useEffect(() => {
+    if (!primed || sameSet(settled, checked)) return;
+    const t = setTimeout(() => setSettled(checked), prefersReducedMotion() ? 0 : MOVE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [primed, settled, checked]);
+  const { toBuy, gotIt } = useMemo(() => splitGotIt(toBuyHere, settled), [toBuyHere, settled]);
+  const listRef = useRef<HTMLDivElement>(null);
+  useFlipList(listRef, `${store}|${toBuy.map((g) => g.items.map((i) => i.key).join(",")).join(";")}|${gotIt.map((i) => i.key).join(",")}`);
   const skipped = useMemo(() => here.filter((i) => i.haveIt), [here]);
   const reviewable = useMemo(() => reviewLines(items, products).lines.length, [items, products]);
   const buyCount = items.filter((i) => !i.haveIt).length;
@@ -101,10 +124,11 @@ export function ListScreen({ household }: { household: Household }) {
   async function run(fn: () => Promise<void>, change = false) {
     setProblem(null);
     if (change && (list.offline || (typeof navigator !== "undefined" && navigator.onLine === false))) setQueued(true);
-    retryRef.current = fn;
     try {
       await fn();
     } catch {
+      // Only a change that failed can be retried; an older failure must never re-send a newer change.
+      retryRef.current = fn;
       setProblem("save");
     }
   }
@@ -133,7 +157,10 @@ export function ListScreen({ household }: { household: Household }) {
       product={products[i.key]}
       productMode={productMode}
       lookingUp={!list.offline && !list.stalePrices}
-      onToggle={(c) => void run(() => list.update(i.key, { checked: c }), true)}
+      onToggle={(c) => {
+        tick();
+        void run(() => list.update(i.key, { checked: c }), true);
+      }}
       onOpen={() => setOpenKey(i.key)}
       onFind={() => setSwapKey(i.key)}
     />
@@ -199,7 +226,7 @@ export function ListScreen({ household }: { household: Household }) {
         )}
       </div>
 
-      <div role="tabpanel" id={PANEL} aria-labelledby={`${PANEL}-tab-${store}`} className="bk-gutter flex flex-col">
+      <div ref={listRef} role="tabpanel" id={PANEL} aria-labelledby={`${PANEL}-tab-${store}`} className="bk-gutter flex flex-col">
         {view === "error" ? (
           <div className="pt-4">
             <ErrorBanner

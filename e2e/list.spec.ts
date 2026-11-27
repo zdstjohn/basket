@@ -449,6 +449,19 @@ test("check off all works offline, and Undo too, then everything is sent", async
     .toBe(4);
 });
 
+test("the Undo toast rises above the pinned bar", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await expect(page.getByTestId("list-row")).toHaveCount(4);
+  await checkAll(page).click();
+  const toast = page.getByTestId("check-all-undo");
+  await expect(toast).toBeVisible();
+  const t = (await toast.boundingBox())!;
+  const bar = (await page.getByTestId("list-bar").boundingBox())!;
+  expect(t.y + t.height).toBeLessThanOrEqual(bar.y + 0.5);
+});
+
 test("a ticked item moves to Got it", async ({ page }) => {
   await createHousehold(page);
   await planTacos(page);
