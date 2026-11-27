@@ -187,8 +187,6 @@ test("a total that gains a digit keeps the bar on one line", async ({ page }) =>
   });
   expect(oneLine).toBe(true);
 });
-  expect(lines).toBeLessThanOrEqual(before.height > 0 ? 2 : 1);
-});
 
 test("reduced motion: no transforms on the list; the total crossfades", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
