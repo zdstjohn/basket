@@ -7,10 +7,10 @@ describe("photoVerdict", () => {
     expect(photoVerdict("hero", null)).toBe("ok");
     expect(photoVerdict("thumb", null)).toBe("ok");
   });
-  it("sends an unreadable photo (width 0) to the fallback in every crop", () => {
-    expect(photoVerdict("tile", 0)).toBe("fallback");
-    expect(photoVerdict("hero", 0)).toBe("fallback");
-    expect(photoVerdict("thumb", 0)).toBe("fallback");
+  it("treats width 0 (the server could not read it) as unknown, so the browser tries it, in every crop", () => {
+    expect(photoVerdict("tile", 0)).toBe("ok");
+    expect(photoVerdict("hero", 0)).toBe("ok");
+    expect(photoVerdict("thumb", 0)).toBe("ok");
   });
   it("tile: under 300 is the fallback, 300 is fine", () => {
     expect(photoVerdict("tile", 299)).toBe("fallback");

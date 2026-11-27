@@ -143,10 +143,10 @@ describe("<Photo>", () => {
     expect(state()).toBe("fallback");
   });
 
-  it("treats an unreadable photo (width 0) as the fallback, with no request", () => {
+  it("treats width 0 (the server could not read it) as unknown: the browser still requests the photo", () => {
     render(<Photo src="/a.jpg" name="Tacos" crop="thumb" width={0} />);
-    expect(state()).toBe("fallback");
-    expect(host.querySelectorAll("img")).toHaveLength(0);
+    expect(state()).not.toBe("fallback");
+    expect(host.querySelectorAll("img")).toHaveLength(1);
   });
 
   it("shows the hint under the letter unless hint is false", () => {
