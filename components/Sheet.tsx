@@ -256,8 +256,8 @@ export function Sheet({
     if (!g || !panel || g.mode !== "drag") return;
     g.samples.push({ t: performance.now(), y: g.y });
     const v = velocity(g.samples);
-    // Only downward speed and distance count: a flick back up never dismisses.
-    if (v >= 0 && shouldDismiss(g.y, panel.offsetHeight, v)) close();
+    // A deliberate upward flick never dismisses; the wobble of a lifting finger (a pixel or two back up) does not count as one.
+    if (v > -0.2 && shouldDismiss(g.y, panel.offsetHeight, v)) close();
     else springBack(g.y);
   }, [close, springBack]);
 

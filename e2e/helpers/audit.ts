@@ -149,7 +149,7 @@ export interface SkippedText {
  * finished first so text still fading in is not measured half way.
  * Text is never dropped without a trace: what cannot be measured comes back in `skipped` with a reason.
  * Exempt on purpose: text marked `data-on-photo`, disabled controls (WCAG exempts them) and hidden text.
- * An image or gradient background is reported as skipped with reason starting "image".
+ * An image or gradient background is reported as skipped with a reason starting "image"; the spec fails it unless the text is in `data-on-photo`.
  */
 export async function textPairs(page: Page): Promise<{ pairs: TextPair[]; skipped: SkippedText[] }> {
   return page.evaluate(() => {

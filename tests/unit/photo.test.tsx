@@ -104,10 +104,27 @@ describe("<Photo>", () => {
     expect(host.querySelectorAll("img")).toHaveLength(0);
   });
 
-  it("uses the width prop over the natural width", () => {
+  it("a known width settles it before any request: too small is the fallback at once, with no img", () => {
     render(<Photo src="/a.jpg" name="Tacos" crop="tile" width={200} />);
-    load(q<HTMLImageElement>("img"), 900);
     expect(state()).toBe("fallback");
+    expect(host.querySelectorAll("img")).toHaveLength(0);
+  });
+
+  it("a known hero width under 300 is the fallback at once, and never asks to be demoted", () => {
+    const onDemote = vi.fn();
+    render(<Photo src="/a.jpg" name="Tacos" crop="hero" width={250} onDemote={onDemote} />);
+    expect(state()).toBe("fallback");
+    expect(host.querySelectorAll("img")).toHaveLength(0);
+    expect(onDemote).not.toHaveBeenCalled();
+  });
+
+  it("a known width of 450 on a hero still requests the photo and demotes on load", () => {
+    const onDemote = vi.fn();
+    render(<Photo src="/a.jpg" name="Tacos" crop="hero" width={450} onDemote={onDemote} />);
+    expect(host.querySelectorAll("img")).toHaveLength(1);
+    load(q<HTMLImageElement>("img"), 900);
+    expect(onDemote).toHaveBeenCalledTimes(1);
+    expect(state()).toBe("ready");
   });
 
   it("a small hero is never the hero: it asks to be demoted and does not fall back", () => {
@@ -126,10 +143,10 @@ describe("<Photo>", () => {
     expect(state()).toBe("fallback");
   });
 
-  it("treats an unreadable photo (width 0) as the fallback", () => {
+  it("treats an unreadable photo (width 0) as the fallback, with no request", () => {
     render(<Photo src="/a.jpg" name="Tacos" crop="thumb" width={0} />);
-    load(q<HTMLImageElement>("img"));
     expect(state()).toBe("fallback");
+    expect(host.querySelectorAll("img")).toHaveLength(0);
   });
 
   it("shows the hint under the letter unless hint is false", () => {
@@ -187,6 +204,27 @@ describe("<Photo>", () => {
 });
 
 describe("<Packshot>", () => {
+  it("hides itself on mount when the image already failed before React listened", () => {
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(0);
+    render(<Packshot src="https://example.test/p.jpg" alt="x" />);
+    expect(q(".bk-packshot").hasAttribute("hidden")).toBe(true);
+  });
+
+  it("stays visible on mount when the image already arrived", () => {
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(200);
+    render(<Packshot src="https://example.test/p.jpg" alt="x" />);
+    expect(q(".bk-packshot").hasAttribute("hidden")).toBe(false);
+  });
+
+  it("size 64 takes the md radius, size 44 keeps the default", () => {
+    render(<Packshot src="https://example.test/p.jpg" alt="x" size={64} />);
+    expect(q(".bk-packshot").getAttribute("style")).toContain("--bk-packshot-radius: var(--radius-md)");
+    render(<Packshot src="https://example.test/p.jpg" alt="x" />);
+    expect(q(".bk-packshot").getAttribute("style") ?? "").not.toContain("--bk-packshot-radius");
+  });
+
   it("is a lazy, no-referrer image in a .bk-packshot of 44 or 64 px", () => {
     render(<Packshot src="https://example.test/p.jpg" alt="Black Beans" />);
     const box = q(".bk-packshot");

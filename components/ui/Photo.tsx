@@ -100,7 +100,9 @@ export function Photo({
     else handleError();
   }, [src, handleLoad, handleError]);
 
-  const shown: PhotoState = src ? state : "fallback";
+  // A width we already know settles it before any request: too small is the fallback at once, with no download.
+  const knownFallback = width != null && photoVerdict(crop, width) === "fallback";
+  const shown: PhotoState = src && !knownFallback ? state : "fallback";
   const style = shown === "fallback" ? undefined : previewVar(preview);
   const letter = (Array.from(name.trim())[0] ?? "?").toUpperCase();
 

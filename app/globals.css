@@ -253,7 +253,7 @@ body:not(:has([data-bk-header])) { padding-top: var(--bk-safe-top); }
 /* Put .bk-qty on the number alone (<span class="bk-qty">1/8</span> cup). On a whole line, frac also shrinks ordinary digits. */
 .bk-qty { font-feature-settings: var(--bk-num-qty); font-variant-numeric: diagonal-fractions; }
 .bk-photo { filter: var(--bk-photo-filter); background: var(--bk-sunk); object-fit: cover; }
-.bk-packshot { background: var(--bk-packshot); border-radius: var(--radius-sm); }
+.bk-packshot { background: var(--bk-packshot); border-radius: var(--bk-packshot-radius, var(--radius-sm)); }
 .bk-packshot > img { mix-blend-mode: var(--bk-packshot-blend); padding: var(--bk-packshot-pad); object-fit: contain; }
 .bk-press { transition: transform var(--bk-dur-snap) var(--bk-spring-snap); }
 .bk-press:active:not(:disabled) { transform: scale(var(--bk-press-scale)); transition: transform var(--bk-dur-fast) var(--bk-ease-out); }

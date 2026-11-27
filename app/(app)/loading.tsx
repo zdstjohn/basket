@@ -9,8 +9,8 @@ export default function AppLoading() {
   return (
     <div className="bk-fade-in bk-gutter pb-4" style={{ animationDelay: "240ms" }}>
       <div aria-hidden="true" className="flex animate-pulse flex-col gap-2 motion-reduce:animate-none">
-        <div className="h-4 w-full rounded-xs bg-[var(--bk-sunk)]" />
-        <div className="h-4 w-2/3 rounded-xs bg-[var(--bk-sunk)]" />
+        <div className="h-4 w-full rounded-xs bg-sunk" />
+        <div className="h-4 w-2/3 rounded-xs bg-sunk" />
       </div>
       <Loading label="Loading" />
     </div>
