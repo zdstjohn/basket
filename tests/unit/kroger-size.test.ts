@@ -29,4 +29,19 @@ describe('parseSize', () => {
       expect(parseSize(s)).toBeNull();
     }
   });
+  it('reads fractions, pack-of-size and trailing container words', () => {
+    expect(parseSize('1/2 gal')?.kind).toBe('volume');
+    expect(parseSize('1/2 gal')?.amount).toBeCloseTo(1892.7, 0);
+    expect(parseSize('6 ct / 16.9 fl oz')?.amount).toBeCloseTo(6 * 16.9 * 29.5735296, 3);
+    expect(parseSize('6 ct / 16.9 fl oz')?.kind).toBe('volume');
+    expect(parseSize('5 lb bag')?.amount).toBeCloseTo(2267.96, 1);
+    expect(parseSize('5 lb bag')?.kind).toBe('mass');
+  });
+  it('reads a bare "each" as one item', () => {
+    expect(parseSize('each')).toEqual({ amount: 1, kind: 'count', base: 'each' });
+    expect(parseSize('1 each')).toEqual({ amount: 1, kind: 'count', base: 'each' });
+  });
+  it('returns null for words and zero', () => {
+    for (const s of ['', 'assorted', '0 oz']) expect(parseSize(s)).toBeNull();
+  });
 });

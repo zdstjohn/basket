@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addQuantities, formatQuantity, quantityOrCount, toQuantity } from '@/lib/domain/units';
+import { addQuantities, formatQuantity, isVague, quantityOrCount, toQuantity } from '@/lib/domain/units';
 import type { Quantity } from '@/lib/domain/types';
 
 const q = (amount: number, unit: string): Quantity => {
@@ -99,5 +99,17 @@ describe("formatQuantityRoundedUp", () => {
   });
   it("leaves weights and volumes as they were", () => {
     expect(formatQuantityRoundedUp({ amount: 453.6 * 1.2, kind: "mass", base: "g" })).toBe("1.2 lb");
+  });
+});
+
+describe('isVague', () => {
+  it('is true for to-taste style counts', () => {
+    for (const u of ['to taste', 'pinch', 'pinches', 'dash', 'dashes', 'sprinkle', 'splash', 'drizzle', 'as needed', 'garnish', 'for garnish', 'for serving']) {
+      expect(isVague(quantityOrCount(1, u))).toBe(true);
+    }
+  });
+  it('is false for real amounts', () => {
+    expect(isVague(toQuantity(1, 'tsp') as Quantity)).toBe(false);
+    expect(isVague(quantityOrCount(2, 'cans'))).toBe(false);
   });
 });

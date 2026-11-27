@@ -106,3 +106,13 @@ export function formatQuantityRoundedUp(q: Quantity): string {
   if (q.kind !== 'count') return formatQuantity(q);
   return formatQuantity({ ...q, amount: Math.max(1, Math.ceil(q.amount - 1e-9)) });
 }
+
+const VAGUE = new Set([
+  'to taste', 'pinch', 'pinches', 'dash', 'dashes', 'sprinkle', 'splash', 'drizzle',
+  'as needed', 'garnish', 'for garnish', 'for serving',
+]);
+
+/** A count whose "unit" is really a note ("to taste", "a pinch"): it never needs buying on its own. */
+export function isVague(q: Quantity): boolean {
+  return q.kind === 'count' && q.countUnit !== undefined && VAGUE.has(q.countUnit);
+}
