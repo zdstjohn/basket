@@ -12,7 +12,9 @@ import type { RecipeDraft } from "@/lib/ai/schemas";
 import { createBrowserClient } from "@/lib/db/client";
 import { updateHousehold, listPeople } from "@/lib/db/queries/household";
 import { listAlwaysHave } from "@/lib/db/queries/list";
-import { getMeals, saveMeal, setMealPhoto, toMeal } from "@/lib/db/queries/meals";
+import { getMeals, saveMeal, setMealPhoto } from "@/lib/db/queries/meals";
+import { cookedNights } from "@/lib/domain/leftovers";
+import { weekEntries } from "@/lib/list/entries";
 import { findWeek, getOrCreateWeek, listWeekMeals, setWeekMeal } from "@/lib/db/queries/weeks";
 import type { Household, MealRow } from "@/lib/db/rows";
 import type { Meal, Person } from "@/lib/domain/types";
@@ -89,14 +91,11 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       const week = await findWeek(sb, household.id, weekStart);
       const rows = week ? (await listWeekMeals(sb, week.id)).filter((r) => !(r.day === day && r.slot === slot)) : [];
       const [meals, alwaysHave] = await Promise.all([
-        getMeals(sb, [...new Set(rows.map((r) => r.meal_id))]),
+        getMeals(sb, [...new Set(cookedNights(rows).map((r) => r.meal_id))]),
         listAlwaysHave(sb, household.id),
       ]);
       const byId = new Map(meals.map((m) => [m.id, m]));
-      const entries = rows.flatMap((r) => {
-        const m = byId.get(r.meal_id);
-        return m ? [{ meal: toMeal(m), servings: r.servings_override === null ? null : Number(r.servings_override) }] : [];
-      });
+      const entries = weekEntries(rows, byId);
       if (alive) setOthers({ entries, alwaysHave });
     })().catch(() => {
       // Without the week, "Fits this week" just keeps the most-loved order.

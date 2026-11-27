@@ -8,7 +8,9 @@ import {
   listAlwaysHave, listItemState, listItemStores, listPrices, listStaples,
   setEstimate, setItemState, setItemStore, type ItemState,
 } from "@/lib/db/queries/list";
-import { getMeals, toMeal } from "@/lib/db/queries/meals";
+import { getMeals } from "@/lib/db/queries/meals";
+import { cookedNights } from "@/lib/domain/leftovers";
+import { weekEntries } from "@/lib/list/entries";
 import { getOrCreateWeek, listWeekMeals } from "@/lib/db/queries/weeks";
 import type { Household } from "@/lib/db/rows";
 import { budgetState, type BudgetState } from "@/lib/domain/budget";
@@ -242,14 +244,9 @@ export function useWeekList(household: Household, weekId: string | null) {
         locationId ? listMatches(sb, household.id, locationId) : Promise.resolve([] as MatchRow[]),
         locationId ? listChoices(sb, household.id) : Promise.resolve([] as Choice[]),
       ]);
-      const meals = new Map((await getMeals(sb, [...new Set(weekMeals.map((m) => m.meal_id))])).map((m) => [m.id, m]));
+      const meals = new Map((await getMeals(sb, [...new Set(cookedNights(weekMeals).map((m) => m.meal_id))])).map((m) => [m.id, m]));
       if (run !== latest.current) return;
-      const entries = weekMeals.flatMap((wm) => {
-        const row = meals.get(wm.meal_id);
-        return row
-          ? [{ meal: toMeal(row), servings: wm.servings_override === null ? null : Number(wm.servings_override) }]
-          : [];
-      });
+      const entries = weekEntries(weekMeals, meals);
       setRaw({
         entries,
         people,

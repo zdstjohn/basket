@@ -6,6 +6,11 @@ import type { ItemState } from '@/lib/db/queries/list';
 import type { Choice, MatchRow } from '@/lib/list/matches';
 import type { PriceRow } from '@/lib/list/prices';
 import { buildList, type ListInputs } from '@/lib/useWeekList';
+import { familyOfFive } from '@/lib/fixtures/household';
+import { tacos } from '@/lib/fixtures/tacos';
+import { scaleMeal } from '@/lib/domain/scaling';
+import { weekEntries } from '@/lib/list/entries';
+import { tacosRow, wm } from './leftover-fixtures';
 
 const LOC = '70100023';
 const flags = (o: Partial<ItemState> = {}): ItemState => ({ have_it: false, checked: false, outside_budget: false, ...o });
@@ -162,5 +167,40 @@ describe('buildList reads an old cache', () => {
     const b = buildList(old as ListInputs);
     expect(b.productMode).toBe(false);
     expect(b.items).toHaveLength(3);
+  });
+});
+
+describe('leftover nights and the list', () => {
+  const people = familyOfFive;
+  const mealsMap = new Map([[tacosRow.id, tacosRow]]);
+  const cook7_6 = wm('a', 'wed', tacosRow.id, { servings_override: 7.6 });
+  const leftoverFri = wm('b', 'fri', tacosRow.id, { servings_override: 0, leftover_of: 'a' });
+  const inputs = (entries: ListInputs['entries']): ListInputs => base({ entries, people, staples: [] });
+  const grams = (i: { qty: { amount: number } }) => i.qty.amount;
+  const row = (b: ReturnType<typeof buildList>, food: string) => byKey(b, food);
+
+  it('cook double buys exactly twice, the leftovers night buys nothing, and the swap doubles', () => {
+    const single = buildList(inputs([{ meal: tacos, servings: null }]));
+    const doubled = buildList(inputs(weekEntries([cook7_6, leftoverFri], mealsMap)));
+    // The list rounds counts (cans, onions) up to whole ones, so exact doubling is checked on the scaled
+    // amounts that feed it, and on the mass row of the finished list.
+    const once = scaleMeal(tacos, people);
+    const twice = scaleMeal(tacos, people, 7.6);
+    for (const food of ['boneless chicken thighs', 'black beans', 'yellow onion', 'corn tortillas']) {
+      const a = once.find((l) => l.canonical === food)!;
+      const b = twice.find((l) => l.canonical === food)!;
+      expect(b.qty.amount).toBeCloseTo(2 * a.qty.amount, 6);
+    }
+    expect(grams(row(doubled, 'boneless chicken thighs'))).toBeCloseTo(2 * grams(row(single, 'boneless chicken thighs')), 3);
+    for (const food of ['black beans', 'yellow onion', 'corn tortillas']) {
+      expect(grams(row(doubled, food))).toBe(Math.ceil(twice.find((l) => l.canonical === food)!.qty.amount - 1e-9));
+    }
+    expect(doubled.items).toHaveLength(single.items.length);
+  });
+
+  it('a phone on the last release adds nothing for a leftovers night either', () => {
+    const old = buildList(inputs([{ meal: tacos, servings: 7.6 }, { meal: tacos, servings: 0 }]));
+    const now = buildList(inputs([{ meal: tacos, servings: 7.6 }]));
+    expect(old.items.map((i) => [i.key, i.parts])).toEqual(now.items.map((i) => [i.key, i.parts]));
   });
 });
