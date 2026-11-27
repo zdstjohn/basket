@@ -27,6 +27,8 @@ export function WeekScreen({ household }: { household: Household }) {
   const [confirming, setConfirming] = useState(false);
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  // A line shown on the week after a sheet closes on its own (e.g. the dinner was taken off on the other phone).
+  const [notice, setNotice] = useState<string | null>(null);
 
   const slot = household.slots[0] ?? "dinner";
   const days = daysOfWeek(household.week_start as Day);
@@ -77,6 +79,17 @@ export function WeekScreen({ household }: { household: Household }) {
         </button>
       </header>
 
+      {notice && (
+        <div role="status" className="mx-5 mb-3 flex items-center justify-between gap-3 rounded-[14px] bg-[#EEF0ED] py-1 pl-3.5 pr-1 text-sm text-[#4A544F]">
+          <p>{notice}</p>
+          <button type="button" aria-label="Dismiss" onClick={() => setNotice(null)} className={`flex size-11 shrink-0 items-center justify-center rounded-full ${focusRing}`}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       <BudgetMeter totalCents={list.totals.totalCents} targetCents={household.budget_cents} cushionCents={household.cushion_cents} />
 
       <section aria-label="Dinners" className="mx-5 mt-3.5 flex flex-col gap-1.5">
@@ -108,7 +121,10 @@ export function WeekScreen({ household }: { household: Household }) {
                 key={d}
                 day={d}
                 slot={slot}
-                onOpen={() => setOpenDay(d)}
+                onOpen={() => {
+                  setNotice(null);
+                  setOpenDay(d);
+                }}
                 filled={
                   wm && meal
                     ? isLeftover(wm)
@@ -157,6 +173,7 @@ export function WeekScreen({ household }: { household: Household }) {
           weekDays={days}
           busyDays={busyDays}
           onClose={() => setOpenDay(null)}
+          onNotice={setNotice}
           onChanged={reload}
         />
       )}
@@ -175,6 +192,7 @@ export function WeekScreen({ household }: { household: Household }) {
           weekDays={days}
           busyDays={busyDays}
           onClose={() => setOpenDay(null)}
+          onNotice={setNotice}
           onChanged={reload}
         />
       )}

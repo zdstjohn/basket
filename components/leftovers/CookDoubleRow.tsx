@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import type { CookState } from "@/lib/domain/leftovers";
 import { focusRing, pillButton } from "@/lib/ui";
 import { doneBox, OFFLINE_LINE } from "@/lib/week/leftover-copy";
@@ -14,11 +15,14 @@ export function CookDoubleRow({
   state,
   disabled,
   offline,
+  buttonRef,
   onOpen,
 }: {
   state: CookState;
   disabled: boolean;
   offline: boolean;
+  /** The button that opens the picker, so focus can come back to it. */
+  buttonRef?: Ref<HTMLButtonElement>;
   onOpen: () => void;
 }) {
   const box = doneBox(state);
@@ -32,6 +36,7 @@ export function CookDoubleRow({
             <p className="mt-0.5 text-xs text-[#2C5A42]">{box.sub}</p>
           </div>
           <button
+            ref={buttonRef}
             type="button"
             disabled={disabled || offline}
             onClick={onOpen}
@@ -46,7 +51,7 @@ export function CookDoubleRow({
             <span className="block font-semibold">Leftovers night</span>
             <span className="block text-xs text-muted">Cook once, eat it twice.</span>
           </p>
-          <button type="button" disabled={disabled || offline} onClick={onOpen} className={`${pillButton} text-sm`}>
+          <button ref={buttonRef} type="button" disabled={disabled || offline} onClick={onOpen} className={`${pillButton} text-sm`}>
             Cook double
           </button>
         </div>

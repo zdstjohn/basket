@@ -97,6 +97,7 @@ test("cook double, move it, take it off: the week, the sheet and the list agree"
   await expect(page.getByRole("dialog")).toHaveCount(1); // one dialog at a time
   await expect(picker(page).getByRole("radio")).toHaveCount(4);
   for (const label of ["Thursday", "Friday", "Saturday", "No set night"]) await expect(night(page, label)).toBeVisible();
+  await expect(picker(page).getByRole("heading", { name: "Cook double" })).toBeFocused();
   await expect(picker(page).getByRole("radio", { name: /^Thursday/ })).toBeChecked();
   await expect(picker(page).getByText("Mom’s black beans double too.")).toBeVisible();
   await expect(picker(page).getByText("Leftovers are best within 3 to 4 days.")).toBeVisible();
@@ -112,10 +113,12 @@ test("cook double, move it, take it off: the week, the sheet and the list agree"
   await picker(page).getByRole("button", { name: "Cook double", exact: true }).click();
   await expect(page.getByTestId("cook-double")).toContainText("Cooking double");
   await expect(page.getByTestId("cook-double")).toContainText("Leftovers on Friday");
+  await page.screenshot({ path: `${shots}/leftovers-done-box.png` });
   await page.getByRole("button", { name: "Close" }).click();
   await expect(dayRow(page, "wed")).toContainText("cooking double");
   await expect(dayRow(page, "fri")).toContainText("Leftovers");
   await expect(dayRow(page, "fri")).toContainText("Chicken tacos, from Wednesday");
+  await page.screenshot({ path: `${shots}/leftovers-week.png`, fullPage: true });
 
   const doubled = await readList(page);
   // The list may show the copy it kept from the last visit for a moment, so read until it has caught up.
@@ -130,8 +133,14 @@ test("cook double, move it, take it off: the week, the sheet and the list agree"
   await open(page, "fri");
   await expect(sheet(page)).toContainText("Nothing to buy for Friday. It’s all on Wednesday’s list, Mom’s black beans too.");
   await expect(sheet(page)).toContainText("Cooked Wednesday, 2 days before");
+  await expect(sheet(page).getByRole("button", { name: "Take off Friday" })).toHaveCSS("color", "rgb(166, 38, 27)");
   await sheet(page).getByRole("button", { name: "Move to another night" }).click();
   await expect(picker(page)).toContainText("Move the leftovers");
+  await page.screenshot({ path: `${shots}/leftovers-move-picker.png` });
+  // Back returns to the leftovers sheet with focus on the button that opened the picker.
+  await picker(page).getByRole("button", { name: "Back", exact: true }).click();
+  await expect(sheet(page).getByRole("button", { name: "Move to another night" })).toBeFocused();
+  await sheet(page).getByRole("button", { name: "Move to another night" }).click();
   await expect(picker(page).getByRole("radio", { name: /^Friday/ })).toBeChecked();
   await expect(night(page, "Friday")).toContainText("where they are now");
   await night(page, "Saturday").click();
@@ -169,6 +178,9 @@ test("cook double with no set night, and back to the usual amount", async ({ pag
 
   await open(page, "wed");
   await page.getByTestId("cook-double").getByRole("button", { name: "Change" }).click();
+  await picker(page).getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByTestId("cook-double").getByRole("button", { name: "Change" })).toBeFocused();
+  await page.getByTestId("cook-double").getByRole("button", { name: "Change" }).click();
   await picker(page).getByRole("button", { name: "Back to the usual amount" }).click();
   await expect(page.getByTestId("cook-double")).toContainText("Leftovers night");
   await expect(page.getByTestId("cook-double").getByRole("button", { name: "Cook double" })).toBeVisible();
@@ -186,6 +198,7 @@ test("taking the cooking night off takes its leftovers night too", async ({ page
   const note = page.getByText("Friday’s leftovers come off too.");
   const button = page.getByRole("button", { name: "Take off Wednesday" });
   await expect(note).toBeVisible();
+  await expect(button).toHaveCSS("color", "rgb(166, 38, 27)");
   expect((await note.boundingBox())!.y).toBeLessThan((await button.boundingBox())!.y);
   await button.click();
   await expect(sheet(page)).toHaveCount(0);
@@ -210,11 +223,10 @@ test("a night with a dinner cannot be chosen", async ({ page }) => {
   await plan(page, "wed", "Wednesday");
   await plan(page, "thu", "Thursday", "lasagna", "Easy lasagna · Spoonacular");
   await openPicker(page);
-  const thursday = picker(page).locator('[aria-disabled="true"]');
-  await expect(thursday).toHaveCount(1);
-  await expect(thursday).toContainText("Thursday");
-  await expect(thursday).toContainText("Easy lasagna is planned");
-  await expect(picker(page).getByRole("radio", { name: /^Thursday/ })).toHaveCount(0);
+  const thursday = picker(page).getByRole("radio", { name: /^Thursday/ });
+  await expect(thursday).toBeDisabled();
+  await expect(thursday).toHaveAccessibleName(/Easy lasagna is planned/);
+  await expect(night(page, "Thursday")).toContainText("Easy lasagna is planned");
   // The first free night is chosen instead.
   await expect(picker(page).getByRole("radio", { name: /^Friday/ })).toBeChecked();
 });
@@ -258,9 +270,11 @@ test("two phones: each change shows on the other phone, and a night taken in bet
   await picker(page).getByRole("button", { name: "Move", exact: true }).click();
   await expect(picker(page).getByRole("alert")).toHaveText("Saturday was just taken. Pick another night.");
   hold = false;
-  // The choices were rebuilt from fresh rows: Saturday cannot be chosen now, and the leftovers are still on Friday.
-  await expect(picker(page).locator('[aria-disabled="true"]')).toContainText("Saturday");
-  await expect(picker(page).getByRole("radio", { name: /^Friday/ })).toBeChecked();
+  // The choices were rebuilt from fresh rows: Saturday cannot be chosen now, nothing is picked behind the person's back,
+  // and the leftovers are still on Friday.
+  await expect(picker(page).getByRole("radio", { name: /^Saturday/ })).toBeDisabled();
+  await expect(picker(page).getByRole("radio", { checked: true })).toHaveCount(0);
+  await expect(picker(page).getByRole("alert")).toHaveText("Saturday was just taken. Pick another night.");
   await expect(dayRow(b, "fri")).toContainText("Leftovers");
 
   // Move to Thursday instead: phone 2 sees it.
@@ -281,9 +295,10 @@ test("two phones: each change shows on the other phone, and a night taken in bet
 test("cook double again after someone leaves the household keeps the leftovers night", async ({ page }) => {
   const email = await createHousehold(page);
   await plan(page, "wed", "Wednesday");
+  const single = await (await readList(page)).amount("chicken");
+  await backToWeek(page);
   await cookDoubleTo(page, "Friday");
   await page.getByRole("button", { name: "Close" }).click();
-  const before = await (await readList(page)).amount("chicken");
 
   // The youngest leaves: 3.8 servings become 3.3.
   const sb = await clientFor(email);
@@ -299,7 +314,8 @@ test("cook double again after someone leaves the household keeps the leftovers n
   await page.getByRole("button", { name: "Close" }).click();
   await expect(dayRow(page, "fri")).toContainText("Leftovers");
   const list = await readList(page);
-  await expect.poll(() => list.amount("chicken"), { timeout: 10_000 }).toBeLessThan(before);
+  // Twice a dinner for the smaller household is less than twice the old dinner (and not the stale copy of it).
+  await expect.poll(() => list.amount("chicken"), { timeout: 10_000 }).toBeLessThan(2 * single * 0.95);
 });
 
 test("repeat keeps a doubled dinner and its leftovers night", async ({ page }) => {
@@ -352,4 +368,32 @@ test("offline: the leftovers buttons are off, with a line that says why", async 
   await expect(page.getByRole("button", { name: "Take off Wednesday" })).toBeDisabled();
   await context.setOffline(false);
   await expect(page.getByTestId("cook-double").getByRole("button", { name: "Cook double" })).toBeEnabled();
+});
+
+test("a dinner that is gone is explained on the week once the sheet closes", async ({ page }) => {
+  // The page hears nothing live, so its sheet is stale when the dinner is taken off elsewhere.
+  let hold = false;
+  await page.routeWebSocket(/\/realtime\/v1\/websocket/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((m) => server.send(m));
+    server.onMessage((m) => {
+      if (!hold) ws.send(m);
+    });
+  });
+  const email = await createHousehold(page);
+  await plan(page, "wed", "Wednesday");
+  await page.goto("/week");
+  await expect(page.locator('[data-live="on"]')).toBeAttached();
+  await openPicker(page);
+  hold = true;
+  const sb = await clientFor(email);
+  const household = (await getMyHousehold(sb))!;
+  const week = await getOrCreateWeek(sb, household.id, thisWeekStart());
+  await setWeekMeal(sb, week.id, "wed", "dinner", null);
+  await picker(page).getByRole("button", { name: "Cook double", exact: true }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("That dinner is gone.");
+  await expect(dayRow(page, "wed")).toContainText("Add dinner");
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.getByRole("status")).toHaveCount(0);
 });

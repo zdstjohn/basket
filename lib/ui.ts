@@ -6,6 +6,9 @@ export const primaryButton = `inline-flex h-12 w-full items-center justify-cente
 
 export const pillButton = `inline-flex h-11 items-center justify-center whitespace-nowrap rounded-full border border-[#D5DBD5] bg-white px-4 text-[13px] font-semibold text-ink disabled:text-muted ${focusRing}`;
 
+// The same pill for a destructive action. It is its own string because pillButton carries text-ink, which would win over an appended colour.
+export const dangerPillButton = pillButton.replace("text-ink", "text-[#A6261B]");
+
 export const textInput = `h-11 w-full rounded-xl border border-line bg-white px-3 text-base text-ink ${focusRing}`;
 
 // A main action pinned just above the bottom nav (6 + 44 + 14 px of nav, plus the phone's safe area).

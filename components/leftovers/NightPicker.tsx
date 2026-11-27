@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { defaultChoice, type NightChoice } from "@/lib/domain/leftovers";
+import { useEffect, useRef, useState } from "react";
+import type { NightChoice } from "@/lib/domain/leftovers";
 import type { Day } from "@/lib/domain/weeks";
 import { focusRing, pillButton } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
@@ -55,19 +55,26 @@ export function NightPicker({
   onBack: () => void;
 }) {
   const [picked, setPicked] = useState<{ day: Day | null }>({ day: initial });
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Focus follows the view: the picker opens on its heading.
+  useEffect(() => heading.current?.focus(), []);
   // A night that was free when the picker opened may have been taken since (the rows are rebuilt from fresh data).
-  const stillFree = picked.day === null || choices.some((c) => c.day === picked.day && c.taken === null);
-  const selected = stillFree ? picked.day : defaultChoice(choices);
+  // Say so instead of quietly moving the choice.
+  const takenNow = picked.day !== null && !choices.some((c) => c.day === picked.day && c.taken === null);
+  const selected = picked.day;
+  const message = error ?? (takenNow && picked.day ? `${dayName(picked.day)} was just taken. Pick another night.` : null);
   const intro = pickerIntro(mode, mealName, cookDay);
 
   return (
     <div data-testid="night-picker" className="flex flex-col gap-3 p-5 pb-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[22px] font-bold leading-tight">{intro.title}</h2>
+          <h2 ref={heading} tabIndex={-1} className="text-[22px] font-bold leading-tight outline-none">
+            {intro.title}
+          </h2>
           <p className="mt-1 text-sm text-muted">{intro.sub}</p>
         </div>
-        <button type="button" aria-label="Close" onClick={onBack} className={`-mr-2 -mt-1 flex size-11 shrink-0 items-center justify-center rounded-full ${focusRing}`}>
+        <button type="button" aria-label="Back" onClick={onBack} className={`-mr-2 -mt-1 flex size-11 shrink-0 items-center justify-center rounded-full ${focusRing}`}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
@@ -79,13 +86,14 @@ export function NightPicker({
         {choices.length === 0 && <p className="text-sm">{lastNightLine(cookDay)}</p>}
         {choices.map((c) =>
           c.taken ? (
-            <div key={c.day} aria-disabled="true" className="flex min-h-[52px] items-center gap-3 rounded-[14px] border border-line bg-ground px-3.5">
+            <label key={c.day} className="flex min-h-[52px] items-center gap-3 rounded-[14px] border border-line bg-ground px-3.5">
+              <input type="radio" name="leftover-night" disabled checked={false} readOnly className="sr-only" />
               <Ring on={false} color="#C9D1C9" />
               <span className="flex-1">
                 <span className="block text-[15px] font-medium text-muted">{dayName(c.day)}</span>
                 <span className="block text-xs text-muted">{choiceSub(c, takenNames[c.day] ?? null)}</span>
               </span>
-            </div>
+            </label>
           ) : (
             <label
               key={c.day}
@@ -116,7 +124,7 @@ export function NightPicker({
         </label>
       </div>
 
-      {mode === "cook" && (
+      {mode === "cook" && !takenNow && (
         <div className="rounded-[14px] bg-[#E6F2EB] px-3.5 py-2.5 text-[13px] text-[#134D31]">
           {tintLines(selected, swapLine).map((line) => (
             <p key={line} className="my-0.5 flex gap-2">
@@ -126,15 +134,15 @@ export function NightPicker({
           ))}
         </div>
       )}
-      {error && (
+      {message && (
         <p role="alert" className="text-sm font-medium text-[#A6261B]">
-          {error}
+          {message}
         </p>
       )}
       <p className="text-[13px] text-muted">{BEST_WITHIN}</p>
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || takenNow}
         onClick={() => onConfirm(selected)}
         className={`inline-flex h-12 w-full items-center justify-center rounded-full bg-green text-[15px] font-semibold text-white disabled:opacity-60 ${focusRing}`}
       >

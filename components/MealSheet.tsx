@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import { Sheet } from "@/components/Sheet";
 import { CookDoubleRow } from "@/components/leftovers/CookDoubleRow";
@@ -9,7 +9,7 @@ import { NightPicker } from "@/components/leftovers/NightPicker";
 import { useOnline } from "@/components/leftovers/useOnline";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { setMealPhoto, toMeal, updateMeal } from "@/lib/db/queries/meals";
-import { cookDouble, setWeekMeal, usualAmount } from "@/lib/db/queries/weeks";
+import { cookDouble, DinnerGoneError, setWeekMeal, usualAmount } from "@/lib/db/queries/weeks";
 import type { MealRow, WeekMeal } from "@/lib/db/rows";
 import type { Database } from "@/lib/db/types";
 import { cookState, defaultChoice, doubleServings, nightChoices } from "@/lib/domain/leftovers";
@@ -17,7 +17,7 @@ import { householdServings } from "@/lib/domain/portions";
 import type { Person } from "@/lib/domain/types";
 import type { Day } from "@/lib/domain/weeks";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
-import { focusRing, pillButton } from "@/lib/ui";
+import { dangerPillButton, focusRing, pillButton } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
 import { swapDoubleLine, takeOffNote } from "@/lib/week/leftover-copy";
 import { dayNote } from "@/lib/week/note";
@@ -36,6 +36,7 @@ export function MealSheet({
   weekDays,
   busyDays,
   onClose,
+  onNotice,
   onChanged,
 }: {
   sb: SupabaseClient<Database>;
@@ -50,6 +51,8 @@ export function MealSheet({
   weekDays: Day[];
   busyDays: Day[];
   onClose: () => void;
+  /** A line for the week to show once this sheet is gone (e.g. the dinner vanished). */
+  onNotice?: (text: string) => void;
   onChanged: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
@@ -58,6 +61,16 @@ export function MealSheet({
   const override = weekMeal.servings_override === null ? null : Number(weekMeal.servings_override);
   const online = useOnline();
   const [view, setView] = useState<"main" | "pick">("main");
+  // Focus goes back to the button that opened the picker (Cook double, or Change once it is doubled).
+  const opener = useRef<HTMLButtonElement>(null);
+  const wasPicking = useRef(false);
+  useEffect(() => {
+    if (view === "pick") wasPicking.current = true;
+    else if (wasPicking.current) {
+      wasPicking.current = false;
+      opener.current?.focus();
+    }
+  }, [view]);
   const state = cookState(weekMeal, nights, base);
   const leftoverNight = state.kind === "double" ? state.night : null;
   const credit = !meal.photo_path && meal.photo_url ? meal.photo_credit : null;
@@ -81,7 +94,7 @@ export function MealSheet({
       const blob = await resizeForUpload(file);
       const path = await uploadMealPhoto(sb, householdId, meal.id, blob);
       await setMealPhoto(sb, meal.id, { path });
-    }, "We couldn't save that photo. Try again.");
+    }, "We couldn’t save that photo. Try again.");
 
   const choices = nightChoices({ cookDay: day, slot: weekMeal.slot, weekDays, rows: nights, busy: busyDays, cookId: weekMeal.id });
   const takenNames: Record<string, string> = {};
@@ -96,9 +109,14 @@ export function MealSheet({
       await onChanged();
       setView("main");
     } catch (e) {
-      setError(leftoverFailure(e, picked, "We couldn't change that. Try again."));
       // The other phone may have changed the week: rebuild the choices from fresh rows.
       await onChanged().catch(() => undefined);
+      if (e instanceof DinnerGoneError) {
+        onNotice?.(e.message);
+        onClose();
+        return;
+      }
+      setError(leftoverFailure(e, picked, "We couldn’t change that. Try again."));
     } finally {
       setBusy(false);
     }
@@ -177,13 +195,13 @@ export function MealSheet({
           </a>
         )}
 
-        <CookDoubleRow state={state} disabled={busy} offline={!online} onOpen={() => setView("pick")} />
+        <CookDoubleRow state={state} disabled={busy} offline={!online} buttonRef={opener} onOpen={() => setView("pick")} />
 
         <button
           type="button"
           disabled={busy}
           onClick={() =>
-            void run(async () => void (await updateMeal(sb, meal.id, { is_favorite: !meal.is_favorite })), "We couldn't change that. Try again.")
+            void run(async () => void (await updateMeal(sb, meal.id, { is_favorite: !meal.is_favorite })), "We couldn’t change that. Try again.")
           }
           className={`${pillButton} w-full`}
         >
@@ -198,9 +216,9 @@ export function MealSheet({
               void run(async () => {
                 await setWeekMeal(sb, weekMeal.week_id, day, weekMeal.slot, null);
                 onClose();
-              }, "We couldn't take that off. Try again.")
+              }, "We couldn’t take that off. Try again.")
             }
-            className={`${pillButton} w-full text-[#A6261B]`}
+            className={`${dangerPillButton} w-full`}
           >
             Take off {dayName(day)}
           </button>

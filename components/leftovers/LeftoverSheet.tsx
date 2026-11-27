@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
 import { Sheet } from "@/components/Sheet";
 import { leftoverFailure } from "@/components/leftovers/errors";
@@ -8,18 +8,18 @@ import { NightPicker } from "@/components/leftovers/NightPicker";
 import { useOnline } from "@/components/leftovers/useOnline";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toMeal } from "@/lib/db/queries/meals";
-import { cookDouble, moveLeftover, removeLeftover } from "@/lib/db/queries/weeks";
+import { cookDouble, DinnerGoneError, moveLeftover, removeLeftover } from "@/lib/db/queries/weeks";
 import type { MealRow, WeekMeal } from "@/lib/db/rows";
 import type { Database } from "@/lib/db/types";
 import { defaultChoice, doubleServings, nightChoices } from "@/lib/domain/leftovers";
 import { householdServings } from "@/lib/domain/portions";
 import type { Person } from "@/lib/domain/types";
 import type { Day } from "@/lib/domain/weeks";
-import { focusRing, pillButton } from "@/lib/ui";
+import { dangerPillButton, focusRing, pillButton } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
 import { leftoverSheetCopy, OFFLINE_LINE, swapDoubleLine } from "@/lib/week/leftover-copy";
 
-const FAILURE = "We couldn't change that. Try again.";
+const FAILURE = "We couldn’t change that. Try again.";
 
 /** A leftovers night opened from the week: where it comes from, move it, take it off. */
 export function LeftoverSheet({
@@ -34,6 +34,7 @@ export function LeftoverSheet({
   weekDays,
   busyDays,
   onClose,
+  onNotice,
   onChanged,
 }: {
   sb: SupabaseClient<Database>;
@@ -47,10 +48,22 @@ export function LeftoverSheet({
   weekDays: Day[];
   busyDays: Day[];
   onClose: () => void;
+  /** A line for the week to show once this sheet is gone (e.g. the dinner vanished). */
+  onNotice?: (text: string) => void;
   onChanged: () => Promise<void>;
 }) {
   const online = useOnline();
   const [view, setView] = useState<"main" | "pick">("main");
+  // Focus goes back to "Move to another night" when the picker is left without moving.
+  const opener = useRef<HTMLButtonElement>(null);
+  const wasPicking = useRef(false);
+  useEffect(() => {
+    if (view === "pick") wasPicking.current = true;
+    else if (wasPicking.current) {
+      wasPicking.current = false;
+      opener.current?.focus();
+    }
+  }, [view]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const day = leftover.day as Day;
@@ -66,9 +79,14 @@ export function LeftoverSheet({
       await onChanged();
       onClose();
     } catch (e) {
-      setError(leftoverFailure(e, picked, FAILURE));
       // Rebuild the choices from what the other phone has now.
       await onChanged().catch(() => undefined);
+      if (e instanceof DinnerGoneError) {
+        onNotice?.(e.message);
+        onClose();
+        return;
+      }
+      setError(leftoverFailure(e, picked, FAILURE));
     } finally {
       setBusy(false);
     }
@@ -129,7 +147,7 @@ export function LeftoverSheet({
             {close}
           </div>
           <div className="flex items-center gap-3 rounded-[14px] border border-line p-2.5">
-            <MealThumb src={photo} className="size-14 rounded-[10px]" tileText="text-xs" />
+            <MealThumb src={photo} className="size-14 rounded-[10px]" />
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-semibold">{meal.name}</p>
               {copy && <p className="mt-0.5 text-[13px] text-muted">{copy.when}</p>}
@@ -137,7 +155,7 @@ export function LeftoverSheet({
           </div>
           <p className="text-sm">{copy ? copy.nothing : `Nothing to buy for ${dayName(day)}.`}</p>
           {cook && (
-            <button type="button" disabled={busy || !online} onClick={() => setView("pick")} className={`${pillButton} w-full`}>
+            <button ref={opener} type="button" disabled={busy || !online} onClick={() => setView("pick")} className={`${pillButton} w-full`}>
               Move to another night
             </button>
           )}
@@ -146,7 +164,7 @@ export function LeftoverSheet({
             type="button"
             disabled={busy || !online}
             onClick={() => void run(() => removeLeftover(sb, leftover), null)}
-            className={`${pillButton} w-full text-[#A6261B]`}
+            className={`${dangerPillButton} w-full`}
           >
             Take off {dayName(day)}
           </button>
