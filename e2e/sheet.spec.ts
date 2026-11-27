@@ -15,7 +15,14 @@ async function openSheet(page: Page): Promise<Locator> {
   await createHousehold(page);
   await addFromSearch(page, { day: "thu", query: "tacos", pick: "Chicken tacos · Allrecipes" });
   await openList(page);
-  return openItemSheet(page, "Yellow onion");
+  const sheet = await openItemSheet(page, "Yellow onion");
+  await settled(page);
+  return sheet;
+}
+
+/** The enter has finished: a drag starts from the sheet's resting place, and the drag zone is where its box says. */
+async function settled(page: Page): Promise<void> {
+  await page.getByRole("dialog").evaluate((d) => Promise.all(d.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined))));
 }
 
 const panel = (page: Page) => page.getByTestId("sheet-panel");
