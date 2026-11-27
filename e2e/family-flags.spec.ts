@@ -29,7 +29,7 @@ test("household: a sixth person can be added and deleted in two taps; won't-eat 
   await expect(page.getByTestId("person-row")).toHaveCount(5);
 
   // Add a sixth person, open them, and delete them: the first tap only asks.
-  await page.getByRole("button", { name: "+ Add" }).click();
+  await page.getByRole("region", { name: "Who's eating" }).getByRole("button", { name: "+ Add", exact: true }).click();
   const added = page.getByRole("form", { name: "Add a person" });
   await added.getByLabel("Name").fill("Grandma");
   await added.getByLabel("Age").fill("70");
