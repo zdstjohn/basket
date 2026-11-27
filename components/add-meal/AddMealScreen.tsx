@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { flushSync } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DraftPreview, draftFlags } from "@/components/add-meal/DraftPreview";
+import { RecipePage, draftFlags } from "@/components/add-meal/RecipePage";
 import { PasteTab } from "@/components/add-meal/PasteTab";
 import { SearchTab } from "@/components/add-meal/SearchTab";
 import { draftFromOption, messageFor } from "@/components/add-meal/api";
@@ -20,16 +21,16 @@ import { weekStartFor, type Day } from "@/lib/domain/weeks";
 import { watchPeople } from "@/lib/people-watch";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts";
 import { matchedWords, parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
+import { morph } from "@/lib/motion/view-transition";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
 import { subscribeHousehold } from "@/lib/realtime";
 import { weekFoods } from "@/lib/recipes/search/overlap";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 import { Button } from "@/components/ui/Button";
-import { Check } from "@/components/ui/Check";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { ErrorBanner } from "@/components/ui/states";
 import { Tabs } from "@/components/ui/Tabs";
-import { barBottom, quietLink } from "@/lib/ui";
+import { barBottom } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
 
 type Tab = AddMealTab;
@@ -71,6 +72,11 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   // What is kept beside the draft: only the words that matched someone's list. Until people load, keep what came back.
   const matched = useMemo(() => (people ? matchedWords(checkNames, people) : restoredWords), [checkNames, people, restoredWords]);
   const savedMealId = useRef<string | null>(null);
+  // The tapped result: its photo and title show at once while the recipe is read, and it is the way back to its card.
+  const [pending, setPending] = useState<RecipeOption | null>(null);
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  // Bumped whenever a read is abandoned, so a late answer cannot bring the page back.
+  const readToken = useRef(0);
 
   const key = weekStart ? `add-meal:${weekStart}:${day}:${slot}` : null;
   const label = dayName(day);
@@ -183,6 +189,9 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   }
 
   function startOver() {
+    readToken.current += 1;
+    setPending(null);
+    setPicking(false);
     setDraft(null);
     setOptionNames([]);
     setRestoredWords([]);
@@ -191,20 +200,55 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     savedMealId.current = null;
   }
 
-  async function pick(option: RecipeOption) {
+  async function pick(option: RecipeOption, img: HTMLImageElement | null) {
+    if (picking) return;
+    const token = ++readToken.current;
     setPicking(true);
     setError(null);
+    // The recipe page opens at once; its photo grows from the card's.
+    void morph({
+      from: img,
+      to: () => heroRef.current,
+      update: () => {
+        if (readToken.current !== token) return;
+        flushSync(() => setPending(option));
+        window.scrollTo(0, 0);
+      },
+    }).catch(() => {});
     try {
-      setDraft(await draftFromOption(option));
+      const next = await draftFromOption(option);
+      if (readToken.current !== token) return;
+      setDraft(next);
       setOptionNames(ingredientNames(option));
       setRestoredWords([]);
       setCustom(null);
       savedMealId.current = null;
+      setPending((p) => p ?? option);
     } catch (e) {
+      if (readToken.current !== token) return;
+      setPending(null);
       setError(messageFor(e));
-    } finally {
       setPicking(false);
+      // A page still on its way in must not open after the failure.
+      readToken.current += 1;
+    } finally {
+      if (readToken.current === token) setPicking(false);
     }
+  }
+
+  /** Back to the results; the photo shrinks into its card when the card can be found again. */
+  function dismiss() {
+    const url = pending?.url;
+    const from = heroRef.current;
+    if (!url || !from) {
+      startOver();
+      return;
+    }
+    void morph({
+      from,
+      to: () => document.querySelector<HTMLElement>(`[data-option-url="${CSS.escape(url)}"]`),
+      update: () => flushSync(startOver),
+    }).catch(() => {});
   }
 
   async function putOnDay(mealId: string) {
@@ -256,34 +300,37 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     }
   }
 
-  const showPreview = draft && tab !== "favorites";
+  const showPage = (!!draft || !!pending) && tab !== "favorites";
   const hasAllergy = useMemo(
     () => !!draft && !!people && draftFlags(draft, people, checkNames).some((f) => f.kind === "allergy"),
     [draft, people, checkNames],
   );
-  const cantAdd = adding || !weekStart || people === null;
+  // Nothing can be added until the recipe and the household (for the allergy check) have both arrived.
+  const cantAdd = !draft || !weekStart || people === null;
 
   return (
-    <section className={`flex flex-1 flex-col ${showPreview ? "" : "mb-[var(--bk-safe-bottom)]"}`}>
+    <section className={`flex flex-1 flex-col ${showPage ? "" : "mb-[var(--bk-safe-bottom)]"}`}>
       <ScreenHeader title={`${label} dinner`} back={{ href: "/week", label: "Close", icon: "close" }} />
 
-      <div className="bk-gutter">
-        <Tabs label="How to add" items={TABS} active={tab} onChange={changeTab} panelId="add-panel" />
-      </div>
+      {!showPage && (
+        <div className="bk-gutter">
+          <Tabs label="How to add" items={TABS} active={tab} onChange={changeTab} panelId="add-panel" />
+        </div>
+      )}
 
-      <div role="tabpanel" id="add-panel" aria-labelledby={`add-panel-tab-${tab}`}>
+      <div role="tabpanel" id="add-panel" aria-labelledby={`add-panel-tab-${tab}`} hidden={showPage}>
         <div hidden={tab !== "search"}>
           <SearchTab
             query={query}
             onQuery={setQuery}
             source={source}
             onSource={changeSource}
-            hideResults={!!draft}
+            hideResults={!!draft || !!pending}
             week={week}
             people={people}
             onNeedWeek={wantWeek}
             picking={picking}
-            onPick={(o) => void pick(o)}
+            onPick={(o, img) => void pick(o, img)}
             onSearchStart={startOver}
             onDishPhoto={foundWithPhoto}
           />
@@ -302,20 +349,22 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
         )}
       </div>
 
-      {picking && (
-        <p role="status" className="bk-gutter mt-3 text-small text-ink-soft">
-          Reading the recipe…
-        </p>
-      )}
-      {showPreview && (
-        <>
-          <DraftPreview draft={draft} people={people ?? []} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} onChanges={(personChanges) => setDraft({ ...draft, personChanges })} optionNames={checkNames} />
-          <div className="bk-gutter mt-3">
-            <Check checked={saveFavorite} onChange={setSaveFavorite} label="Save as a favorite">
-              <span className="text-body text-ink">Save as a favorite</span>
-            </Check>
-          </div>
-        </>
+      {showPage && (
+        <RecipePage
+          draft={draft}
+          pending={pending}
+          people={people ?? []}
+          photoSrc={mine?.url ?? null}
+          onPhoto={(f) => void pickPhoto(f)}
+          dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null}
+          onDismiss={dismiss}
+          onIngredients={(ingredients) => draft && setDraft({ ...draft, ingredients })}
+          onChanges={(personChanges) => draft && setDraft({ ...draft, personChanges })}
+          optionNames={checkNames}
+          saveFavorite={saveFavorite}
+          onSaveFavorite={setSaveFavorite}
+          heroRef={heroRef}
+        />
       )}
       {peopleFailed && (
         <div className="bk-gutter mt-3">
@@ -329,21 +378,19 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       )}
 
       <div className="mt-auto" />
-      {showPreview && (
+      {showPage && (
         <div className={barBottom}>
           {hasAllergy ? (
             <div className="grid gap-2">
-              <Button variant="ghost" onClick={startOver} className="min-h-13 w-full">
+              <Button variant="main" onClick={dismiss}>
                 Pick a different dinner
               </Button>
-              <div className="flex justify-center">
-                <button type="button" disabled={cantAdd} onClick={() => void addDraft()} className={`${quietLink} min-w-11 justify-center px-3`}>
-                  Add to {label} anyway
-                </button>
-              </div>
+              <Button variant="ghost" disabled={cantAdd} busy={adding} busyLabel="Adding…" onClick={() => void addDraft()}>
+                Add to {label} anyway
+              </Button>
             </div>
           ) : (
-            <Button variant="main" disabled={cantAdd} onClick={() => void addDraft()}>
+            <Button variant="main" disabled={cantAdd} busy={adding} busyLabel="Adding…" onClick={() => void addDraft()}>
               Add to {label}
             </Button>
           )}

@@ -25,6 +25,17 @@ export const SCREENS_A: Screen[] = [
   { name: "add-meal", path: "/week/add?day=thu&slot=dinner" },
   { name: "favorites", path: "/favorites", contrastPending: true },
   {
+    // The recipe page: a picked result with its ingredients, the household's portions and the pinned bar.
+    name: "recipe-page",
+    path: "/week/add?day=thu&slot=dinner",
+    setup: async (page) => {
+      await page.getByLabel(/What.s for dinner\?/).fill("tacos");
+      await page.getByRole("button", { name: "Search" }).click();
+      await page.getByRole("button", { name: /^Chicken tacos · Allrecipes/ }).click();
+      await expect(page.getByRole("region", { name: "Draft recipe" }).getByRole("button", { name: "Edit ingredients" })).toBeVisible();
+    },
+  },
+  {
     // A household with an allergy and the soup with almonds planned anyway: the week tile shows the allergy line.
     name: "week-allergy",
     path: "/week",

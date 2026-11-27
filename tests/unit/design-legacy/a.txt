@@ -1,5 +1,3 @@
 components/FavoritesBrowser.tsx
 components/FavoritesScreen.tsx
 components/MealSheet.tsx
-components/add-meal/DraftPreview.tsx
-components/add-meal/IngredientEditor.tsx

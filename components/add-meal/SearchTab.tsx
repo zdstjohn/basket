@@ -100,7 +100,7 @@ export function SearchTab({
   /** Called when "Fits this week" is chosen, so the week is only read when it is wanted. */
   onNeedWeek: () => void;
   picking: boolean;
-  onPick: (o: RecipeOption) => void;
+  onPick: (o: RecipeOption, img: HTMLImageElement | null) => void;
   onSearchStart: () => void;
   /** The browser-sized photo behind a found dish, or null when there is none. */
   onDishPhoto: (photo: Blob | null) => void;
@@ -166,7 +166,7 @@ export function SearchTab({
     } catch (e) {
       setResult(null);
       // The spend guard's answers are notices, not faults: no retry beside them.
-      setError({ message: messageFor(e), guard: e instanceof ApiFailure && (e.kind === "cap" || e.kind === "slow" || e.kind === "busy") });
+      setError({ message: messageFor(e), guard: e instanceof ApiFailure && (e.kind === "cap" || e.kind === "slow" || e.kind === "busy" || e.kind === "source_limit") });
     } finally {
       setLoading(false);
     }
@@ -316,7 +316,7 @@ export function SearchTab({
                             data-testid="result-card"
                             aria-label={`${o.title} · ${o.site}${m.loved ? ", Most loved" : ""}${m.line ? `, ${m.line}` : ""}${shares ? `, ${shares}` : ""}${people ? cardFlagText(o, people) : ""}`}
                             disabled={picking}
-                            onClick={() => onPick(o)}
+                            onClick={(e) => onPick(o, e.currentTarget.querySelector("img"))}
                             className="block w-full rounded-md bg-surface text-left text-ink bk-press"
                           >
                             <Photo

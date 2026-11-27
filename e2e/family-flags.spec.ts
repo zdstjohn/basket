@@ -417,3 +417,58 @@ test("a dinner added despite an allergy keeps its warning on the tile and on the
   await expectUnclipped(hero.getByText(/Tree nut allergy: Daughter \(4\)/));
   expect(await hero.innerText()).not.toMatch(SAFE_WORDS);
 });
+
+/** Whether this element's fill is the accent color, read through a probe so any color syntax compares the same. */
+async function fillIsAccent(button: Locator): Promise<boolean> {
+  return button.evaluate((el) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--bk-accent)";
+    document.body.appendChild(probe);
+    const accent = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return getComputedStyle(el).backgroundColor === accent;
+  });
+}
+
+for (const look of ["light", "dark"] as const) {
+  test(`with an allergy the filled button is Pick a different dinner, in both looks (${look})`, async ({ page }) => {
+    await setLook(page, look);
+    await createHousehold(page, `family-flags-main-${look}`, WITH_LISTS);
+    await page.goto("/week/add?day=thu&slot=dinner");
+    await searchFor(page, "soup");
+    await page.getByRole("button", { name: PILAF }).click();
+    await expect(page.getByTestId("allergy-box")).toBeVisible();
+
+    const different = page.getByRole("button", { name: "Pick a different dinner" });
+    const anyway = page.getByRole("button", { name: "Add to Thursday anyway" });
+    await expect(different).toBeVisible();
+    await expect(anyway).toBeEnabled();
+    expect(await fillIsAccent(different)).toBe(true);
+    expect(await fillIsAccent(anyway)).toBe(false);
+    // The allergy line in the list carries the warning icon and the family, beside the amount.
+    await expect(page.getByRole("region", { name: "Draft recipe" }).getByText(/· tree nut/).first()).toBeVisible();
+  });
+}
+
+test("the gate holds while people are still loading", async ({ page }) => {
+  await createHousehold(page, "family-flags-gate", WITH_LISTS);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/rest/v1/people*", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await searchFor(page, "soup");
+  await page.getByRole("button", { name: PILAF }).click();
+
+  // The recipe is on the page, but without the household nothing can be added.
+  const draft = page.getByRole("region", { name: "Draft recipe" });
+  await expect(draft.getByRole("button", { name: "Edit ingredients" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add to Thursday" })).toBeDisabled();
+
+  release();
+  await expect(page.getByTestId("allergy-box")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pick a different dinner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add to Thursday anyway" })).toBeEnabled();
+});

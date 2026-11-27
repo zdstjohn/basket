@@ -87,7 +87,7 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
   await expect(link).toHaveAttribute("rel", "noopener noreferrer");
   await expect(link).toHaveAttribute("target", "_blank");
   await expect(draft).toContainText("Scaled to 3.8 servings");
-  await expect(page.getByText("Mom's portion: black beans")).toBeVisible();
+  await expect(page.getByText("Mom’s portion: black beans")).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Save as a favorite" })).toBeChecked();
   await page.screenshot({ path: `${shots}/add-meal.png`, fullPage: true });
 
