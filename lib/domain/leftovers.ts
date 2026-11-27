@@ -42,11 +42,12 @@ export type CookState =
   | { kind: 'extra'; servings: number };
 
 export function cookState(row: Night, rows: Night[], base: number): CookState {
-  const left = leftoverFor(rows, row.id);
-  if (left) return { kind: 'double', night: left.day as Day };
   const o = row.servings_override;
+  // With nobody in the household there is nothing to double: never "double".
+  const left = base > 0 ? leftoverFor(rows, row.id) : null;
+  if (left) return { kind: 'double', night: left.day as Day };
   if (o === null || o <= base + 0.05) return { kind: 'usual' };
-  if (Math.abs(o - 2 * base) <= 0.06) return { kind: 'double', night: null };
+  if (base > 0 && Math.abs(o - 2 * base) <= 0.06) return { kind: 'double', night: null };
   return { kind: 'extra', servings: round1(o - base) };
 }
 
@@ -72,8 +73,8 @@ export function nightChoices(o: { cookDay: Day; slot: string; weekDays: Day[]; r
     out.push({
       day,
       daysLater: i - from,
-      taken: holder ? (isLeftover(holder) ? 'leftovers' : 'dinner') : null,
-      takenMealId: holder ? holder.meal_id : null,
+      taken: current ? null : holder ? (isLeftover(holder) ? 'leftovers' : 'dinner') : null,
+      takenMealId: !current && holder ? holder.meal_id : null,
       busy: o.busy.includes(day),
       current,
     });

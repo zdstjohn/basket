@@ -36,7 +36,8 @@ export function dayNote(meal: Meal, people: Person[], servingsOverride: number |
   }
   const household = householdServings(people);
   const isDouble =
-    double || (servingsOverride !== null && Math.abs(servingsOverride - 2 * household) <= 0.06);
+    household > 0 &&
+    (double || (servingsOverride !== null && Math.abs(servingsOverride - 2 * household) <= 0.06));
   if (isDouble) return `${main} · cooking double`;
   const extra = servingsOverride === null ? 0 : Math.round((servingsOverride - household) * 10) / 10;
   return extra > 0 ? `${main} · +${num(extra)} for leftovers` : main;

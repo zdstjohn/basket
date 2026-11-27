@@ -72,4 +72,9 @@ describe("mealTag", () => {
     expect(dayNote(veg, familyOfFive, null, true)).toBe("Everyone vegetarian · cooking double");
     expect(dayNote(veg, familyOfFive, 5.8)).toBe("Everyone vegetarian · +2 for leftovers");
   });
+
+  it("never says cooking double for an empty household", () => {
+    expect(dayNote(veg, [], 0, true)).toBe("Everyone vegetarian");
+    expect(dayNote(veg, [], 0)).toBe("Everyone vegetarian");
+  });
 });

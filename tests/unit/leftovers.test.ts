@@ -70,4 +70,24 @@ describe('leftovers', () => {
   it('says how far away a night is', () => {
     expect([1, 2, 4].map(laterWords)).toEqual(['The next night', '2 days later', '4 days later']);
   });
+  it('never says double when the household is empty', () => {
+    const cook = n('a', 'wed', { servings_override: 0 });
+    const rows = [cook, n('b', 'fri', { leftover_of: 'a', servings_override: 0 })];
+    expect(cookState(cook, rows, 0)).toEqual({ kind: 'usual' });
+    expect(cookState({ ...cook, servings_override: 2 }, rows, 0)).toEqual({ kind: 'extra', servings: 2 });
+  });
+  it('offers nothing when the cooking day is not in the week', () => {
+    expect(nightChoices({ cookDay: 'sat', slot: 'dinner', weekDays: ['sun', 'mon'], rows: [], busy: [], cookId: 'a' })).toEqual([]);
+  });
+  it('reports a cooked row over a leftovers row when two share a night', () => {
+    const rows = [n('x', 'mon', { leftover_of: 'z' }), n('y', 'mon')];
+    const got = nightChoices({ cookDay: 'sun', slot: 'dinner', weekDays: sunWeek, rows, busy: [], cookId: 'a' });
+    expect([got[0].taken, got[0].takenMealId]).toEqual(['dinner', 'm-y']);
+  });
+  it('is never taken on its own leftovers night, even if another row shares it', () => {
+    const rows = [n('b', 'fri', { leftover_of: 'a' }), n('y', 'fri')];
+    const got = nightChoices({ cookDay: 'wed', slot: 'dinner', weekDays: sunWeek, rows, busy: [], cookId: 'a' });
+    const fri = got.find((c) => c.day === 'fri')!;
+    expect([fri.current, fri.taken, fri.takenMealId]).toEqual([true, null, null]);
+  });
 });
