@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHousehold, FAMILY, type PersonInput } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
 import { setLook } from "./helpers/look";
+import { pinToday } from "./helpers/clock";
 
 // Requests from a worker-controlled page can skip page.route on WebKit; keep parity with the other add-meal specs.
 test.use({ serviceWorkers: "block" });
@@ -119,7 +120,7 @@ test("an allergy stays a warning: on the draft, the week row, the meal sheet and
   await expect(pilaf).toBeVisible();
   const other = await page.context().newPage();
   await other.goto("/week");
-  await expect(other.getByTestId("day-row-thu")).toContainText("+ Add dinner");
+  await expect(other.getByTestId("day-row-thu")).toContainText("Add dinner");
   await other.close();
 
   await pilaf.click();
@@ -361,4 +362,34 @@ test("the swap sheet will not swap in a food someone is allergic to", async ({ p
   await swap.getByLabel("Or something else").fill("zucchini");
   await expect(swap.getByTestId("allergy-box")).toHaveCount(0);
   await expect(go).toBeEnabled();
+});
+
+test("a dinner added despite an allergy keeps its warning on the tile and on the hero", async ({ page }) => {
+  // The pilaf's picture is wide enough to lead the week once tonight is its day.
+  await routeFoodImages(page, { wide: /quinoa-pilaf/ });
+  await pinToday(page, "fri");
+  await createHousehold(page, "family-flags-week-warning", WITH_LISTS);
+  await page.goto("/week/add?day=thu&slot=dinner");
+  await searchFor(page, "soup");
+  await page.getByRole("button", { name: PILAF }).click();
+  await page.getByRole("button", { name: "Add to Thursday anyway" }).click();
+  await expect(page).toHaveURL(/\/week$/);
+
+  // Thursday is a tile while tonight is Friday.
+  const tile = page.getByTestId("day-row-thu");
+  await expect(tile).toContainText("Tree nut allergy: Daughter (4)");
+  await expect(tile).toContainText("check every label");
+  await expect(tile.locator("svg.lucide-triangle-alert")).toHaveCount(1);
+  await expect(page.locator("[data-tonight]")).toHaveCount(0);
+
+  // Tonight is Thursday: the picture is wide, so it is the hero once its width is known, with the warning in full.
+  await pinToday(page, "thu");
+  await page.reload();
+  const hero = page.locator("[data-tonight]");
+  await expect(hero).toContainText("Tonight · Thursday");
+  await expect(hero).toContainText("Tree nut allergy: Daughter (4)");
+  await expect(hero).toContainText("check every label");
+  await expect(hero.locator("svg.lucide-triangle-alert")).toHaveCount(1);
+  await expectUnclipped(hero.getByText(/Tree nut allergy: Daughter \(4\)/));
+  expect(await hero.innerText()).not.toMatch(SAFE_WORDS);
 });

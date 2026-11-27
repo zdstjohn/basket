@@ -1,8 +1,10 @@
-import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHousehold, joinAsPartner } from "./helpers/household";
 import { FOOD_JPG, routeFoodImages } from "./helpers/fixtures";
 import { clientFor } from "./helpers/db";
-import { addFavoriteToDay, addFromSearch as plan, readWeekBudget, weekBudget } from "./helpers/flows-a";
+import { addFavoriteToDay, addFromSearch as plan, readWeekBudget, seedDinnerOnDay, weekBudget } from "./helpers/flows-a";
+import { pinToday } from "./helpers/clock";
 import { setBudget } from "./helpers/flows-b";
 import { getOrCreateWeek, setWeekMeal } from "../lib/db/queries/weeks";
 import { getMyHousehold } from "../lib/db/queries/household";
@@ -19,8 +21,10 @@ const SIGNED_PHOTO = /\/storage\/v1\/object\/sign\/meal-photos\//;
 // skip page.route, so these tests (which mock /api/recipes/search) run without the worker.
 test.use({ serviceWorkers: "block" });
 
+// Tonight is Wednesday unless a test pins another day; no test below plans a Wednesday.
 test.beforeEach(async ({ page }) => {
-  await routeFoodImages(page);
+  await routeFoodImages(page, { wide: /wide\.jpg/, failing: /gone\.jpg/ });
+  await pinToday(page, "wed");
 });
 
 async function searchFor(page: Page, query: string) {
@@ -38,10 +42,8 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
   await expect(page.getByRole("heading", { name: "This week" })).toBeVisible();
   await expect(page.getByTestId("week-range")).toHaveText(formatWeekRange(thisWeekStart()));
   await expect(page.getByRole("link", { name: /Add dinner/ })).toHaveCount(7);
-  await expect(page.getByRole("region", { name: "Budget" })).toContainText("$0 of $200");
-  await expect(page.getByRole("region", { name: "Budget" })).toContainText("On budget");
-  const meter = page.getByRole("meter");
-  await expect(meter).toHaveAttribute("aria-valuenow", "0");
+  await expect(page.getByRole("region", { name: "Budget" })).toContainText("$0.00 of $200");
+  await expect(page.getByRole("region", { name: "Budget" })).toContainText("$200 left");
   await expect(page.getByRole("button", { name: /Repeat/ })).toBeDisabled();
 
   const build = page.getByRole("link", { name: "Build shopping list" });
@@ -99,7 +101,7 @@ test("this week: add a search result to Thursday, with a photo and a swap", asyn
   await expect(page.getByRole("link", { name: /Add dinner/ })).toHaveCount(6);
 });
 
-test("budget: the week says on budget, a little over or over budget, with the amounts", async ({ page }) => {
+test("budget: the week says what is left, into the wiggle room or past it, with the amounts", async ({ page }) => {
   await createHousehold(page);
   await addFromSearch(page, "thu", "tacos", "Chicken tacos · Allrecipes");
   // The dinner's estimate arrives a moment after the week opens; wait until the total stops moving.
@@ -127,13 +129,13 @@ test("budget: the week says on budget, a little over or over budget, with the am
 
   // At or under the target.
   await setBudget(page, { target: dollars, wiggle: 5 });
-  await says(dollars, "On budget", /left/);
+  await says(dollars, "left", /left/);
   // Over the target by less than the wiggle room.
   await setBudget(page, { target: dollars - 1 });
-  await says(dollars - 1, "A little over", /\$\d[\d.]* over/);
-  // Over by more than the wiggle room.
-  await setBudget(page, { wiggle: 0 });
-  await says(dollars - 1, "Over budget", /\$\d[\d.]* over/);
+  await says(dollars - 1, "into the wiggle room", /\$\d[\d.]* into the wiggle room/);
+  // Over by more than the wiggle room (between $1 and $2 over the target, with $1 of room).
+  await setBudget(page, { target: dollars - 2, wiggle: 1 });
+  await says(dollars - 2, "past the wiggle room", /\$\d[\d.]* past the wiggle room/);
 });
 
 test("sources: the toggle, the Spoonacular footer, the fallback note and the limit message", async ({ page }) => {
@@ -354,7 +356,7 @@ test("favorites: listed with a photo and tag, searchable, adds to the first empt
   await expect(repeat).toBeEnabled();
   await repeat.click();
   const confirm = page.getByRole("dialog");
-  await expect(confirm).toContainText("Copy last week's dinners into this week? This replaces what's planned.");
+  await expect(confirm).toContainText("Copy last week’s dinners into this week? This replaces what’s planned.");
   await confirm.getByRole("button", { name: "Copy dinners" }).click();
   await expect(page.getByTestId("day-row-mon")).toContainText("Chicken tacos");
   await expect(page.getByTestId("day-row-thu")).toContainText("Add dinner");
@@ -420,4 +422,115 @@ test("ratings: nothing is clipped on a 360 px screen", async ({ page }) => {
   const box = (await meta.boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(360);
   expect(box.height).toBeLessThan(24);
+});
+
+/** Where an element is on the page, as a plain box. */
+async function boxOf(locator: Locator) {
+  return (await locator.boundingBox())!;
+}
+
+test("tonight with a wide photo leads as the hero", async ({ page }) => {
+  const email = await createHousehold(page);
+  await seedDinnerOnDay(email, "wed", { name: "Ratatouille with Brie", photoUrl: "https://images.example.test/wide.jpg", width: 800, credit: "Foodista" });
+  await page.reload();
+  const hero = page.locator("[data-tonight]");
+  await expect(hero).toContainText("Tonight · Wednesday");
+  await expect(hero).toContainText("Ratatouille with Brie");
+  await expect(hero).toContainText("Photo: Foodista");
+  await expect(hero.locator("img")).toHaveCSS("opacity", "1");
+  const box = await boxOf(hero);
+  expect(box.width).toBeGreaterThanOrEqual(page.viewportSize()!.width - 1);
+  expect(Math.abs(box.width / box.height - 2)).toBeLessThan(0.02);
+  // It sits directly under the header, before the pinboard.
+  await expect(page.getByTestId("day-row-wed")).toHaveAttribute("data-tonight", "");
+  expect((await boxOf(hero)).y).toBeLessThan((await boxOf(page.getByRole("region", { name: "Dinners" }))).y);
+});
+
+test("tonight with a small photo is a tile marked Tonight, never a hero", async ({ page }) => {
+  const email = await createHousehold(page);
+  await seedDinnerOnDay(email, "wed", { name: "Small photo soup", photoUrl: "https://images.example.test/small.jpg", width: 400 });
+  await page.reload();
+  const tonight = page.getByTestId("day-row-wed");
+  await expect(tonight).toContainText("Tonight");
+  await expect(tonight).toContainText("Small photo soup");
+  await expect(page.locator("[data-tonight]")).toHaveCount(0);
+  const board = page.getByRole("region", { name: "Dinners" });
+  await expect(board.getByTestId(/^day-row-/).first()).toHaveAttribute("data-testid", "day-row-wed");
+  expect((await boxOf(tonight)).width).toBeLessThan(page.viewportSize()!.width / 2);
+});
+
+test("a photo of unknown width never shows as a hero and then collapses", async ({ page }) => {
+  const email = await createHousehold(page);
+  const { sb, mealId } = await seedDinnerOnDay(email, "wed", { name: "Held soup", photoUrl: "https://images.example.test/held.jpg", width: null });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await page.route("https://images.example.test/held.jpg", async (route) => {
+    await gate;
+    await route.fulfill({ status: 200, contentType: "image/jpeg", body: readFileSync(FOOD_JPG) });
+  });
+  await page.reload();
+  const tonight = page.getByTestId("day-row-wed");
+  await expect(tonight.locator("[data-photo-state='loading']")).toBeVisible();
+  await expect(page.locator("[data-tonight]")).toHaveCount(0);
+  const before = await boxOf(tonight);
+
+  release();
+  await expect(tonight.locator("[data-photo-state='ready']")).toBeVisible();
+  const after = await boxOf(tonight);
+  expect(Math.abs(after.x - before.x)).toBeLessThan(1);
+  expect(Math.abs(after.y - before.y)).toBeLessThan(1);
+  expect(Math.abs(after.width - before.width)).toBeLessThan(1);
+  expect(Math.abs(after.height - before.height)).toBeLessThan(1);
+  // The week writes the width back once, and the small photo stays a tile.
+  await expect.poll(async () => (await sb.from("meals").select("photo_width").eq("id", mealId).single()).data?.photo_width).toBe(400);
+  await expect(page.locator("[data-tonight]")).toHaveCount(0);
+});
+
+test("no dinner tonight shows the wide Add dinner row first", async ({ page }) => {
+  await createHousehold(page);
+  const board = page.getByRole("region", { name: "Dinners" });
+  const first = board.getByTestId(/^day-row-/).first();
+  await expect(first).toHaveAttribute("data-testid", "day-row-wed");
+  await expect(first).toContainText("Tonight · Wed");
+  await expect(first.getByRole("link", { name: /Add dinner/ })).toBeVisible();
+  const link = await boxOf(first.getByRole("link"));
+  const section = await boxOf(board);
+  expect(link.width).toBeGreaterThan(section.width * 0.85);
+  expect(Math.round(link.height)).toBe(52);
+});
+
+test("long names and big numbers fit at 360 px", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  const email = await createHousehold(page);
+  await seedDinnerOnDay(email, "thu", { name: "W".repeat(80), photoUrl: "https://images.example.test/small.jpg", width: 400 });
+  await setBudget(page, { target: 10000, wiggle: 500 });
+  await page.goto("/week");
+  const thu = page.getByTestId("day-row-thu");
+  await expect(thu).toContainText("WWWW");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  const name = await boxOf(thu.locator(".line-clamp-2"));
+  expect(name.height).toBeLessThanOrEqual(41);
+  const budget = page.getByRole("region", { name: "Budget" });
+  await expect(budget).toContainText("of $10,000");
+  const total = await boxOf(budget.locator("strong"));
+  expect(total.height).toBeLessThan(24);
+});
+
+test("the pinboard reads in week order", async ({ page }) => {
+  const email = await createHousehold(page);
+  await seedDinnerOnDay(email, "mon", { name: "Monday soup" });
+  await seedDinnerOnDay(email, "fri", { name: "Friday soup" });
+  const order = () => page.locator('[data-testid^="day-row-"]').evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.slice(8)));
+
+  // Tonight is the first day of the week: the order is the week's.
+  await pinToday(page, "sun");
+  await page.reload();
+  await expect(page.locator('[data-testid^="day-row-"]')).toHaveCount(7);
+  expect(await order()).toEqual(["sun", "mon", "tue", "wed", "thu", "fri", "sat"]);
+
+  // Tonight is lifted to the front; every other day keeps the week's order.
+  await pinToday(page, "wed");
+  await page.reload();
+  await expect(page.locator('[data-testid^="day-row-"]')).toHaveCount(7);
+  expect(await order()).toEqual(["wed", "sun", "mon", "tue", "thu", "fri", "sat"]);
 });

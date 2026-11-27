@@ -21,14 +21,13 @@ async function searchSoup(page: Page, day: string): Promise<void> {
 
 /** Stream A: the week, adding a meal and favorites. */
 export const SCREENS_A: Screen[] = [
-  { name: "week", path: "/week", contrastPending: true },
+  { name: "week", path: "/week" },
   { name: "add-meal", path: "/week/add?day=thu&slot=dinner", contrastPending: true },
   { name: "favorites", path: "/favorites", contrastPending: true },
   {
-    // A household with an allergy and the soup with almonds planned anyway: the week row shows the allergy line.
+    // A household with an allergy and the soup with almonds planned anyway: the week tile shows the allergy line.
     name: "week-allergy",
     path: "/week",
-    contrastPending: true,
     setup: async (page) => {
       await withAllergy(page);
       await searchSoup(page, "fri");
