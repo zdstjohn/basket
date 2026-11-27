@@ -455,7 +455,7 @@ test("a ticked item moves to Got it", async ({ page }) => {
   await openList(page);
   await expect(page.getByTestId("list-row")).toHaveCount(4);
 
-  const produce = page.getByRole("region", { name: "Produce" });
+  const produce = page.getByRole("heading", { name: "Produce" }).locator("xpath=..");
   await expect(produce.getByTestId("list-row").filter({ hasText: "Yellow onion" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /^Got it/ })).toHaveCount(0);
 
@@ -470,7 +470,7 @@ test("a ticked item moves to Got it", async ({ page }) => {
 
   // Unticking puts it back in its aisle.
   await page.getByRole("checkbox", { name: "Got Yellow onion" }).uncheck();
-  await expect(page.getByRole("region", { name: "Produce" }).getByTestId("list-row").filter({ hasText: "Yellow onion" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Produce" }).locator("xpath=..").getByTestId("list-row").filter({ hasText: "Yellow onion" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /^Got it/ })).toHaveCount(0);
 });
 
