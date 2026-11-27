@@ -7,10 +7,10 @@ test("Fred Meyer account: connect, stays connected, disconnect, and it is per pe
   await page.goto("/household");
   const stores = page.getByRole("region", { name: "Stores and settings" });
   await expect(stores.getByText("Fred Meyer account")).toBeVisible();
-  await expect(stores.getByText("You'll sign in on Fred Meyer's own page. Basket never sees your password.")).toBeVisible();
+  await expect(stores.getByText("You’ll sign in on Fred Meyer’s own page. Basket never sees your password.")).toBeVisible();
 
   await stores.getByRole("link", { name: "Connect" }).click();
-  await expect(page.getByRole("status")).toHaveText("Fred Meyer is connected.");
+  await expect(page.getByRole("status").filter({ hasText: "Fred Meyer is connected." })).toHaveText("Fred Meyer is connected.");
   await expect(page).toHaveURL(/\/household$/); // ?fm= is taken out of the address after the notice shows
   await expect(stores.getByText("Connected", { exact: true })).toBeVisible();
   await expect(stores.getByRole("link", { name: "Connect" })).toHaveCount(0);
@@ -49,4 +49,20 @@ test("a sign-in that did not start here is refused", async ({ page }) => {
   expect(res.headers().location).toContain("/list/review?fm=failed");
   await page.goto("/household");
   await expect(page.getByRole("region", { name: "Stores and settings" }).getByRole("link", { name: "Connect" })).toBeVisible();
+});
+
+test("Connected is said in words, not by color", async ({ page }) => {
+  await createHousehold(page);
+  await page.goto("/household");
+  const stores = page.getByRole("region", { name: "Stores and settings" });
+  await stores.getByRole("link", { name: "Connect" }).click();
+  const word = stores.getByText("Connected", { exact: true });
+  await expect(word).toBeVisible();
+  await expect(word.locator("svg")).toHaveCount(1);
+  const [wordColor, titleColor] = await Promise.all([
+    word.evaluate((el) => getComputedStyle(el).color),
+    stores.getByText("Fred Meyer account").evaluate((el) => getComputedStyle(el).color),
+  ]);
+  expect(wordColor).toBe(titleColor); // ink, like the row's name: no green
+  await expect(stores.getByRole("button", { name: "Disconnect" })).toBeVisible();
 });

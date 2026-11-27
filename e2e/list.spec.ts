@@ -281,10 +281,15 @@ test("household: where things come from, staples on and off, always-have", async
   await page.goto("/household");
 
   const stores = page.getByRole("region", { name: "Where things come from" });
-  const dairy = stores.getByRole("radiogroup", { name: "Dairy and eggs" });
+  // One row per kind of food; a tap opens its sheet, and choosing a store saves and closes it.
+  const dairyRow = stores.getByRole("button", { name: /Dairy and eggs/ });
+  await expect(dairyRow).toContainText("Fred Meyer");
+  await dairyRow.click();
+  const dairy = page.getByRole("dialog", { name: "Dairy and eggs" });
   await expect(dairy.getByRole("radio", { name: "Fred Meyer" })).toBeChecked();
-  await dairy.getByRole("radio", { name: "Costco" }).check();
-  await expect(dairy.getByRole("radio", { name: "Costco" })).toBeChecked();
+  await dairy.getByRole("radio", { name: "Costco" }).click();
+  await expect(dairy).toBeHidden();
+  await expect(dairyRow).toContainText("Costco");
   const sb = await clientFor(email);
   await expect
     .poll(async () => (await sb.from("households").select("category_store")).data?.[0]?.category_store)
@@ -326,7 +331,7 @@ test("household: where things come from, staples on and off, always-have", async
   // Turning a staple off takes it away entirely.
   await page.goto("/household");
   await always.getByRole("button", { name: "Remove milk" }).click();
-  await page.getByRole("switch", { name: "Milk" }).uncheck();
+  await page.getByRole("switch", { name: "Buy Milk every week" }).uncheck();
   await openListFromHousehold(page);
   await expect(page.getByText("Your list is clear.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Plan this week" })).toHaveAttribute("href", "/week");

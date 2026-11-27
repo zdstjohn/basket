@@ -1,6 +1,8 @@
+import { ChevronRight, TriangleAlert } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import { portionFactor } from "@/lib/domain/portions";
 import type { Diet, Person } from "@/lib/domain/types";
-import { focusRing } from "@/lib/ui";
+import { portionText as portionWords } from "@/lib/text/typography";
 
 export const DIETS: { value: Diet; label: string }[] = [
   { value: "none", label: "None" },
@@ -17,8 +19,7 @@ const DIET_NAME: Record<Diet, string> = {
 };
 
 export function portionText(person: Person): string {
-  const f = portionFactor(person.age, person.appetite);
-  return f === 1 ? "1 portion" : String(f);
+  return portionWords(portionFactor(person.age, person.appetite));
 }
 
 /** Diet and won't-eat foods; empty when the only thing to say is an allergy (that gets its own line). */
@@ -36,50 +37,52 @@ export function allergyText(person: Person): string | null {
   return `${list.length === 1 ? "Allergy" : "Allergies"}: ${list.join(", ")}`;
 }
 
-// Adults, vegetarians and kids each get their own badge color, as in the mockup.
-function badgeColor(person: Person): string {
-  if (person.diet !== "none") return "bg-green";
-  return person.age >= 14 ? "bg-[#3D5A4A]" : "bg-[#8A5A2B]";
-}
-
+/** One person: an initial, the name, what they eat, and their allergies in words (never clamped). Tapping opens the editor. */
 export function PersonRow({
   person,
   expanded,
   onClick,
+  label,
 }: {
   person: Person;
   expanded: boolean;
   onClick: () => void;
+  /** The name as shown ("Daughter (4)" when another person shares it); the plain name when omitted. */
+  label?: string;
 }) {
   const detail = detailText(person);
   const allergy = allergyText(person);
+  const shown = label ?? person.name;
   return (
     <button
       type="button"
       data-testid="person-row"
       aria-expanded={expanded}
       onClick={onClick}
-      className={`flex min-h-[50px] w-full items-center gap-3 bg-white px-3.5 py-[5px] text-left text-ink ${focusRing}`}
+      className="flex min-h-13 w-full items-center gap-3 py-2 text-left text-ink"
     >
       <span
-        className={`flex size-[34px] flex-none items-center justify-center rounded-full text-[13px] font-semibold text-white ${badgeColor(person)}`}
+        aria-hidden="true"
+        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sunk text-small font-semibold text-ink"
       >
-        {person.age}
+        {shown.trim().charAt(0).toUpperCase()}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[15px] font-semibold">{person.name}</span>
-        {detail && <span className="block text-xs text-muted">{detail}</span>}
+        <span className="block text-body">{shown}</span>
+        <span className="block text-small text-ink-soft">{portionText(person)}</span>
+        {detail && <span className="block text-small text-ink-soft">{detail}</span>}
         {allergy && (
-          <span className="mt-px flex items-center gap-1 text-xs font-semibold text-[#A6261B]">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">
-              <path d="M12 3.5l9.5 16.5h-19z" />
-              <path d="M12 10v4.5M12 17.6h.01" />
-            </svg>
-            {allergy}
+          <span className="flex items-start gap-1 text-small font-semibold text-error">
+            <Icon icon={TriangleAlert} size={18} className="mt-0.5" />
+            <span className="min-w-0">{allergy}</span>
           </span>
         )}
       </span>
-      <span className="text-[13px] font-medium text-[#4A544F]">{portionText(person)}</span>
+      <Icon
+        icon={ChevronRight}
+        size={18}
+        className={`text-ink-soft transition-transform duration-[var(--bk-dur-fast)] ease-out ${expanded ? "rotate-90" : ""}`}
+      />
     </button>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { focusRing, pillButton, textInput } from "@/lib/ui";
+import { Button } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/Field";
 
 export interface StoreChoice {
   id: string;
@@ -51,45 +52,39 @@ export function StorePicker({
   }
 
   return (
-    <div className="grid gap-2 px-3.5 pb-3">
+    <div className="grid gap-2 pb-3">
       <form onSubmit={search} className="flex items-end gap-2">
-        <label className="grid flex-1 gap-1 text-xs text-muted">
-          ZIP code
-          <input
-            inputMode="numeric"
-            autoComplete="postal-code"
-            maxLength={5}
-            value={zip}
-            onChange={(e) => setZip(e.target.value.replace(/\D/g, ""))}
-            className={textInput}
-          />
-        </label>
-        <button type="submit" disabled={status === "searching"} className={pillButton}>
+        <TextField
+          className="min-w-0 flex-1"
+          label="ZIP code"
+          inputMode="numeric"
+          autoComplete="postal-code"
+          maxLength={5}
+          value={zip}
+          onChange={(e) => setZip(e.target.value.replace(/\D/g, ""))}
+        />
+        <Button type="submit" variant="ghost" busy={status === "searching"}>
           Search
-        </button>
-        <button type="button" onClick={onCancel} className={pillButton}>
+        </Button>
+        <Button variant="ghost" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
       </form>
-      <p aria-live="polite" role={status === "idle" || status === "searching" || status === "done" ? undefined : "alert"} className="text-[13px] text-muted empty:hidden">
+      <p aria-live="polite" role={status === "idle" || status === "searching" || status === "done" ? undefined : "alert"} className="text-small text-ink-soft empty:hidden">
         {status === "searching" && "Looking for stores…"}
         {status === "bad_zip" && "Enter a 5-digit ZIP code."}
-        {status === "not_configured" && "Fred Meyer prices aren't set up yet."}
-        {status === "error" && "We couldn't look up stores just now. Try again."}
+        {status === "not_configured" && "Fred Meyer prices aren’t set up yet."}
+        {status === "error" && "We couldn’t look up stores just now. Try again."}
         {status === "done" && stores.length === 0 && "No stores found near that ZIP code."}
-        {saveFailed && "That didn't save. Try again."}
+        {saveFailed && "That didn’t save. Try again."}
       </p>
       {status === "done" && stores.length > 0 && (
-        <ul className="overflow-hidden rounded-xl border border-line">
+        <ul className="divide-y divide-line">
           {stores.map((s) => (
-            <li key={s.id} className="border-b border-[#F0F2EF] last:border-b-0">
-              <button
-                type="button"
-                onClick={() => void choose(s)}
-                className={`flex min-h-11 w-full flex-col justify-center px-3 py-1.5 text-left ${focusRing}`}
-              >
-                <span className="text-[15px] font-medium">{s.name}</span>
-                <span className="text-xs text-muted">{s.address}</span>
+            <li key={s.id}>
+              <button type="button" onClick={() => void choose(s)} className="flex min-h-13 w-full flex-col justify-center py-2 text-left">
+                <span className="text-body text-ink">{s.name}</span>
+                <span className="text-small text-ink-soft">{s.address}</span>
               </button>
             </li>
           ))}

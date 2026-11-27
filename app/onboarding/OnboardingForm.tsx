@@ -56,6 +56,14 @@ export function OnboardingForm({ existing }: { existing: ExistingHousehold | nul
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editor = useRef<HTMLFieldSetElement>(null);
+  const addButton = useRef<HTMLDivElement>(null);
+  const focusAdd = useRef(false); // set when the open person was removed, so focus has somewhere to land
+  useEffect(() => {
+    if (focusAdd.current) {
+      focusAdd.current = false;
+      addButton.current?.querySelector("button")?.focus();
+    }
+  });
 
   const servings = householdServings(
     rows
@@ -106,6 +114,7 @@ export function OnboardingForm({ existing }: { existing: ExistingHousehold | nul
   function removePerson(key: number) {
     setRows((list) => list.filter((x) => x.key !== key));
     setOpen(null);
+    focusAdd.current = true;
   }
 
   async function submit(e: FormEvent) {
@@ -114,7 +123,10 @@ export function OnboardingForm({ existing }: { existing: ExistingHousehold | nul
     const cushionCents = parseMoneyToCents(cushion);
     setBudgetError(budgetCents === null ? BUDGET_ERROR : null);
     setCushionError(cushionCents === null ? BUDGET_ERROR : null);
-    if (budgetCents === null || cushionCents === null) return;
+    if (budgetCents === null || cushionCents === null) {
+      setError(null); // an old banner would say something that is no longer true
+      return;
+    }
     const name = householdName.trim();
     if (!name || rows.some((r) => !r.name.trim())) {
       setError("Give the household and everyone in it a name.");
@@ -162,7 +174,8 @@ export function OnboardingForm({ existing }: { existing: ExistingHousehold | nul
         <section aria-label="Who’s eating" className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-heading text-ink">Who’s eating</h2>
-            <span aria-live="polite" className="text-small text-ink-soft">
+            <span className="text-small text-ink-soft">{servingsText(servings)}</span>
+            <span aria-live="polite" className="sr-only">
               {servingsText(announced)}
             </span>
           </div>
@@ -207,7 +220,7 @@ export function OnboardingForm({ existing }: { existing: ExistingHousehold | nul
                     </SelectField>
                   </div>
                   <div>
-                    <span className="mb-1 block text-small text-ink-soft">Appetite</span>
+                    <span aria-hidden="true" className="mb-1 block text-small text-ink-soft">Appetite</span>
                     <Segmented
                       label="Appetite"
                       options={APPETITES}
@@ -241,9 +254,11 @@ export function OnboardingForm({ existing }: { existing: ExistingHousehold | nul
               ),
             )}
           </div>
-          <Button variant="ghost" className="self-start" onClick={addPerson}>
-            + Add person
-          </Button>
+          <div ref={addButton} className="self-start">
+            <Button variant="ghost" onClick={addPerson}>
+              + Add person
+            </Button>
+          </div>
         </section>
 
         <section aria-label="Budget" className="grid grid-cols-2 gap-2">

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Check } from "lucide-react";
 import { AlwaysHaveSection } from "@/components/household/AlwaysHaveSection";
 import { SignOutButton } from "@/components/household/SignOutButton";
 import { StaplesSection } from "@/components/household/StaplesSection";
@@ -9,6 +10,12 @@ import { personLabel } from "@/lib/domain/flags";
 import { LookPicker } from "@/components/LookPicker";
 import { PersonRow } from "@/components/PersonRow";
 import { StorePicker, type StoreChoice } from "@/components/StorePicker";
+import { Banner } from "@/components/ui/Banner";
+import { Button } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/Field";
+import { Icon } from "@/components/ui/Icon";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { ErrorBanner } from "@/components/ui/states";
 import { createBrowserClient } from "@/lib/db/client";
 import {
   createInviteLink,
@@ -23,7 +30,8 @@ import { householdServings } from "@/lib/domain/portions";
 import type { Person } from "@/lib/domain/types";
 import { FM_NOTICES } from "@/lib/list/fm-notices";
 import { subscribeHousehold } from "@/lib/realtime";
-import { focusRing, pillButton, textInput } from "@/lib/ui";
+import { curly, servingsText } from "@/lib/text/typography";
+import { ghostButton } from "@/lib/ui";
 import { PersonEditor, type PersonDraft } from "./PersonEditor";
 
 const NEW_PERSON: PersonDraft = { name: "", age: 0, diet: "none", appetite: 1, dislikes: [], allergies: [] };
@@ -62,11 +70,13 @@ export function HouseholdScreen({
   const [budget, setBudget] = useState(formatDollars(household.budget_cents));
   const [cushion, setCushion] = useState(formatExtra(household.cushion_cents));
   const saved = useRef({ budget: household.budget_cents, cushion: household.cushion_cents });
-  const [budgetError, setBudgetError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<{ field: "budget" | "cushion"; message: string } | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteState, setInviteState] = useState<"idle" | "working" | "error">("idle");
   const [copied, setCopied] = useState(false);
-  const linkInput = useRef<HTMLInputElement>(null);
+  const linkField = useRef<HTMLDivElement>(null);
   const [fredMeyer, setFredMeyer] = useState(household.kroger_location_name);
   const [picking, setPicking] = useState(false);
   const [connected, setConnected] = useState(fredMeyerConnected);
@@ -79,6 +89,11 @@ export function HouseholdScreen({
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
   const [disconnecting, setDisconnecting] = useState(false);
+  useEffect(() => {
+    if (!justSaved) return;
+    const t = setTimeout(() => setJustSaved(false), 4000);
+    return () => clearTimeout(t);
+  }, [justSaved]);
 
   async function disconnectFredMeyer() {
     setDisconnecting(true);
@@ -135,12 +150,14 @@ export function HouseholdScreen({
     const cents = parseMoneyToCents(text);
     const show = field === "budget" ? setBudget : setCushion;
     const format = field === "budget" ? formatDollars : formatExtra;
+    setSaveFailed(false);
+    setJustSaved(false);
     if (cents === null) {
       show(format(saved.current[field]));
-      setBudgetError("Enter an amount like $200.");
+      setFieldError({ field, message: "Enter an amount like $200." });
       return;
     }
-    setBudgetError(null);
+    setFieldError(null);
     show(format(cents));
     if (cents === saved.current[field]) return;
     try {
@@ -150,9 +167,10 @@ export function HouseholdScreen({
         field === "budget" ? { budget_cents: cents } : { cushion_cents: cents },
       );
       saved.current[field] = cents;
+      setJustSaved(true);
     } catch {
       show(format(saved.current[field]));
-      setBudgetError("That didn't save. Try again.");
+      setSaveFailed(true);
     }
   }
 
@@ -173,216 +191,213 @@ export function HouseholdScreen({
       await navigator.clipboard.writeText(inviteLink);
       setCopied(true);
     } catch {
-      linkInput.current?.select(); // clipboard blocked: leave it selected to copy by hand
+      linkField.current?.querySelector("input")?.select(); // clipboard blocked: leave it selected to copy by hand
     }
   }
 
   const servings = householdServings(people);
-  const divider = "border-b border-[#F0F2EF] last:border-b-0";
+  const rowBase = "flex min-h-13 items-center gap-3 py-2";
+  const title = "text-heading text-ink";
+  const failure = fmNotice === "failed" || fmNotice === "disconnectFailed";
 
   return (
-    <div className="pb-6">
-      <header className="px-5 pt-5 pb-2">
-        <h1 className="text-[30px] font-bold tracking-tight text-ink">Household</h1>
-      </header>
-
-      <section aria-label="Who's eating" className="mx-5 mt-1">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold">Who&apos;s eating · {servings} servings</h2>
-          <button
-            type="button"
-            onClick={() => setEditing("new")}
-            className={`h-11 rounded-full px-3 text-sm font-semibold text-green ${focusRing}`}
-          >
-            + Add
-          </button>
-        </div>
-        <ul className="mt-1 overflow-hidden rounded-2xl border border-line bg-white">
-          {people.map((p) => (
-            <li key={p.id} className={divider}>
-              <PersonRow
-                person={p}
-                expanded={editing === p.id}
-                onClick={() => setEditing(editing === p.id ? null : p.id)}
-              />
-              {editing === p.id && (
-                <PersonEditor
-                  key={p.id}
-                  initial={p}
-                  onSave={savePerson}
-                  onDelete={() => removePerson(p.id)}
-                  deleteLabel={personLabel(p, people)}
-                  onCancel={() => setEditing(null)}
+    <div className="flex flex-col">
+      <ScreenHeader title="Household" />
+      <div className="bk-gutter flex flex-col gap-8 pt-4 pb-8">
+        <section aria-label="Who’s eating" className="flex flex-col gap-2">
+          <h2 className={title}>Who’s eating · {servingsText(servings)}</h2>
+          <ul className="divide-y divide-line">
+            {people.map((p) => (
+              <li key={p.id}>
+                <PersonRow
+                  person={p}
+                  label={personLabel(p, people)}
+                  expanded={editing === p.id}
+                  onClick={() => setEditing(editing === p.id ? null : p.id)}
                 />
-              )}
-            </li>
-          ))}
-          {editing === "new" && (
-            <li>
-              <PersonEditor
-                initial={NEW_PERSON}
-                onSave={savePerson}
-                onCancel={() => setEditing(null)}
-              />
-            </li>
-          )}
-        </ul>
-        <p className="mt-2 text-[13px] text-muted">
-          Tap a person to change what they won’t eat or are allergic to.
-        </p>
-      </section>
-
-      <section aria-label="Budget" className="mx-5 mt-4">
-        <h2 className="mb-1.5 text-[15px] font-semibold">Weekly budget</h2>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block rounded-[14px] border border-line bg-white px-3.5 py-2.5">
-            <span className="block text-xs text-muted">Target</span>
-            <input
-              inputMode="decimal"
-              value={budget}
-              onChange={(e) => setBudget(e.target.value)}
-              onBlur={() => saveBudget("budget")}
-              className={`mt-0.5 h-8 w-full bg-transparent text-xl font-semibold text-ink ${focusRing}`}
-            />
-          </label>
-          <label className="block rounded-[14px] border border-line bg-white px-3.5 py-2.5">
-            <span className="block text-xs text-muted">Wiggle room</span>
-            <input
-              inputMode="decimal"
-              value={cushion}
-              onChange={(e) => setCushion(e.target.value)}
-              onBlur={() => saveBudget("cushion")}
-              className={`mt-0.5 h-8 w-full bg-transparent text-xl font-semibold text-ink ${focusRing}`}
-            />
-          </label>
-        </div>
-        {budgetError && (
-          <p role="alert" className="mt-2 text-[13px] text-sale">
-            {budgetError}
-          </p>
-        )}
-      </section>
-
-      <StoresSection household={household} />
-      <StaplesSection household={household} />
-      <AlwaysHaveSection household={household} />
-
-      <section aria-label="Stores and settings" className="mx-5 mt-4">
-        <h2 className="mb-1.5 text-[15px] font-semibold">Stores and sharing</h2>
-        <ul className="overflow-hidden rounded-2xl border border-line bg-white">
-          {STORES.map((s) => {
-            const shelf = krogerEnabled && s.label === "Fred Meyer";
-            return (
-              <li key={s.label} className={divider}>
-                <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] font-medium">{shelf ? "Your Fred Meyer" : s.label}</span>
-                    <span className="block text-xs text-muted">
-                      {shelf ? (fredMeyer ?? "Pick your store for real shelf prices") : s.detail}
-                    </span>
-                  </span>
-                  {shelf ? (
-                    !picking && (
-                      <button type="button" onClick={() => setPicking(true)} className={pillButton}>
-                        {fredMeyer ? "Change" : "Choose store"}
-                      </button>
-                    )
-                  ) : (
-                    <button type="button" disabled className={pillButton}>
-                      Coming soon
-                    </button>
-                  )}
-                </div>
-                {shelf && picking && (
-                  <StorePicker onChoose={chooseFredMeyer} onCancel={() => setPicking(false)} />
+                {editing === p.id && (
+                  <div className="pb-3">
+                    <PersonEditor
+                      key={p.id}
+                      initial={p}
+                      onSave={savePerson}
+                      onDelete={() => removePerson(p.id)}
+                      deleteLabel={personLabel(p, people)}
+                      onCancel={() => setEditing(null)}
+                    />
+                  </div>
                 )}
               </li>
-            );
-          })}
-          {(cartEnabled || connected) && (
-            <li className={divider}>
-              <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[15px] font-medium">Fred Meyer account</span>
-                  <span className="block text-xs text-muted">
-                    {connected
-                      ? "Connected"
-                      : "You'll sign in on Fred Meyer's own page. Basket never sees your password."}
-                  </span>
-                </span>
-                {connected ? (
-                  <button type="button" onClick={disconnectFredMeyer} disabled={disconnecting} className={pillButton}>
-                    Disconnect
-                  </button>
-                ) : cartEnabled ? (
-                  <a href="/api/kroger/connect?next=/household" className={pillButton}>
-                    Connect
-                  </a>
-                ) : null}
-              </div>
-              {fmNotice && (
-                <p role="status" className="px-3.5 pb-3 text-[13px] text-ink">
-                  {FM_NOTICES[fmNotice]}
-                </p>
+            ))}
+            {editing === "new" && (
+              <li className="py-3">
+                <PersonEditor initial={NEW_PERSON} onSave={savePerson} onCancel={() => setEditing(null)} />
+              </li>
+            )}
+          </ul>
+          <p className="text-small text-ink-soft">
+            Tap a person to change what they won’t eat or are allergic to.
+          </p>
+          <Button variant="ghost" className="self-start" onClick={() => setEditing("new")}>
+            + Add person
+          </Button>
+        </section>
+
+        <section aria-label="Budget" className="flex flex-col gap-2">
+          <div className="grid grid-cols-2 items-start gap-3">
+            <TextField
+              className="[&_input]:tabular-nums"
+              label="Weekly budget"
+              aria-label="Target"
+              inputMode="decimal"
+              value={budget}
+              error={fieldError?.field === "budget" ? fieldError.message : undefined}
+              onChange={(e) => {
+                setBudget(e.target.value);
+                setFieldError(null);
+              }}
+              onBlur={() => void saveBudget("budget")}
+            />
+            <TextField
+              className="[&_input]:tabular-nums"
+              label="Wiggle room"
+              inputMode="decimal"
+              value={cushion}
+              error={fieldError?.field === "cushion" ? fieldError.message : undefined}
+              onChange={(e) => {
+                setCushion(e.target.value);
+                setFieldError(null);
+              }}
+              onBlur={() => void saveBudget("cushion")}
+            />
+          </div>
+          {saveFailed && <ErrorBanner message="That didn’t save. Try again." />}
+          <div role="status">{justSaved && <Banner role={null}>Saved.</Banner>}</div>
+        </section>
+
+        <StoresSection household={household} />
+        <StaplesSection household={household} />
+        <AlwaysHaveSection household={household} />
+
+        <section aria-label="Stores and settings" className="flex flex-col gap-2">
+          <h2 className={title}>Stores and sharing</h2>
+          <ul className="divide-y divide-line">
+            {STORES.map((s) => {
+              const shelf = krogerEnabled && s.label === "Fred Meyer";
+              return (
+                <li key={s.label}>
+                  <Row
+                    title={shelf ? "Your Fred Meyer" : s.label}
+                    detail={shelf ? (fredMeyer ?? "Pick your store for real shelf prices") : s.detail}
+                    base={rowBase}
+                  >
+                    {shelf ? (
+                      !picking && (
+                        <Button variant="ghost" onClick={() => setPicking(true)}>
+                          {fredMeyer ? "Change" : "Choose store"}
+                        </Button>
+                      )
+                    ) : (
+                      <Button variant="ghost" disabled className="disabled:border-transparent disabled:text-ink-soft">
+                        Coming soon
+                      </Button>
+                    )}
+                  </Row>
+                  {shelf && picking && <StorePicker onChoose={chooseFredMeyer} onCancel={() => setPicking(false)} />}
+                </li>
+              );
+            })}
+            {(cartEnabled || connected) && (
+              <li>
+                <Row
+                  title="Fred Meyer account"
+                  base={rowBase}
+                  detail={
+                    connected ? (
+                      <span className="flex items-center gap-1 text-ink">
+                        <Icon icon={Check} size={18} />
+                        Connected
+                      </span>
+                    ) : (
+                      "You’ll sign in on Fred Meyer’s own page. Basket never sees your password."
+                    )
+                  }
+                >
+                  {connected ? (
+                    <Button variant="ghost" onClick={disconnectFredMeyer} busy={disconnecting}>
+                      Disconnect
+                    </Button>
+                  ) : cartEnabled ? (
+                    <a href="/api/kroger/connect?next=/household" className={ghostButton}>
+                      Connect
+                    </a>
+                  ) : null}
+                </Row>
+                {fmNotice && (
+                  <div className="pb-3">
+                    {failure ? <ErrorBanner message={FM_NOTICES[fmNotice]} /> : <Banner>{curly(FM_NOTICES[fmNotice])}</Banner>}
+                  </div>
+                )}
+              </li>
+            )}
+            <li>
+              <Row
+                title="Shared with"
+                detail={memberCount === 1 ? "Just you so far" : `${memberCount} people`}
+                base={rowBase}
+              >
+                {isOwner && (
+                  <Button variant="ghost" onClick={invite} busy={inviteState === "working"}>
+                    Invite
+                  </Button>
+                )}
+              </Row>
+              {inviteState === "error" && (
+                <div className="pb-3">
+                  <ErrorBanner message="We couldn’t make an invite just now. Try again." />
+                </div>
+              )}
+              {inviteLink && (
+                <div className="grid gap-2 pb-3">
+                  <div ref={linkField}>
+                    <TextField label="Invite link" readOnly value={inviteLink} onFocus={(e) => e.currentTarget.select()} />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button variant="ghost" onClick={copyLink}>
+                      Copy
+                    </Button>
+                    <span aria-live="polite" className="text-small text-ink-soft">
+                      {copied ? "Copied. The link works once and lasts a week." : ""}
+                    </span>
+                  </div>
+                </div>
               )}
             </li>
-          )}
-          <li className={`${divider}`}>
-            <div className="flex min-h-12 items-center gap-3 py-1 pr-2 pl-3.5">
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-medium">Shared with</span>
-                <span className="block text-xs text-muted">
-                  {memberCount === 1 ? "Just you so far" : `${memberCount} people`}
-                </span>
-              </span>
-              {isOwner && (
-                <button
-                  type="button"
-                  onClick={invite}
-                  disabled={inviteState === "working"}
-                  className={pillButton}
-                >
-                  Invite
-                </button>
-              )}
-            </div>
-            {inviteState === "error" && (
-              <p role="alert" className="px-3.5 pb-3 text-[13px] text-sale">
-                We couldn&apos;t make an invite just now. Try again.
-              </p>
-            )}
-            {inviteLink && (
-              <div className="grid gap-2 px-3.5 pb-3">
-                <label className="grid gap-1 text-xs text-muted">
-                  Invite link
-                  <input
-                    ref={linkInput}
-                    readOnly
-                    value={inviteLink}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className={textInput}
-                  />
-                </label>
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={copyLink} className={pillButton}>
-                    Copy
-                  </button>
-                  <span aria-live="polite" className="text-[13px] text-muted">
-                    {copied ? "Copied. The link works once and lasts a week." : ""}
-                  </span>
-                </div>
-              </div>
-            )}
-          </li>
-        </ul>
-      </section>
+          </ul>
+        </section>
 
-      <section aria-label="Look" className="mx-5 mt-4">
-        <h2 className="mb-1.5 text-[15px] font-semibold">Look</h2>
-        <LookPicker />
-      </section>
+        <section aria-labelledby="household-look" className="flex flex-col gap-2">
+          <h2 id="household-look" className={title}>
+            Look
+          </h2>
+          <LookPicker />
+        </section>
 
-      <SignOutButton />
+        <SignOutButton />
+      </div>
+    </div>
+  );
+}
+
+/** A 52 px row: the name and a line of detail on the left, an action on the right. */
+function Row({ title, detail, base, children }: { title: string; detail: ReactNode; base: string; children?: ReactNode }) {
+  return (
+    <div className={base}>
+      <span className="min-w-0 flex-1">
+        <span className="block text-body text-ink">{title}</span>
+        <span className="block text-small text-ink-soft">{detail}</span>
+      </span>
+      {children}
     </div>
   );
 }
