@@ -22,7 +22,7 @@ async function searchSoup(page: Page, day: string): Promise<void> {
 /** Stream A: the week, adding a meal and favorites. */
 export const SCREENS_A: Screen[] = [
   { name: "week", path: "/week" },
-  { name: "add-meal", path: "/week/add?day=thu&slot=dinner", contrastPending: true },
+  { name: "add-meal", path: "/week/add?day=thu&slot=dinner" },
   { name: "favorites", path: "/favorites", contrastPending: true },
   {
     // A household with an allergy and the soup with almonds planned anyway: the week tile shows the allergy line.
@@ -41,7 +41,6 @@ export const SCREENS_A: Screen[] = [
     // Search cards carrying an allergy line and a won't-eat line.
     name: "search-flags",
     path: "/week/add?day=thu&slot=dinner",
-    contrastPending: true,
     setup: async (page) => {
       await withAllergy(page);
       await searchSoup(page, "thu");

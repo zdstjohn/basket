@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DraftPreview, draftFlags } from "@/components/add-meal/DraftPreview";
@@ -25,7 +24,12 @@ import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
 import { subscribeHousehold } from "@/lib/realtime";
 import { weekFoods } from "@/lib/recipes/search/overlap";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
-import { bigGreenLink, focusRing, pillButton, stickyBottom } from "@/lib/ui";
+import { Button } from "@/components/ui/Button";
+import { Check } from "@/components/ui/Check";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { ErrorBanner } from "@/components/ui/states";
+import { Tabs } from "@/components/ui/Tabs";
+import { barBottom, quietLink } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
 
 type Tab = AddMealTab;
@@ -229,7 +233,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       }
       await putOnDay(savedMealId.current);
     } catch {
-      setError("We couldn't add that. Try again.");
+      setError("We couldn’t add that. Try again.");
       setAdding(false);
     }
   }
@@ -239,7 +243,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     try {
       await putOnDay(meal.id);
     } catch {
-      setError("We couldn't add that. Try again.");
+      setError("We couldn’t add that. Try again.");
     }
   }
 
@@ -248,7 +252,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       const blob = await resizeForUpload(file);
       setCustom({ blob, url: URL.createObjectURL(blob) });
     } catch {
-      setError("We couldn't use that photo. Try another one.");
+      setError("We couldn’t use that photo. Try another one.");
     }
   }
 
@@ -261,119 +265,87 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
 
   return (
     <section className={`flex flex-1 flex-col ${showPreview ? "" : "mb-[var(--bk-safe-bottom)]"}`}>
-      <header className="flex items-center gap-2 px-5 pb-2.5 pt-4">
-        <Link href="/week" aria-label="Close" className={`-ml-2.5 flex size-11 items-center justify-center rounded-full text-ink ${focusRing}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </Link>
-        <h1 className="text-2xl font-bold">{label} dinner</h1>
-      </header>
+      <ScreenHeader title={`${label} dinner`} back={{ href: "/week", label: "Close", icon: "close" }} />
 
-      <div role="tablist" aria-label="How to add" className="mx-5 grid grid-cols-3 gap-1 rounded-[14px] bg-[#EAEEE9] p-1">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => changeTab(t.id)}
-            className={`h-11 rounded-[10px] text-sm ${focusRing} ${
-              tab === t.id ? "bg-white font-semibold text-ink shadow-sm" : "font-medium text-[#4A544F]"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="bk-gutter">
+        <Tabs label="How to add" items={TABS} active={tab} onChange={changeTab} panelId="add-panel" />
       </div>
 
-      <div hidden={tab !== "search"}>
-        <SearchTab
-          query={query}
-          onQuery={setQuery}
-          source={source}
-          onSource={changeSource}
-          hideResults={!!draft}
-          week={week}
-          people={people}
-          onNeedWeek={wantWeek}
-          picking={picking}
-          onPick={(o) => void pick(o)}
-          onSearchStart={startOver}
-          onDishPhoto={foundWithPhoto}
-        />
-      </div>
-      {tab === "paste" && (
-        <PasteTab value={paste} onChange={setPaste} onDraft={setDraft} onStart={startOver} />
-      )}
-      {tab === "favorites" && (
-        <div className="mt-3.5">
-          <FavoritesBrowser
-            household={household}
-            showChips={false}
-            addLabel={(m) => `Add ${m.name} to ${label}`}
-            anywayLabel={`Add to ${label} anyway`}
-            onAdd={addFavorite}
+      <div role="tabpanel" id="add-panel" aria-labelledby={`add-panel-tab-${tab}`}>
+        <div hidden={tab !== "search"}>
+          <SearchTab
+            query={query}
+            onQuery={setQuery}
+            source={source}
+            onSource={changeSource}
+            hideResults={!!draft}
+            week={week}
+            people={people}
+            onNeedWeek={wantWeek}
+            picking={picking}
+            onPick={(o) => void pick(o)}
+            onSearchStart={startOver}
+            onDishPhoto={foundWithPhoto}
           />
         </div>
-      )}
+        {tab === "paste" && <PasteTab value={paste} onChange={setPaste} onDraft={setDraft} onStart={startOver} />}
+        {tab === "favorites" && (
+          <div className="mt-3">
+            <FavoritesBrowser
+              household={household}
+              showChips={false}
+              addLabel={(m) => `Add ${m.name} to ${label}`}
+              anywayLabel={`Add to ${label} anyway`}
+              onAdd={addFavorite}
+            />
+          </div>
+        )}
+      </div>
 
       {picking && (
-        <p role="status" className="mx-5 mt-3.5 text-[15px] text-muted">
+        <p role="status" className="bk-gutter mt-3 text-small text-ink-soft">
           Reading the recipe…
         </p>
       )}
       {showPreview && (
         <>
           <DraftPreview draft={draft} people={people ?? []} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} onChanges={(personChanges) => setDraft({ ...draft, personChanges })} optionNames={checkNames} />
-          <label className="mx-5 mt-3 flex min-h-11 items-center gap-2.5 text-[15px] font-medium">
-            <input
-              type="checkbox"
-              checked={saveFavorite}
-              onChange={(e) => setSaveFavorite(e.target.checked)}
-              className="size-5 accent-green"
-            />
-            Save as a favorite
-          </label>
+          <div className="bk-gutter mt-3">
+            <Check checked={saveFavorite} onChange={setSaveFavorite} label="Save as a favorite">
+              <span className="text-body text-ink">Save as a favorite</span>
+            </Check>
+          </div>
         </>
       )}
       {peopleFailed && (
-        <div className="mx-5 mt-3 flex flex-wrap items-center gap-3">
-          <p role="alert" className="text-[15px] font-medium text-[#A6261B]">Couldn’t check allergies. Try again.</p>
-          <button type="button" onClick={loadPeople} className={pillButton}>
-            Retry
-          </button>
+        <div className="bk-gutter mt-3">
+          <ErrorBanner message="Couldn’t check allergies. Try again." actionLabel="Retry" onAction={loadPeople} />
         </div>
       )}
       {error && (
-        <p role="alert" className="mx-5 mt-3 text-[15px] font-medium text-[#A6261B]">
-          {error}
-        </p>
+        <div className="bk-gutter mt-3">
+          <ErrorBanner message={error} />
+        </div>
       )}
 
       <div className="mt-auto" />
       {showPreview && (
-        <div className={stickyBottom}>
+        <div className={barBottom}>
           {hasAllergy ? (
             <div className="grid gap-2">
-              <button type="button" onClick={startOver} className={`${pillButton} h-[52px] w-full text-base`}>
+              <Button variant="ghost" onClick={startOver} className="min-h-13 w-full">
                 Pick a different dinner
-              </button>
+              </Button>
               <div className="flex justify-center">
-                <button
-                  type="button"
-                  disabled={cantAdd}
-                  onClick={() => void addDraft()}
-                  className={`inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-[15px] font-semibold text-ink disabled:opacity-60 ${focusRing}`}
-                >
+                <button type="button" disabled={cantAdd} onClick={() => void addDraft()} className={`${quietLink} min-w-11 justify-center px-3`}>
                   Add to {label} anyway
                 </button>
               </div>
             </div>
           ) : (
-            <button type="button" disabled={cantAdd} onClick={() => void addDraft()} className={bigGreenLink}>
+            <Button variant="main" disabled={cantAdd} onClick={() => void addDraft()}>
               Add to {label}
-            </button>
+            </Button>
           )}
         </div>
       )}

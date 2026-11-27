@@ -19,7 +19,7 @@ const WITH_LISTS: PersonInput[] = FAMILY.map((p) =>
 );
 
 async function searchFor(page: Page, query: string) {
-  await page.getByLabel("What's for dinner?").fill(query);
+  await page.getByLabel("What’s for dinner?").fill(query);
   await page.getByRole("button", { name: "Search" }).click();
 }
 
@@ -313,6 +313,30 @@ for (const look of ["light", "dark"] as const) {
     await swap.getByLabel("Or something else").fill("walnuts");
     await expect(swap.getByTestId("allergy-box")).toBeVisible();
     await expectUnclipped(swap.getByTestId("allergy-box"));
+  });
+
+  test(`a card with an allergy shows the whole warning at 360 px (${look})`, async ({ page }) => {
+    await setLook(page, look);
+    await createHousehold(page, `family-flags-card-${look}`, WITH_LISTS);
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto("/week/add?day=thu&slot=dinner");
+    await expect(page.locator("html")).toHaveAttribute("data-look", look);
+    await searchFor(page, "soup");
+    const card = page.getByRole("button", { name: PILAF });
+    const line = card.getByTestId("result-flag");
+    await expect(line).toBeVisible();
+    // The whole warning: the allergy, whose it is, what lists it, and the reminder, with its icon.
+    await expect(line).toContainText("Tree nut allergy: Daughter (4)");
+    await expect(line).toContainText("Lists almonds. Check labels.");
+    await expect(line.locator("svg.lucide-triangle-alert")).toHaveCount(1);
+    await expectUnclipped(line);
+    // Inside the card, all of it, and the card does not cut it off.
+    const [c, l] = [(await card.boundingBox())!, (await line.boundingBox())!];
+    expect(l.x).toBeGreaterThanOrEqual(c.x);
+    expect(l.x + l.width).toBeLessThanOrEqual(c.x + c.width + 0.5);
+    expect(l.y + l.height).toBeLessThanOrEqual(c.y + c.height + 0.5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+    expect(await card.innerText()).not.toMatch(SAFE_WORDS);
   });
 
   test(`the allergy box has an edge and an icon in both looks (${look})`, async ({ page }) => {
