@@ -5,6 +5,9 @@ import { createHousehold, joinAsPartner } from "./helpers/household";
 import { chooseStore, dollarsToCents, openReview, planTacos } from "./helpers/fred-meyer";
 
 // Runs against the fake sign-in and the fake cart (KROGER_FAKE=1): no call ever leaves the machine.
+// The send route is stubbed in one test: a service worker would answer before the stub does.
+test.use({ serviceWorkers: "block" });
+
 test.beforeEach(async ({ page }) => {
   await routeFoodImages(page);
 });
@@ -165,9 +168,14 @@ test("over budget: the family is asked first, and Go back sends nothing", async 
   const budget = page.getByRole("region", { name: "Budget" });
   await budget.getByLabel("Target").fill("1");
   await budget.getByLabel("Wiggle room").fill("0");
-  await budget.getByLabel("Target").blur();
-  await page.reload();
-  await expect(page.getByRole("region", { name: "Budget" }).getByLabel("Target")).toHaveValue("$1");
+  await budget.getByLabel("Wiggle room").press("Tab");
+  const sb = await clientFor(email);
+  await expect
+    .poll(async () => {
+      const { data } = await sb.from("households").select("budget_cents, cushion_cents");
+      return `${data?.[0]?.budget_cents}/${data?.[0]?.cushion_cents}`;
+    })
+    .toBe("100/0");
   await page.goto("/list/review");
   await expect(page.getByTestId("review-line").first()).toBeVisible();
 

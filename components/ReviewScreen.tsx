@@ -308,7 +308,7 @@ export function ReviewScreen({
                 {(["PICKUP", "DELIVERY"] as const).map((m) => (
                   <label
                     key={m}
-                    className={`flex min-h-11 cursor-pointer items-center justify-center rounded-xl text-sm font-semibold has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-green ${
+                    className={`relative flex min-h-11 cursor-pointer items-center justify-center rounded-xl text-sm font-semibold has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-green ${
                       modality === m ? "bg-white text-ink shadow-sm" : "text-muted"
                     }`}
                   >
@@ -318,7 +318,7 @@ export function ReviewScreen({
                       value={m}
                       checked={modality === m}
                       onChange={() => void chooseModality(m)}
-                      className="sr-only"
+                      className="absolute inset-0 cursor-pointer opacity-0"
                     />
                     {m === "PICKUP" ? "Pickup" : "Delivery"}
                   </label>
