@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DraftPreview } from "@/components/add-meal/DraftPreview";
+import { DraftPreview, draftFlags } from "@/components/add-meal/DraftPreview";
 import { PasteTab } from "@/components/add-meal/PasteTab";
 import { SearchTab } from "@/components/add-meal/SearchTab";
 import { draftFromOption, messageFor } from "@/components/add-meal/api";
@@ -15,14 +15,17 @@ import { listAlwaysHave } from "@/lib/db/queries/list";
 import { getMeals, saveMeal, setMealPhoto, toMeal } from "@/lib/db/queries/meals";
 import { findWeek, getOrCreateWeek, listWeekMeals, setWeekMeal } from "@/lib/db/queries/weeks";
 import type { Household, MealRow } from "@/lib/db/rows";
+import { ingredientNames } from "@/lib/domain/flags";
 import type { Meal, Person } from "@/lib/domain/types";
 import { weekStartFor, type Day } from "@/lib/domain/weeks";
+import { watchPeople } from "@/lib/people-watch";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts";
-import { parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
+import { matchedWords, parseSavedAddMeal, type AddMealTab, type SavedAddMeal } from "@/lib/add-meal-saved";
 import { resizeForUpload, uploadMealPhoto } from "@/lib/photos/upload";
+import { subscribeHousehold } from "@/lib/realtime";
 import { weekFoods } from "@/lib/recipes/search/overlap";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
-import { bigGreenLink, focusRing, stickyBottom } from "@/lib/ui";
+import { bigGreenLink, focusRing, pillButton, stickyBottom } from "@/lib/ui";
 import { dayName } from "@/lib/week/format";
 
 type Tab = AddMealTab;
@@ -36,7 +39,9 @@ const TABS: { id: Tab; label: string }[] = [
 export function AddMealScreen({ household, day, slot }: { household: Household; day: Day; slot: string }) {
   const router = useRouter();
   const sb = useMemo(() => createBrowserClient(), []);
-  const [people, setPeople] = useState<Person[]>([]);
+  // Null until the household has loaded: nothing can be added before the allergy check can run.
+  const [people, setPeople] = useState<Person[] | null>(null);
+  const [peopleFailed, setPeopleFailed] = useState(false);
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("search");
   const [query, setQuery] = useState("");
@@ -54,6 +59,13 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   const [others, setOthers] = useState<{ entries: { meal: Meal; servings: number | null }[]; alwaysHave: string[] } | null>(null);
   const [needWeek, setNeedWeek] = useState(false);
   const wantWeek = useCallback(() => setNeedWeek(true), []);
+  // The picked recipe's own lines, kept in memory beside the draft (never saved) so the check sees both.
+  const [optionNames, setOptionNames] = useState<string[]>([]);
+  // After a reload only the matched words come back ("almonds"), never the recipe's lines; they join the check.
+  const [restoredWords, setRestoredWords] = useState<string[]>([]);
+  const checkNames = useMemo(() => [...optionNames, ...restoredWords], [optionNames, restoredWords]);
+  // What is kept beside the draft: only the words that matched someone's list. Until people load, keep what came back.
+  const matched = useMemo(() => (people ? matchedWords(checkNames, people) : restoredWords), [checkNames, people, restoredWords]);
   const savedMealId = useRef<string | null>(null);
 
   const key = weekStart ? `add-meal:${weekStart}:${day}:${slot}` : null;
@@ -72,13 +84,31 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       setQuery(saved.query);
       setPaste(saved.paste);
       setDraft(saved.draft);
+      setRestoredWords(saved.draft ? saved.matched : []);
       setSaveFavorite(saved.saveFavorite);
     }
     setWeekStart(start);
     setRestored(true);
     /* eslint-enable react-hooks/set-state-in-effect */
-    void listPeople(sb, household.id).then(setPeople, () => setError("We couldn't load your household. Try again."));
-  }, [sb, household.id, household.week_start, household.time_zone, day, slot]);
+  }, [household.week_start, household.time_zone, day, slot]);
+
+  const peopleWatch = useRef<{ retry: () => void } | null>(null);
+  const loadPeople = useCallback(() => peopleWatch.current?.retry(), []);
+
+  useEffect(() => {
+    // An allergy added on another phone counts as soon as it arrives, and a refetch that works clears the failure message.
+    const watch = watchPeople({
+      load: () => listPeople(sb, household.id),
+      subscribe: (onChange) => subscribeHousehold(household.id, ["people"], onChange),
+      onPeople: setPeople,
+      onFailed: setPeopleFailed,
+    });
+    peopleWatch.current = watch;
+    return () => {
+      peopleWatch.current = null;
+      watch.stop();
+    };
+  }, [sb, household.id]);
 
   // The other dinners already planned this week (not the one being added or replaced), read only once
   // "Fits this week" is chosen.
@@ -108,7 +138,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
 
   const week = useMemo(
     () =>
-      others && people.length > 0
+      others && people && people.length > 0
         ? { foods: weekFoods(others.entries, people, others.alwaysHave), otherMeals: others.entries.length }
         : null,
     [others, people],
@@ -117,8 +147,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   useEffect(() => {
     if (!key || !restored) return;
     if (!query && !paste && !draft) clearDraft(key);
-    else saveDraft(key, { tab, query, paste, draft, saveFavorite } satisfies SavedAddMeal);
-  }, [key, restored, tab, query, paste, draft, saveFavorite]);
+    else saveDraft(key, { tab, query, paste, draft, saveFavorite, matched } satisfies SavedAddMeal);
+  }, [key, restored, tab, query, paste, draft, saveFavorite, matched]);
 
   useEffect(() => {
     if (!custom) return;
@@ -150,6 +180,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
 
   function startOver() {
     setDraft(null);
+    setOptionNames([]);
+    setRestoredWords([]);
     setCustom(null);
     setError(null);
     savedMealId.current = null;
@@ -160,6 +192,8 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
     setError(null);
     try {
       setDraft(await draftFromOption(option));
+      setOptionNames(ingredientNames(option));
+      setRestoredWords([]);
       setCustom(null);
       savedMealId.current = null;
     } catch (e) {
@@ -177,7 +211,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   }
 
   async function addDraft() {
-    if (!draft || !weekStart || adding) return;
+    if (!draft || !weekStart || !people || adding) return;
     setAdding(true);
     setError(null);
     try {
@@ -219,6 +253,11 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
   }
 
   const showPreview = draft && tab !== "favorites";
+  const hasAllergy = useMemo(
+    () => !!draft && !!people && draftFlags(draft, people, checkNames).some((f) => f.kind === "allergy"),
+    [draft, people, checkNames],
+  );
+  const cantAdd = adding || !weekStart || people === null;
 
   return (
     <section className="flex flex-1 flex-col">
@@ -248,7 +287,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
         ))}
       </div>
 
-      {tab === "search" && (
+      <div hidden={tab !== "search"}>
         <SearchTab
           query={query}
           onQuery={setQuery}
@@ -256,13 +295,14 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
           onSource={changeSource}
           hideResults={!!draft}
           week={week}
+          people={people}
           onNeedWeek={wantWeek}
           picking={picking}
           onPick={(o) => void pick(o)}
           onSearchStart={startOver}
           onDishPhoto={foundWithPhoto}
         />
-      )}
+      </div>
       {tab === "paste" && (
         <PasteTab value={paste} onChange={setPaste} onDraft={setDraft} onStart={startOver} />
       )}
@@ -272,6 +312,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
             household={household}
             showChips={false}
             addLabel={(m) => `Add ${m.name} to ${label}`}
+            anywayLabel={`Add to ${label} anyway`}
             onAdd={addFavorite}
           />
         </div>
@@ -284,7 +325,7 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       )}
       {showPreview && (
         <>
-          <DraftPreview draft={draft} people={people} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} />
+          <DraftPreview draft={draft} people={people ?? []} photoSrc={mine?.url ?? null} onPhoto={(f) => void pickPhoto(f)} dishPhoto={tab === "search" && dishPhoto ? { checked: useDishPhoto, onChange: setUseDishPhoto } : null} onDismiss={startOver} onIngredients={(ingredients) => setDraft({ ...draft, ingredients })} onChanges={(personChanges) => setDraft({ ...draft, personChanges })} optionNames={checkNames} />
           <label className="mx-5 mt-3 flex min-h-11 items-center gap-2.5 text-[15px] font-medium">
             <input
               type="checkbox"
@@ -296,6 +337,14 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
           </label>
         </>
       )}
+      {peopleFailed && (
+        <div className="mx-5 mt-3 flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-[15px] font-medium text-[#A6261B]">Couldn’t check allergies. Try again.</p>
+          <button type="button" onClick={loadPeople} className={pillButton}>
+            Retry
+          </button>
+        </div>
+      )}
       {error && (
         <p role="alert" className="mx-5 mt-3 text-[15px] font-medium text-[#A6261B]">
           {error}
@@ -305,9 +354,27 @@ export function AddMealScreen({ household, day, slot }: { household: Household; 
       <div className="mt-auto" />
       {showPreview && (
         <div className={stickyBottom}>
-          <button type="button" disabled={adding || !weekStart} onClick={() => void addDraft()} className={bigGreenLink}>
-            Add to {label}
-          </button>
+          {hasAllergy ? (
+            <div className="grid gap-2">
+              <button type="button" onClick={startOver} className={`${pillButton} h-[52px] w-full text-base`}>
+                Pick a different dinner
+              </button>
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  disabled={cantAdd}
+                  onClick={() => void addDraft()}
+                  className={`inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-[15px] font-semibold text-ink disabled:opacity-60 ${focusRing}`}
+                >
+                  Add to {label} anyway
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" disabled={cantAdd} onClick={() => void addDraft()} className={bigGreenLink}>
+              Add to {label}
+            </button>
+          )}
         </div>
       )}
     </section>

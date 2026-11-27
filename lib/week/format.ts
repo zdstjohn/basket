@@ -19,7 +19,7 @@ export const dayShort = (d: Day): string => NAMES[d].slice(0, 3);
 
 const utc = (ymd: string): Date => new Date(`${ymd}T00:00:00Z`);
 const iso = (d: Date): string => d.toISOString().slice(0, 10);
-const addDays = (ymd: string, n: number): string => iso(new Date(utc(ymd).getTime() + n * 86_400_000));
+export const addDays = (ymd: string, n: number): string => iso(new Date(utc(ymd).getTime() + n * 86_400_000));
 
 const monthDay = (d: Date): string =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(d);

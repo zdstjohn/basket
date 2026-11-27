@@ -1,4 +1,5 @@
 import 'server-only';
+import { fakeOn } from '@/lib/fake';
 import { generateObject, NoObjectGeneratedError } from 'ai';
 import type { z } from 'zod';
 import { fakeGenerate, type AiTask } from './fake';
@@ -8,7 +9,7 @@ export const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
 /** The Vercel AI Gateway model id used for parsing and estimating. */
 export function getModel(kind: 'parse'): string {
   void kind;
-  return process.env.AI_FAKE === '1' ? 'fake' : (process.env.AI_MODEL_PARSE || DEFAULT_MODEL);
+  return fakeOn('AI_FAKE') ? 'fake' : (process.env.AI_MODEL_PARSE || DEFAULT_MODEL);
 }
 
 /** The model's answer could not be read as the expected shape. */
@@ -44,6 +45,28 @@ export function usageReport(
 
 export const MAX_OUTPUT_TOKENS = 4000;
 
+/**
+ * True when the error, or anything it wraps, came back with an HTTP status. The SDK retries 408/409/429/5xx
+ * and then throws a RetryError that has no status of its own: the real errors are `lastError` and `errors`.
+ */
+const hasStatus = (v: unknown, depth = 0): boolean => {
+  if (typeof v !== 'object' || v === null || depth > 4) return false;
+  const o = v as { statusCode?: unknown; status?: unknown; cause?: unknown; lastError?: unknown; errors?: unknown };
+  if (typeof o.statusCode === 'number' || typeof o.status === 'number') return true;
+  const inner = [o.cause, o.lastError, ...(Array.isArray(o.errors) ? o.errors : [])];
+  return inner.some((e) => e !== v && hasStatus(e, depth + 1));
+};
+
+/**
+ * What a model call that threw cost. An error that came back with an HTTP status (a bad key, a gateway
+ * outage, a 429) was refused and bills nothing, so an outage cannot use up the month. One with no
+ * status (a timeout, an abort, a dropped connection) may have run to the end: it is billed as the whole
+ * output limit at the configured model's own rate. Returns null for nothing to bill.
+ */
+export function thrownUsage(model: string, e: unknown, maxOutputTokens: number): UsageReport | null {
+  return hasStatus(e) ? null : { model, inputTokens: 0, outputTokens: maxOutputTokens };
+}
+
 export interface GenerateArgs<T> {
   /** Called once per model call, including calls whose answer turns out unreadable (they cost money too). */
   onUsage?: (u: UsageReport) => void;
@@ -62,7 +85,7 @@ export interface GenerateResult<T> {
 /** One structured model call. Throws UnreadableError when the output does not fit `schema`. */
 export async function generateStructured<T>(args: GenerateArgs<T>): Promise<GenerateResult<T>> {
   const model = getModel('parse');
-  if (process.env.AI_FAKE === '1') {
+  if (fakeOn('AI_FAKE')) {
     const parsed = args.schema.safeParse(fakeGenerate(args.task, args.prompt));
     if (!parsed.success) {
       const usage = { inputTokens: 100, outputTokens: 50 };
@@ -91,6 +114,8 @@ export async function generateStructured<T>(args: GenerateArgs<T>): Promise<Gene
       args.onUsage?.(report);
       throw new UnreadableError({ inputTokens: report.inputTokens, outputTokens: report.outputTokens });
     }
+    const thrown = thrownUsage(model, e, MAX_OUTPUT_TOKENS);
+    if (thrown) args.onUsage?.(thrown);
     throw e;
   }
 }

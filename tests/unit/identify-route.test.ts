@@ -120,9 +120,12 @@ describe('POST /api/recipes/identify', () => {
     expect(identifyDish).not.toHaveBeenCalled();
   });
 
-  it('400 for a bad body', async () => {
+  it('400 for a bad body, and no gate is taken for anything it refuses before the model', async () => {
     expect((await POST(req({ image: food, source: 'bing' }))).status).toBe(400);
     expect((await POST(req({ source: 'sites' }))).status).toBe(400);
+    expect((await POST(req({ image: bytes(JPEG, 'a'.repeat(1_572_864)), source: 'sites' }))).status).toBe(413);
+    expect((await POST(req({ image: Buffer.from('hello there').toString('base64'), source: 'sites' }))).status).toBe(415);
+    expect(aiGate).not.toHaveBeenCalled();
   });
 
   it('reads PNG and WebP too', async () => {

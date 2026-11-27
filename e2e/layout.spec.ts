@@ -4,6 +4,7 @@ import { signInAs, uniqueEmail } from "./helpers/auth";
 import { audit, measureShell, textPairs } from "./helpers/audit";
 import { addFromSearch } from "./helpers/flows-a";
 import { routeFoodImages } from "./helpers/fixtures";
+import { chooseStore, openReview, planTacos } from "./helpers/fred-meyer";
 import { createHousehold } from "./helpers/household";
 import { setInsets, setLook } from "./helpers/look";
 import { SCREENS, type Screen } from "./screens";
@@ -32,7 +33,8 @@ for (const variant of VARIANTS) {
     if (variant.insets) await setInsets(page, variant.insets[0], variant.insets[1]);
     await createHousehold(page, "layout");
 
-    // Put a planned meal on the week so the list and week screens have real content.
+    // Put a planned meal on the week so the list and week screens have real content, and a Fred Meyer store so the review screen opens.
+    await chooseStore(page);
     await addFromSearch(page, { day: "thu", query: "tacos", pick: "Chicken tacos · Allrecipes" });
 
     const found: string[] = [];
@@ -86,3 +88,19 @@ for (const variant of VARIANTS) {
     expect(found, found.join("\n")).toEqual([]);
   });
 }
+
+test("review screen: no sideways scroll at 360, 402 and 412, and the send button sits above the nav", async ({ page }) => {
+  await createHousehold(page, "layoutreview");
+  await chooseStore(page);
+  await planTacos(page);
+  await openReview(page);
+  await expect(page.getByTestId("review-line").first()).toBeVisible();
+  for (const width of [360, 402, 412]) {
+    await page.setViewportSize({ width, height: 800 });
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(wide, `sideways scroll at ${width}`).toBe(false);
+    const send = await page.getByTestId("send-cart").boundingBox();
+    const nav = await page.getByRole("navigation", { name: "Main" }).boundingBox();
+    expect(send && nav && send.y + send.height <= nav.y + 0.5, `send button above the nav at ${width}`).toBe(true);
+  }
+});

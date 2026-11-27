@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MealThumb } from "@/components/MealThumb";
+import { cardFlagText, cardLines, FlagLines, flagsOf } from "@/components/flags/FlagLines";
+import type { Flag } from "@/lib/domain/flags";
+import type { Person } from "@/lib/domain/types";
 import type { RecipeOption, RecipeSource } from "@/lib/recipes/search/provider";
 import { isMostLoved, ratingLine } from "@/lib/recipes/search/loved";
 import { sharesLine, sortByOverlap } from "@/lib/recipes/search/overlap";
@@ -40,6 +43,7 @@ export function SearchTab({
   onSource,
   hideResults,
   week,
+  people,
   onNeedWeek,
   picking,
   onPick,
@@ -53,6 +57,8 @@ export function SearchTab({
   hideResults: boolean;
   /** Foods on this week's list from the other planned meals; null until known. */
   week: { foods: string[]; otherMeals: number } | null;
+  /** The household; null until loaded, and then no card shows a flag. */
+  people: Person[] | null;
   /** Called when "Fits this week" is chosen, so the week is only read when it is wanted. */
   onNeedWeek: () => void;
   picking: boolean;
@@ -136,6 +142,10 @@ export function SearchTab({
     return found.map((option) => ({ option, shared: sharedBy.get(option) ?? [] }));
   }, [sort, ranked, found]);
   const options = found;
+  const flagsByOption = useMemo(
+    () => new Map<RecipeOption, Flag[]>(found.map((o) => [o, people ? flagsOf(o, people) : []])),
+    [found, people],
+  );
   const showsSpoonacular = options.some((o) => o.source === "spoonacular");
 
   return (
@@ -247,13 +257,20 @@ export function SearchTab({
                   {shown.map(({ option: o, shared }) => {
                     // The badge stays with the most-loved pick, wherever the sort puts it.
                     const m = metaParts(o, o === found[0]);
-                    const shares = sharesLine(shared);
+                    const flags = flagsByOption.get(o) ?? [];
+                    const lines = cardLines({
+                      shares: !!sharesLine(shared),
+                      made: false,
+                      allergy: flags.some((f) => f.kind === "allergy"),
+                      dislike: flags.some((f) => f.kind === "dislike"),
+                    });
+                    const shares = lines.includes("shares") ? sharesLine(shared) : null;
                     return (
                     <li key={o.url}>
                       <button
                         type="button"
                         data-testid="result-card"
-                        aria-label={`${o.title} · ${o.site}${m.loved ? ", Most loved" : ""}${m.line ? `, ${m.line}` : ""}${shares ? `, ${shares}` : ""}`}
+                        aria-label={`${o.title} · ${o.site}${m.loved ? ", Most loved" : ""}${m.line ? `, ${m.line}` : ""}${shares ? `, ${shares}` : ""}${people ? cardFlagText(o, people) : ""}`}
                         disabled={picking}
                         onClick={() => onPick(o)}
                         className={`flex min-h-[88px] w-full items-center gap-3 rounded-2xl border border-line bg-white p-2.5 text-left disabled:opacity-60 ${focusRing}`}
@@ -267,6 +284,7 @@ export function SearchTab({
                             {o.site}
                           </span>
                           <MetaLine loved={m.loved} line={m.line} shares={shares} />
+                          {people && <FlagLines flags={flags} people={people} />}
                         </span>
                       </button>
                     </li>

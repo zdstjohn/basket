@@ -130,8 +130,9 @@ describe('POST /api/meals/draft', () => {
     expect(await res.json()).toEqual({ error: 'blocked_host' });
   });
 
-  it('400 on a malformed body', async () => {
+  it('400 on a malformed body, without taking the gate', async () => {
     expect((await draftPost(req({ mode: 'nope' }))).status).toBe(400);
+    expect(aiGate).not.toHaveBeenCalled();
   });
 });
 
@@ -231,9 +232,21 @@ describe('POST /api/recipes/search', () => {
     expect(await res.json()).toEqual({ error: 'source_limit' });
   });
 
-  it('400 on a bad body', async () => {
+  it('400 on a bad body, without taking the gate', async () => {
     expect((await searchPost(req({ query: '', source: 'sites' }))).status).toBe(400);
     expect((await searchPost(req({ query: 'x', source: 'bing' }))).status).toBe(400);
+    expect(aiGate).not.toHaveBeenCalled();
+  });
+
+  it('records each Spoonacular request as a search, so strangers cannot search it for free', async () => {
+    searchRecipes.mockImplementation(async (_q: string, _s: string, meter?: { spoonacularCalls: number }) => {
+      if (meter) meter.spoonacularCalls += 2;
+      return { options: [option], source: 'spoonacular', fellBack: false };
+    });
+    await searchPost(req({ query: 'tacos', source: 'spoonacular' }));
+    const rows = recordUsage.mock.calls.filter((c) => c[2] === 'search');
+    expect(rows).toHaveLength(2);
+    expect(rows.every((c) => c[3] === 'spoonacular')).toBe(true);
   });
 });
 

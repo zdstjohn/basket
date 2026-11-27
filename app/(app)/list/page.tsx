@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { ListScreen } from "@/components/ListScreen";
-import { createServerClient } from "@/lib/db/server";
-import { getMyHousehold } from "@/lib/db/queries/household";
+import { getMyHouseholdOnce } from "@/lib/db/queries/household-server";
 
 export default async function Page() {
-  const household = await getMyHousehold(await createServerClient());
+  const household = await getMyHouseholdOnce();
   if (!household) redirect("/onboarding");
   return <ListScreen household={household} />;
 }

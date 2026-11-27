@@ -135,11 +135,12 @@ export function findFlags(ingredients: string[], people: Person[]): Flag[] {
 
 type Named = { ingredients: string[]; structured?: { canonical: string }[] | null };
 
-/** What to check people's foods against: a meal's canonical names plus its vegetarian swap, or a recipe option's names. */
+/** What to check people's foods against: a meal's canonical names, its vegetarian swap and the foods people swapped in, or a recipe option's names. */
 export function ingredientNames(src: Named | Meal): string[] {
   if ('vegSwap' in src) {
     const meal = src as Meal;
-    return [...meal.ingredients.map((i) => i.canonical), ...(meal.vegSwap ? [meal.vegSwap.canonical] : [])];
+    const swappedIn = (meal.personChanges ?? []).flatMap((c) => (c.action === 'swap' && c.swap ? [c.swap.canonical] : []));
+    return [...meal.ingredients.map((i) => i.canonical), ...(meal.vegSwap ? [meal.vegSwap.canonical] : []), ...swappedIn];
   }
   const o = src as Named;
   return o.structured && o.structured.length > 0 ? o.structured.map((s) => s.canonical) : o.ingredients;

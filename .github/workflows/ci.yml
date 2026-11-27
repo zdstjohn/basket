@@ -38,6 +38,8 @@ jobs:
           AI_FAKE: "1"
           RECIPE_SEARCH_FAKE: "1"
           KROGER_FAKE: "1"
+          # Test-only key (base64 of 32 bytes) so the fake sign-in can seal its tokens.
+          KROGER_TOKEN_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
           # Any value: the fake search only needs the key to exist so Big sites can fall back to Spoonacular.
           SPOONACULAR_API_KEY: ci-fake-key
       - name: e2e (test login route is closed without E2E=1)
