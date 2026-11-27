@@ -34,8 +34,8 @@ const STRING_RULES: [string, RegExp][] = [
   ["dead font-heading class", /\bfont-heading\b/],
 ];
 
-/** A bracketed spacing value built only from --bk- variables, numbers, px and calc(): `[var(--bk-safe-top)]`, `[calc(var(--bk-safe-bottom)+8px)]`. */
-const TOKEN_BRACKET = /^\[(?:var\(--bk-[a-z0-9-]+\)|calc\((?:var\(--bk-[a-z0-9-]+\)|\d+(?:\.\d+)?(?:px)?|[+\-*/()])+\))\]$/;
+/** A bracketed spacing value built only from --bk- variables, numbers, px and calc() (a calc() needs at least one --bk- variable): `[var(--bk-safe-top)]`, `[calc(var(--bk-safe-bottom)+8px)]`. */
+const TOKEN_BRACKET = /^\[(?:var\(--bk-[a-z0-9-]+\)|calc\((?=.*var\(--bk-)(?:var\(--bk-[a-z0-9-]+\)|\d+(?:\.\d+)?(?:px)?|[+\-*/()])+\))\]$/;
 
 /** Spacing utilities, checked token by token. */
 function badSpacing(token: string): string | null {
@@ -88,7 +88,10 @@ function directStrings(node: ts.Node | undefined, out: ts.Node[]): void {
 const hasStraight = (s: string): boolean => /['"]/.test(s);
 
 function violationsOf(file: string): string[] {
-  const text = readFileSync(join(ROOT, file), "utf8");
+  return violationsOfText(file, readFileSync(join(ROOT, file), "utf8"));
+}
+
+function violationsOfText(file: string, text: string): string[] {
   const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
   const found = new Set<string>();
@@ -176,6 +179,39 @@ describe("spacing rule", () => {
     expect(badSpacing("pt-[env(safe-area-inset-top)]")).not.toBeNull();
     expect(badSpacing("pt-[calc(env(safe-area-inset-top)+8px)]")).not.toBeNull();
     expect(badSpacing("gap-5")).not.toBeNull();
+  });
+  it("needs a --bk- variable inside calc()", () => {
+    expect(badSpacing("p-[calc(13px)]")).not.toBeNull();
+    expect(badSpacing("pb-[calc(var(--bk-safe-bottom)+8px)]")).toBeNull();
+  });
+});
+
+describe("class flags", () => {
+  const flags = (src: string, file = "components/Probe.tsx") => violationsOfText(file, src);
+  const FIXED = "fixed h-/size-9..13 on a control (use min-h-)";
+
+  it.each(["size-9", "size-10", "size-11", "size-12", "size-13"])("flags %s on a button-like element", (c) => {
+    expect(flags(`export const A = () => <button className="${c} p-4" />;`)).toContain(FIXED);
+  });
+  it("flags h-11 behind a variant, and allows min-h-11 and size-8", () => {
+    expect(flags(`export const A = () => <a className="md:h-11" />;`)).toContain(FIXED);
+    expect(flags(`export const A = () => <button className="min-h-11 size-8" />;`)).not.toContain(FIXED);
+  });
+  it("does not flag size-9 on a non-control element", () => {
+    expect(flags(`export const A = () => <div className="size-9" />;`)).not.toContain(FIXED);
+  });
+  it("flags size-9..13 anywhere in lib/ui.ts", () => {
+    expect(flags(`export const x = "size-10";`, "lib/ui.ts")).toContain(FIXED);
+  });
+
+  it("flags an arbitrary shadow", () => {
+    expect(flags(`export const A = () => <div className="shadow-[0_1px_2px_#000]" />;`)).toContain("arbitrary shadow");
+    expect(flags(`export const A = () => <div className="shadow-2" />;`)).not.toContain("arbitrary shadow");
+  });
+
+  it("flags the dead font-heading class", () => {
+    expect(flags(`export const A = () => <h1 className="font-heading text-title" />;`)).toContain("dead font-heading class");
+    expect(flags(`export const A = () => <h1 className="font-display text-title" />;`)).not.toContain("dead font-heading class");
   });
 });
 

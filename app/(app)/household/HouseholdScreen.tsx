@@ -6,6 +6,7 @@ import { SignOutButton } from "@/components/household/SignOutButton";
 import { StaplesSection } from "@/components/household/StaplesSection";
 import { StoresSection } from "@/components/household/StoresSection";
 import { personLabel } from "@/lib/domain/flags";
+import { LookPicker } from "@/components/LookPicker";
 import { PersonRow } from "@/components/PersonRow";
 import { StorePicker, type StoreChoice } from "@/components/StorePicker";
 import { createBrowserClient } from "@/lib/db/client";
@@ -295,6 +296,11 @@ export function HouseholdScreen({
             )}
           </li>
         </ul>
+      </section>
+
+      <section aria-label="Look" className="mx-5 mt-4">
+        <h2 className="mb-1.5 text-[15px] font-semibold">Look</h2>
+        <LookPicker />
       </section>
 
       <SignOutButton />

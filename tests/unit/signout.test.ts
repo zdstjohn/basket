@@ -18,6 +18,12 @@ describe("clearDeviceData", () => {
     expect([...s.data.keys()]).toEqual(["theme", "other-list"]);
   });
 
+  it("leaves the look setting (basket:look) in place: it describes the phone, not the person", async () => {
+    const s = storage(["basket:look", "list:w1"]);
+    await clearDeviceData({ storage: s, cacheStorage: null, worker: null });
+    expect([...s.data.keys()]).toEqual(["basket:look"]);
+  });
+
   it("deletes the saved page and tells the service worker to clear", async () => {
     const del = vi.fn(async () => true);
     const post = vi.fn();
