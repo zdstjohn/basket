@@ -74,7 +74,7 @@ export async function recordUsage(
     model,
     input_tokens: usage.inputTokens,
     output_tokens: usage.outputTokens,
-    cost_cents: cost,
+    cost_cents: Math.min(cost, 50), // the table refuses a row over 50 cents; keep the record
   });
   if (error) throw new Error(error.message);
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { APICallError, RetryError } from 'ai';
 
 const generateObject = vi.fn();
 vi.mock('ai', async (orig) => ({ ...(await orig<typeof import('ai')>()), generateObject: (...a: unknown[]) => generateObject(...a) }));
@@ -66,6 +67,27 @@ describe('a model call that throws something else', () => {
     const onUsage = vi.fn();
     await expect(gen(onUsage)).rejects.toThrow('wrapped');
     expect(onUsage).not.toHaveBeenCalled();
+  });
+
+  const apiError = (statusCode?: number) =>
+    new APICallError({ message: 'x', url: 'https://gw.test', requestBodyValues: {}, statusCode });
+
+  it('a RetryError wrapping a 503 bills nothing (the SDK retries 5xx, then throws it with no status of its own)', async () => {
+    generateObject.mockRejectedValue(
+      new RetryError({ message: 'Failed after 3 attempts', reason: 'maxRetriesExceeded', errors: [apiError(503), apiError(503), apiError(503)] }),
+    );
+    const onUsage = vi.fn();
+    await expect(gen(onUsage)).rejects.toThrow('Failed after');
+    expect(onUsage).not.toHaveBeenCalled();
+  });
+
+  it('a RetryError wrapping an abort is billed', async () => {
+    generateObject.mockRejectedValue(
+      new RetryError({ message: 'Failed after 2 attempts', reason: 'maxRetriesExceeded', errors: [timeout(), timeout()] }),
+    );
+    const onUsage = vi.fn();
+    await expect(gen(onUsage)).rejects.toThrow('Failed after');
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ inputTokens: 0, outputTokens: 4000 }));
   });
 
   it('identifyDish: no status bills at its own limit, a status bills nothing', async () => {

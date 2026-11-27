@@ -44,10 +44,16 @@ export function usageReport(
 
 export const MAX_OUTPUT_TOKENS = 4000;
 
-const hasStatus = (v: unknown): boolean => {
-  if (typeof v !== 'object' || v === null) return false;
-  const o = v as { statusCode?: unknown; status?: unknown; cause?: unknown };
-  return typeof o.statusCode === 'number' || typeof o.status === 'number' || (o.cause !== undefined && o.cause !== v && hasStatus(o.cause));
+/**
+ * True when the error, or anything it wraps, came back with an HTTP status. The SDK retries 408/409/429/5xx
+ * and then throws a RetryError that has no status of its own: the real errors are `lastError` and `errors`.
+ */
+const hasStatus = (v: unknown, depth = 0): boolean => {
+  if (typeof v !== 'object' || v === null || depth > 4) return false;
+  const o = v as { statusCode?: unknown; status?: unknown; cause?: unknown; lastError?: unknown; errors?: unknown };
+  if (typeof o.statusCode === 'number' || typeof o.status === 'number') return true;
+  const inner = [o.cause, o.lastError, ...(Array.isArray(o.errors) ? o.errors : [])];
+  return inner.some((e) => e !== v && hasStatus(e, depth + 1));
 };
 
 /**
