@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHousehold, FAMILY, type PersonInput } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
 import { setLook } from "./helpers/look";
@@ -206,44 +206,147 @@ test("a won't-eat can be left out or swapped for one person, and the list follow
 
 const PILAF = /^Broccolini quinoa pilaf with toasted almonds · Example Kitchen/;
 
+/**
+ * Everything that could hide a word of this element: its own box and every descendant (a clamp, an ellipsis,
+ * overflow that cuts text), and every ancestor up to the page (a clamp, an ellipsis, or overflow that hides it).
+ * Scrolling containers are fine: a sheet scrolls, it does not cut.
+ */
+async function clippedBy(target: Locator): Promise<string[]> {
+  return target.evaluate((el) => {
+    const out: string[] = [];
+    const name = (e: Element) => `${e.tagName.toLowerCase()}${e.getAttribute("data-testid") ? `[${e.getAttribute("data-testid")}]` : ""}.${[...e.classList].slice(0, 3).join(".")}`;
+    const style = (e: Element) => getComputedStyle(e);
+    const lineClamped = (e: Element) => {
+      const s = style(e);
+      const c = s.getPropertyValue("-webkit-line-clamp");
+      return (c && c !== "none") || s.textOverflow === "ellipsis";
+    };
+    const cuts = (v: string) => v === "hidden" || v === "clip";
+
+    for (const e of [el, ...el.querySelectorAll("*")]) {
+      if (lineClamped(e)) out.push(`${name(e)} is clamped or ellipsized`);
+      const s = style(e);
+      if (s.display === "inline" || s.display === "contents") continue;
+      if (e.scrollHeight > e.clientHeight + 0.5) out.push(`${name(e)} is taller inside (${e.scrollHeight} > ${e.clientHeight})`);
+      if (e.scrollWidth > e.clientWidth + 0.5) out.push(`${name(e)} is wider inside (${e.scrollWidth} > ${e.clientWidth})`);
+    }
+
+    const box = el.getBoundingClientRect();
+    for (let up = el.parentElement; up && up !== document.documentElement; up = up.parentElement) {
+      if (lineClamped(up)) out.push(`ancestor ${name(up)} is clamped or ellipsized`);
+      const s = up.tagName === "BODY" ? null : style(up);
+      if (!s) continue;
+      const r = up.getBoundingClientRect();
+      const hidesX = cuts(s.overflowX) && (box.left < r.left - 0.5 || box.right > r.right + 0.5);
+      const hidesY = cuts(s.overflowY) && (box.top < r.top - 0.5 || box.bottom > r.bottom + 0.5);
+      if (hidesX || hidesY) out.push(`ancestor ${name(up)} hides part of it`);
+      if (s.maxHeight !== "none" && cuts(s.overflowY) && box.height > parseFloat(s.maxHeight)) out.push(`ancestor ${name(up)} caps its height`);
+    }
+    return out;
+  });
+}
+
+async function allClipped(locator: Locator): Promise<string[]> {
+  const found: string[] = [];
+  const n = await locator.count();
+  expect(n, "something to measure").toBeGreaterThan(0);
+  for (let i = 0; i < n; i++) found.push(...(await clippedBy(locator.nth(i))));
+  return found;
+}
+
 for (const look of ["light", "dark"] as const) {
   test(`an allergy line is never clipped, in either look, at 360 px (${look})`, async ({ page }) => {
     await setLook(page, look);
     await createHousehold(page, `family-flags-clip-${look}`, WITH_LISTS);
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto("/week/add?day=thu&slot=dinner");
+    await expect(page.locator("html")).toHaveAttribute("data-look", look);
     await searchFor(page, "soup");
-    const pilaf = page.getByRole("button", { name: PILAF });
-    const line = pilaf.getByTestId("result-flag");
-    await expect(line).toBeVisible();
 
-    const unclipped = (el: Element) => {
-      const style = getComputedStyle(el);
-      return {
-        tall: el.scrollHeight <= el.clientHeight,
-        wide: el.scrollWidth <= el.clientWidth,
-        clamp: style.getPropertyValue("-webkit-line-clamp") || "none",
-        overflow: style.textOverflow,
-      };
-    };
-    expect(await line.evaluate(unclipped)).toEqual({ tall: true, wide: true, clamp: "none", overflow: "clip" });
+    // Every flag line on every result card.
+    await expect(page.getByTestId("result-flag").first()).toBeVisible();
+    expect(await allClipped(page.getByTestId("result-flag"))).toEqual([]);
 
-    await pilaf.click();
-    const box = page.getByTestId("allergy-box");
-    await expect(box).toBeVisible();
-    expect(await box.evaluate(unclipped)).toEqual({ tall: true, wide: true, clamp: "none", overflow: "clip" });
+    // The box on the draft.
+    await page.getByRole("button", { name: PILAF }).click();
+    await expect(page.getByTestId("allergy-box")).toBeVisible();
+    expect(await allClipped(page.getByTestId("allergy-box"))).toEqual([]);
+    await page.getByRole("button", { name: "Add to Thursday anyway" }).click();
+    await expect(page).toHaveURL(/\/week$/);
+
+    // The week row, and the dinner sheet's box.
+    const thursday = page.getByTestId("day-row-thu");
+    const weekLine = thursday.getByText(/Tree nut allergy: Daughter \(4\)/);
+    await expect(weekLine).toBeVisible();
+    expect(await allClipped(weekLine)).toEqual([]);
+    await thursday.getByRole("button").click();
+    const sheet = page.getByRole("dialog", { name: "Broccolini quinoa pilaf with toasted almonds" });
+    await expect(sheet.getByTestId("allergy-box")).toBeVisible();
+    expect(await allClipped(sheet.getByTestId("allergy-box"))).toEqual([]);
+    await sheet.getByRole("button", { name: "Close" }).click();
+
+    // Favorites.
+    await page.goto("/favorites");
+    const row = page.getByTestId("favorite-row").filter({ hasText: "Broccolini quinoa pilaf" });
+    await expect(row.getByTestId("result-flag")).toBeVisible();
+    expect(await allClipped(row.getByTestId("result-flag"))).toEqual([]);
+
+    // The swap sheet's allergy box (a walnut swap for the daughter who is allergic to tree nuts).
+    await addSoupToFriday(page);
+    await page.getByTestId("day-row-fri").getByRole("button").click();
+    const soup = page.getByRole("dialog", { name: "White bean and mushroom soup" });
+    await soup.getByTestId("dislike-box").getByRole("button", { name: "Swap them" }).click();
+    const swap = page.getByRole("dialog", { name: "Instead of mushrooms" });
+    await swap.getByLabel("Or something else").fill("walnuts");
+    await expect(swap.getByTestId("allergy-box")).toBeVisible();
+    expect(await allClipped(swap.getByTestId("allergy-box"))).toEqual([]);
   });
 
   test(`the allergy box has an edge and an icon in both looks (${look})`, async ({ page }) => {
     await setLook(page, look);
     await createHousehold(page, `family-flags-edge-${look}`, WITH_LISTS);
     await page.goto("/week/add?day=thu&slot=dinner");
+    await expect(page.locator("html")).toHaveAttribute("data-look", look);
     await searchFor(page, "soup");
     await page.getByRole("button", { name: PILAF }).click();
     const box = page.getByTestId("allergy-box");
     await expect(box).toBeVisible();
-    const edge = await box.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth));
-    expect(edge).toBeGreaterThanOrEqual(1);
+    const edge = await box.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { width: parseFloat(s.borderTopWidth), style: s.borderTopStyle, color: s.borderTopColor, ground: s.backgroundColor };
+    });
+    expect(edge.width).toBeGreaterThanOrEqual(1);
+    expect(edge.style).toBe("solid");
+    expect(edge.color).not.toBe(edge.ground);
     await expect(box.locator("svg.lucide-triangle-alert")).toHaveCount(1);
   });
 }
+
+async function addSoupToFriday(page: Page) {
+  await page.goto("/week/add?day=fri&slot=dinner");
+  await searchFor(page, "soup");
+  await page.getByRole("button", { name: /^White bean and mushroom soup · Budget Bytes/ }).click();
+  await page.getByRole("button", { name: "Add to Friday" }).click();
+  await expect(page).toHaveURL(/\/week$/);
+}
+
+test("the swap sheet will not swap in a food someone is allergic to", async ({ page }) => {
+  await createHousehold(page, "family-flags-swap-block", WITH_LISTS);
+  await addSoupToFriday(page);
+  await page.getByTestId("day-row-fri").getByRole("button").click();
+  const soup = page.getByRole("dialog", { name: "White bean and mushroom soup" });
+  await soup.getByTestId("dislike-box").getByRole("button", { name: "Swap them" }).click();
+  const swap = page.getByRole("dialog", { name: "Instead of mushrooms" });
+  const go = swap.getByRole("button", { name: "Swap for Daughter (4)" });
+  await expect(go).toBeDisabled();
+
+  await swap.getByLabel("Or something else").fill("walnuts");
+  await expect(swap.getByTestId("allergy-box")).toContainText("check every label");
+  await expect(go).toBeDisabled();
+  expect(await swap.innerText()).not.toMatch(SAFE_WORDS);
+
+  // A food with no allergy behind it is allowed again.
+  await swap.getByLabel("Or something else").fill("zucchini");
+  await expect(swap.getByTestId("allergy-box")).toHaveCount(0);
+  await expect(go).toBeEnabled();
+});

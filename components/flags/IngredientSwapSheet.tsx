@@ -88,7 +88,7 @@ export function IngredientSwapSheet({
           {dropNote(flag.food, plural, eatersLeft(flag, meal, people))} We’ll remember this for next time you make it.
         </p>
 
-        <Button variant="main" disabled={swap === null || hits.length > 0} onClick={() => swap && onPick(swap)} className="disabled:opacity-60">
+        <Button variant="main" disabled={swap === null || hits.length > 0} onClick={() => swap && onPick(swap)}>
           Swap for {who}
         </Button>
         <Button variant="ghost" onClick={onClose}>

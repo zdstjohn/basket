@@ -19,7 +19,7 @@ import { quietLink } from "@/lib/ui";
 /** How long "Saved." stays before the card lets go. */
 const SAVED_MS = 6000;
 
-const ANSWER = "min-w-0 flex-1 disabled:opacity-60";
+const ANSWER = "min-w-0 flex-1";
 
 type Phase = "asking" | "saved" | "gone";
 
