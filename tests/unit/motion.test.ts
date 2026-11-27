@@ -268,6 +268,39 @@ describe("flip", () => {
     expect(calls[1].frames[0]).toEqual({ transform: "translate(0px, -50px)" });
   });
 
+  it("follows rows that grow without a signature change, so only the moved row slides", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const calls: { key: string; frames: Keyframe[] }[] = [];
+    Element.prototype.animate = function (this: Element, frames: Keyframe[]) {
+      calls.push({ key: this.getAttribute("data-flip-key")!, frames });
+      return {} as Animation;
+    } as never;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const top = Number(this.getAttribute("data-top") ?? 0);
+      return { left: 0, top, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: top, toJSON() {} } as DOMRect;
+    };
+    window.matchMedia = (() => ({ matches: false })) as never;
+    function Rows({ sig, tops }: { sig: string; tops: Record<string, number> }) {
+      const ref = useRef<HTMLDivElement>(null);
+      useFlipList(ref, sig);
+      return createElement(
+        "div",
+        { ref },
+        ["a", "b", "c", "d"].map((k) => createElement("div", { key: k, "data-flip-key": k, "data-top": tops[k] })),
+      );
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Rows, { sig: "1", tops: { a: 0, b: 50, c: 100, d: 150 } })));
+    // b grows by 60 (price and packshot arrive): c and d are pushed down, signature unchanged.
+    await act(async () => root.render(createElement(Rows, { sig: "1", tops: { a: 0, b: 50, c: 160, d: 210 } })));
+    expect(calls).toEqual([]);
+    // Now a different row moves (a goes to the bottom). b, c, d only close up around it; they are at their real places.
+    await act(async () => root.render(createElement(Rows, { sig: "2", tops: { b: 50, c: 160, d: 210, a: 270 } })));
+    await act(async () => root.unmount());
+    expect(calls.map((c) => c.key)).toEqual(["a"]);
+    expect(calls[0].frames[0]).toEqual({ transform: "translate(0px, -270px)" });
+  });
+
   it("leaves a CSS animation from another source running", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const css = { cancelled: false, cancel() { css.cancelled = true; } };
