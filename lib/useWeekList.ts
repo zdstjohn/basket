@@ -211,17 +211,25 @@ export function useWeekList(household: Household, weekId: string | null) {
 
   // Set when the server refuses a queued change (not a network failure): the change was dropped.
   const refused = useRef(false);
+  // How many changes the server has refused this visit; the list reads it to say "Saved" only when nothing was refused.
+  const [refusals, setRefusals] = useState(0);
   const flushPending = useCallback(async () => {
     const send = async (e: { weekId: string; itemKey: string; patch: ItemPatch }) => {
       try {
         await setItemState(sb, e.weekId, e.itemKey, e.patch, household.id);
       } catch (err) {
-        if (!isNetworkError(err)) refused.current = true;
+        if (!isNetworkError(err)) {
+          refused.current = true;
+          setRefusals((n) => n + 1);
+        }
         throw err;
       }
     };
     // One flush runs at a time; a call that joined it may have missed a change added just now, so look once more.
-    const gaveUp = () => void (refused.current = true);
+    const gaveUp = () => {
+      refused.current = true;
+      setRefusals((n) => n + 1);
+    };
     // Runs of changes for one week and the same flags go as one request; a refused batch is sent one by one.
     const sendBatch = (entries: QueuedPatch[]) => setItemStates(sb, household.id, entries);
     let left = await flushQueue(household.id, send, undefined, gaveUp, sendBatch);
@@ -600,6 +608,7 @@ export function useWeekList(household: Household, weekId: string | null) {
     state,
     loading: !raw && !error,
     offline,
+    refusals,
     error,
     live,
     checked: built?.checked ?? new Set<string>(),

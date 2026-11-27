@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/db/server";
 import { countPeople, getMyHousehold } from "@/lib/db/queries/household";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { OnboardingForm } from "./OnboardingForm";
 
 export default async function OnboardingPage() {
@@ -13,11 +14,15 @@ export default async function OnboardingPage() {
   if (household && (await countPeople(sb, household.id)) > 0) redirect("/week");
 
   return (
-    <main className="mx-auto w-full max-w-md flex-1 px-5 py-8 pb-[var(--bk-safe-bottom)]">
-      <h1 className="text-[30px] font-bold tracking-tight text-ink">Set up your kitchen</h1>
-      <p className="mt-1 text-[15px] text-muted">
-        Tell us who&apos;s eating and what you like to spend. You can change it any time.
-      </p>
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-1 flex-col bg-ground">
+      <ScreenHeader
+        title="Set up"
+        below={
+          <p className="text-body text-ink-soft">
+            Tell us who’s eating and what you like to spend. You can change it any time.
+          </p>
+        }
+      />
       <OnboardingForm
         existing={
           household

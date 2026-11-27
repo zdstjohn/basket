@@ -48,3 +48,18 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 export const ROLES = Object.keys(ROLE_LABELS) as Role[];
+
+/**
+ * What is still to buy, under its aisle headings, and what is ticked, in one flat list in shopping order.
+ * Pass the items still to buy (not "I have it"); ticked ones leave their aisle for "Got it".
+ */
+export function splitGotIt(
+  items: ListItem[],
+  checked: ReadonlySet<string>,
+): { toBuy: { id: GroupId; title: string; items: ListItem[] }[]; gotIt: ListItem[] } {
+  const inOrder = groupItems(items);
+  return {
+    toBuy: groupItems(items.filter((i) => !checked.has(i.key))),
+    gotIt: inOrder.flatMap((g) => g.items.filter((i) => checked.has(i.key))),
+  };
+}

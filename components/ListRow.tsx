@@ -1,14 +1,34 @@
+import { Fragment } from "react";
+import { ExternalLink, Tag } from "lucide-react";
+import { Check } from "@/components/ui/Check";
+import { Icon } from "@/components/ui/Icon";
+import { Packshot } from "@/components/ui/Packshot";
+import { Qty } from "@/components/ui/Qty";
 import type { ListItem } from "@/lib/domain/list";
-import { formatNeed } from "@/lib/domain/units";
+import { formatMoney } from "@/lib/domain/money-input";
 import type { Recommendation } from "@/lib/domain/packages";
-import { formatPrice, krogerImageUrl, STORE_NAMES, storeSearchUrl, type PriceRow, type PriceSource } from "@/lib/list/prices";
-import { focusRing } from "@/lib/ui";
-
-const sideAction = `flex min-h-11 w-[76px] flex-none items-center justify-center rounded-xl px-1 text-center text-xs font-semibold leading-tight text-green underline ${focusRing}`;
+import type { Quantity } from "@/lib/domain/types";
+import { isVague } from "@/lib/domain/units";
+import { krogerImageUrl, STORE_NAMES, storeSearchUrl, type PriceRow, type PriceSource } from "@/lib/list/prices";
+import { ghostButton, quietLink } from "@/lib/ui";
 
 export const displayName = (canonical: string): string => canonical.charAt(0).toUpperCase() + canonical.slice(1);
 
-/** One thing to buy: a "got it" checkbox, and the rest of the row opens its actions. */
+/** What a row needs, in kitchen words ("1 + 7.1 oz"), one <Qty> per part. A lone "1 to taste" reads as "to taste". */
+function Need({ parts }: { parts: Quantity[] }) {
+  return (
+    <>
+      {parts.map((p, i) => (
+        <Fragment key={i}>
+          {i > 0 && " + "}
+          {isVague(p) && p.amount === 1 && p.countUnit ? p.countUnit : <Qty q={p} />}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/** One thing to buy: a "got it" check, and the rest of the row opens its actions. */
 export function ListRow({
   item,
   checked,
@@ -19,7 +39,7 @@ export function ListRow({
   lookingUp = false,
   onToggle,
   onOpen,
-  onSwap,
+  onFind,
 }: {
   item: ListItem;
   checked: boolean;
@@ -34,8 +54,8 @@ export function ListRow({
   lookingUp?: boolean;
   onToggle: (checked: boolean) => void;
   onOpen: () => void;
-  /** Opens the swap sheet (Fred Meyer rows in product mode, once the search is back). */
-  onSwap?: () => void;
+  /** Opens the swap sheet from a row that has no match yet. Swapping a matched product is the first action of the item sheet. */
+  onFind?: () => void;
 }) {
   const name = displayName(item.canonical);
   const skipped = item.haveIt;
@@ -55,105 +75,72 @@ export function ListRow({
       ? `${offer.count} lb`
       : offer.count === 1
         ? "1 package"
-        : `${offer.count} × ${formatPrice(offer.unitCents)}`;
+        : `${offer.count} × ${formatMoney(offer.unitCents)}`;
   const noMatch = real && !skipped && product && !product.pick;
   // Amazon and Costco never guess a price: until you type one, a link to their search stands in for it.
   const searchStore = item.store === "amazon" || item.store === "costco" ? item.store : null;
   const searchLink = searchStore && !skipped && source !== "user" ? searchStore : null;
+  const onSale = real ? !!offer?.onSale : source === "kroger" && !!shelf?.onSale;
+  const sourceWord = real
+    ? source === "user" && !countLine
+      ? { text: "your price", tone: "text-ink-soft" }
+      : null
+    : source === "user"
+      ? { text: "your price", tone: "text-ink-soft" }
+      : source === "kroger"
+        ? { text: "Fred Meyer price", tone: "text-price" }
+        : source === "ai"
+          ? { text: "estimate", tone: "text-estimate" }
+          : { text: "no price yet", tone: "text-ink-soft" };
+  const struck = checked ? "line-through text-ink-soft" : "";
   return (
     <li
       data-testid="list-row"
       data-checked={checked ? "true" : undefined}
-      className="flex min-h-[52px] items-center border-b border-[#E8EBE7]"
+      data-flip-key={item.key}
+      className="flex min-h-13 items-center gap-2 border-b border-line"
     >
-      <label className="-ml-3 flex size-11 shrink-0 items-center justify-center">
-        <input
-          type="checkbox"
-          aria-label={`Got ${name}`}
-          checked={checked}
-          onChange={(e) => onToggle(e.target.checked)}
-          className={`size-5 accent-green ${focusRing}`}
-        />
-      </label>
-      <button
-        type="button"
-        onClick={onOpen}
-        className={`flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 text-left ${focusRing} ${
-          checked ? "opacity-60" : ""
-        }`}
-      >
-        {photo && (
-          // eslint-disable-next-line @next/next/no-img-element -- a small photo from Kroger; it is hidden if it won't load
-          <img
-            src={photo}
-            alt={productName ?? ""}
-            width={40}
-            height={40}
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-            className="size-10 flex-none rounded-lg border border-line bg-white object-contain"
-          />
-        )}
+      <span className="-ml-3 shrink-0">
+        <Check label={`Got ${name}`} checked={checked} onChange={onToggle} />
+      </span>
+      <button type="button" onClick={onOpen} className="flex min-h-11 min-w-0 flex-1 items-center gap-3 py-2 text-left">
+        <Packshot src={photo} alt={productName ?? ""} />
         <span className="min-w-0 flex-1">
-          <span className={`line-clamp-2 block text-sm font-semibold ${checked ? "line-through" : ""}`}>{name}</span>
-          <span className="mt-px block text-xs text-muted">
-            {formatNeed(item.parts)}
+          <span className={`line-clamp-2 block text-small font-semibold ${struck}`}>{name}</span>
+          <span className="block text-label text-ink-soft">
+            <Need parts={item.parts} />
             {item.alwaysHave ? " · always have" : ""}
             {item.outsideBudget && !skipped ? " · outside budget" : ""}
           </span>
           {productLine ? (
-            <span className="mt-px line-clamp-2 text-xs text-muted">{productLine}</span>
+            <span className="line-clamp-1 block text-label text-ink-soft">{productLine}</span>
           ) : noMatch ? (
-            <span className="mt-px block text-xs text-muted">No Fred Meyer match yet</span>
+            <span className="block text-label text-ink-soft">No Fred Meyer match yet</span>
           ) : real && !skipped && !product && lookingUp ? (
-            <span className="mt-px block text-xs text-muted">Looking up Fred Meyer…</span>
+            <span className="block text-label text-ink-soft">Looking up Fred Meyer…</span>
           ) : (
-            shelf?.productName && <span className="mt-px line-clamp-2 text-xs text-muted">{shelf.productName}</span>
+            shelf?.productName && <span className="line-clamp-1 block text-label text-ink-soft">{shelf.productName}</span>
           )}
           {real && !skipped && product?.usualMissing && (
-            <span className="mt-px block text-xs text-muted">Your usual isn&apos;t on the shelf today</span>
+            <span className="block text-label text-ink">Your usual isn’t on the shelf today</span>
           )}
         </span>
         {!skipped && !searchLink && (
-          <span className="flex-none text-right">
-            <span data-testid="row-total" className={`block text-sm font-semibold ${checked ? "line-through" : ""}`}>
-              {item.estimateCents === null ? "—" : `${offer?.approx ? "about " : ""}${formatPrice(item.estimateCents)}`}
+          <span className="shrink-0 whitespace-nowrap text-right">
+            <span data-testid="row-total" className={`bk-price block text-small font-semibold ${struck}`}>
+              {item.estimateCents === null ? "—" : `${offer?.approx ? "about " : ""}${formatMoney(item.estimateCents)}`}
             </span>
-            {real ? (
-              <>
-                {countLine ? (
-                  <span data-testid="row-count" className="mt-px block text-xs text-muted">
-                    {countLine}
-                  </span>
-                ) : (
-                  source === "user" && <span className="mt-px block text-xs text-muted">your price</span>
-                )}
-                {offer?.onSale && (
-                  <span className="mt-0.5 inline-block rounded-full bg-sale-tint px-1.5 text-[11px] font-semibold text-sale">
-                    Sale
-                  </span>
-                )}
-              </>
-            ) : (
-              <>
-                <span className="mt-px block text-xs text-muted">
-                  {source === "user"
-                    ? "your price"
-                    : source === "kroger"
-                      ? "Fred Meyer price"
-                      : source === "ai"
-                        ? "estimate"
-                        : "no price yet"}
-                </span>
-                {source === "kroger" && shelf?.onSale && (
-                  <span className="mt-0.5 inline-block rounded-full bg-sale-tint px-1.5 text-[11px] font-semibold text-sale">
-                    Sale
-                  </span>
-                )}
-              </>
+            {countLine && (
+              <span data-testid="row-count" className="bk-price block text-label text-ink-soft">
+                {countLine}
+              </span>
+            )}
+            {sourceWord && <span className={`block text-label ${sourceWord.tone}`}>{sourceWord.text}</span>}
+            {onSale && (
+              <span className="inline-flex items-center gap-1 text-label text-sale">
+                <Icon icon={Tag} size={18} />
+                on sale
+              </span>
             )}
           </span>
         )}
@@ -163,18 +150,14 @@ export function ListRow({
           href={storeSearchUrl(searchLink, item.canonical)}
           target="_blank"
           rel="noopener noreferrer"
-          className={sideAction}
+          className={`${quietLink} shrink-0`}
         >
           Search {STORE_NAMES[searchLink]}
+          <Icon icon={ExternalLink} size={18} />
         </a>
       )}
-      {onSwap && offer && (
-        <button type="button" onClick={onSwap} aria-label={`Swap ${name} product`} className={sideAction}>
-          Swap
-        </button>
-      )}
-      {onSwap && noMatch && (
-        <button type="button" onClick={onSwap} aria-label={`Find a product for ${name}`} className={sideAction}>
+      {onFind && noMatch && (
+        <button type="button" onClick={onFind} aria-label={`Find a product for ${name}`} className={`${ghostButton} shrink-0`}>
           Find a product
         </button>
       )}

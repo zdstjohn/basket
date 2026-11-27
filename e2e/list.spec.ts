@@ -3,7 +3,7 @@ import { createHousehold, joinAsPartner } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
 import { clientFor } from "./helpers/db";
 import { addFromSearch, favoritesKept, readWeekBudget, weekBudget } from "./helpers/flows-a";
-import { listTotal, openItemSheet, openList } from "./helpers/flows-b";
+import { chooseStore, listTotal, openItemSheet, openList } from "./helpers/flows-b";
 
 test.beforeEach(async ({ page }) => {
   await routeFoodImages(page);
@@ -37,6 +37,9 @@ test("list: tabs, groups, scaled amounts and estimates", async ({ page }, testIn
 
   const tabs = page.getByRole("tablist", { name: "Stores" });
   await expect(tabs.getByRole("tab", { name: /^Fred Meyer.*· 4$/ })).toHaveAttribute("aria-selected", "true");
+  // Every tab total shows cents.
+  await expect(tabs.getByRole("tab", { name: /^Fred Meyer.*\$\d+\.\d{2} · 4$/ })).toBeVisible();
+  await expect(tabs.getByRole("tab", { name: /^Amazon.*\$0\.00 · 0$/ })).toBeVisible();
   await expect(tabs.getByRole("tab", { name: /^Amazon.*· 0$/ })).toBeVisible();
   await expect(tabs.getByRole("tab", { name: /^Costco.*· 0$/ })).toBeVisible();
 
@@ -54,7 +57,9 @@ test("list: tabs, groups, scaled amounts and estimates", async ({ page }, testIn
   // No Fred Meyer chosen yet: the list says how to get real products, and keeps the estimates.
   await expect(page.getByText("Choose your Fred Meyer in Household to see real products and prices.")).toBeVisible();
   await expect(page.getByRole("main").getByRole("link", { name: "Household" })).toHaveAttribute("href", "/household");
-  await expect(page.getByText("Estimated total, for the amounts you'll use")).toBeVisible();
+  await expect(page.getByText("Estimated total, for the amounts you’ll use")).toBeVisible();
+  // The rows are the tab panel of the store tabs.
+  await expect(page.getByRole("tabpanel")).toContainText("Boneless chicken thighs");
   await expect(total(page)).toContainText("$");
   await expect(page.getByText(/without a price/)).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Review and fill carts" })).toHaveCount(0);
@@ -109,7 +114,7 @@ test("list: have it moves an item to Skipped and drops the total; checking off c
   await expect(page.getByRole("checkbox", { name: "Got Black beans" })).toBeChecked();
 });
 
-test("budget: the list bar turns amber at $201 and red at $226, and the week follows the total", async ({ page }) => {
+test("budget: the sentence changes at $201 and $226", async ({ page }) => {
   await createHousehold(page);
   await planTacos(page);
   await openList(page);
@@ -119,8 +124,8 @@ test("budget: the list bar turns amber at $201 and red at $226, and the week fol
   await setPrice(page, "Black beans", "1");
   await setPrice(page, "Corn tortillas", "1");
   await setPrice(page, "Yellow onion", "1");
-  await expect(total(page)).toContainText("$201");
-  await expect(page.getByTestId("list-bar")).toContainText("A little over");
+  await expect(total(page)).toHaveText("$201.00");
+  await expect(page.getByTestId("list-bar")).toContainText("into the wiggle room");
 
   // The week's budget follows the list's total. (How the week words it is checked in week.spec.ts.)
   await weekBudget(page);
@@ -128,8 +133,8 @@ test("budget: the list bar turns amber at $201 and red at $226, and the week fol
 
   await openList(page);
   await setPrice(page, "Boneless chicken thighs", "223");
-  await expect(total(page)).toContainText("$226");
-  await expect(page.getByTestId("list-bar")).toContainText("Over budget");
+  await expect(total(page)).toHaveText("$226.00");
+  await expect(page.getByTestId("list-bar")).toContainText("past the wiggle room");
   await weekBudget(page);
   await expect.poll(async () => (await readWeekBudget(page)).totalCents).toBe(22600);
 
@@ -138,7 +143,8 @@ test("budget: the list bar turns amber at $201 and red at $226, and the week fol
   const sheet = await openSheet(page, "Boneless chicken thighs");
   await sheet.getByRole("button", { name: "Leave out of budget" }).click();
   await expect(total(page)).toContainText("$3");
-  await expect(page.getByTestId("list-bar")).toContainText("On budget");
+  await expect(page.getByTestId("list-bar")).toContainText("left");
+  await expect(page.getByTestId("list-bar")).not.toContainText("past the wiggle room");
 });
 
 test("stores and prices: a move sticks; your own price replaces the estimate", async ({ page }) => {
@@ -242,7 +248,7 @@ test("two phones: a staple is checked off live, and the list works offline", asy
   await expect(page.locator('[data-offline-ready="on"]')).toBeAttached({ timeout: 15_000 });
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByText("Offline, showing your last list")).toBeVisible();
+  await expect(page.getByText("Offline. Showing your last list.")).toBeVisible();
   await expect(row(page, "Milk")).toBeVisible();
   await page.screenshot({ path: `${shots}/list-offline.png`, fullPage: true });
 
@@ -254,7 +260,7 @@ test("two phones: a staple is checked off live, and the list works offline", asy
   await page.getByRole("checkbox", { name: "Got Milk" }).check();
   await expect(page.getByRole("checkbox", { name: "Got Milk" })).toBeChecked();
   await context.setOffline(false);
-  await expect(page.getByText("Offline, showing your last list")).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByText("Offline. Showing your last list.")).toHaveCount(0, { timeout: 15_000 });
 
   const sb = await clientFor(email);
   await expect
@@ -322,7 +328,8 @@ test("household: where things come from, staples on and off, always-have", async
   await always.getByRole("button", { name: "Remove milk" }).click();
   await page.getByRole("switch", { name: "Milk" }).uncheck();
   await openListFromHousehold(page);
-  await expect(page.getByText("Nothing on your list yet.")).toBeVisible();
+  await expect(page.getByText("Your list is clear.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Plan this week" })).toHaveAttribute("href", "/week");
 });
 
 test("sign out: the saved list is wiped, and offline the next person sees none of it", async ({ page, context }) => {
@@ -424,7 +431,7 @@ test("check off all works offline, and Undo too, then everything is sent", async
   await expect(page.locator('[data-offline-ready="on"]')).toBeAttached({ timeout: 15_000 });
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByText("Offline, showing your last list")).toBeVisible();
+  await expect(page.getByText("Offline. Showing your last list.")).toBeVisible();
 
   await checkAll(page).click();
   await expect(page.getByTestId("check-all-undo")).toContainText("Checked off 4 items");
@@ -435,9 +442,218 @@ test("check off all works offline, and Undo too, then everything is sent", async
   await expect(page.locator('[data-testid="list-row"][data-checked="true"]')).toHaveCount(4);
 
   await context.setOffline(false);
-  await expect(page.getByText("Offline, showing your last list")).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByText("Offline. Showing your last list.")).toHaveCount(0, { timeout: 15_000 });
   const sb = await clientFor(email);
   await expect
     .poll(async () => (await sb.from("week_item_state").select("checked").eq("checked", true)).data?.length)
     .toBe(4);
+});
+
+test("a ticked item moves to Got it", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await expect(page.getByTestId("list-row")).toHaveCount(4);
+
+  const produce = page.getByRole("heading", { name: "Produce" }).locator("xpath=..");
+  await expect(produce.getByTestId("list-row").filter({ hasText: "Yellow onion" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Got it/ })).toHaveCount(0);
+
+  await page.getByRole("checkbox", { name: "Got Yellow onion" }).check();
+  const gotIt = page.getByRole("region", { name: /^Got it · 1$/ });
+  await expect(gotIt.getByTestId("list-row").filter({ hasText: "Yellow onion" })).toHaveAttribute("data-checked", "true");
+  // The aisle it left has nothing else in it, so the heading goes too.
+  await expect(page.getByRole("heading", { name: "Produce" })).toHaveCount(0);
+  // The group sits below the aisles and above the skipped ones.
+  const headings = await page.getByRole("heading", { level: 2 }).allTextContents();
+  expect(headings[headings.length - 1]).toBe("Got it · 1");
+
+  // Unticking puts it back in its aisle.
+  await page.getByRole("checkbox", { name: "Got Yellow onion" }).uncheck();
+  await expect(page.getByRole("heading", { name: "Produce" }).locator("xpath=..").getByTestId("list-row").filter({ hasText: "Yellow onion" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Got it/ })).toHaveCount(0);
+});
+
+test("prices stay on one line beside a four-line product name at 360 px", async ({ page }) => {
+  await createHousehold(page);
+  await chooseStore(page);
+  await planTacos(page);
+  await openList(page);
+  await page.setViewportSize({ width: 360, height: 800 });
+  const beans = row(page, "Black beans");
+  await expect(beans.getByTestId("row-count")).toBeVisible();
+
+  // Give the row a product name far longer than it can hold, with its line limits off so it really takes four lines or more.
+  await beans.evaluate((li) => {
+    const long = "Simple Truth Organic Reduced Sodium Slow Cooked Black Beans With Roasted Garlic And Smoked Paprika, Family Size Value Pack, 6 Count Case";
+    const name = li.querySelector(".line-clamp-2") as HTMLElement;
+    const line = li.querySelector(".line-clamp-1") as HTMLElement;
+    for (const el of [name, line]) {
+      el.classList.remove("line-clamp-1", "line-clamp-2");
+      el.textContent = long;
+    }
+  });
+  const text = (await beans.locator("button").first().boundingBox())!;
+  expect(text.height).toBeGreaterThanOrEqual(4 * 16); // at least four lines tall
+  for (const id of ["row-total", "row-count"]) {
+    const box = (await beans.getByTestId(id).boundingBox())!;
+    expect(box.height, `${id} wrapped`).toBeLessThanOrEqual(24);
+    expect(box.x + box.width, `${id} ran off the screen`).toBeLessThanOrEqual(360);
+  }
+  const rowBox = (await beans.boundingBox())!;
+  const totalBox = (await beans.getByTestId("row-total").boundingBox())!;
+  expect(totalBox.x).toBeGreaterThan(rowBox.x + rowBox.width / 2); // the price column is on the right, not squeezed under the name
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+/** Plans tacos, opens the list, waits for it to be saved for offline use, goes offline on a reloaded page, and ticks the onion. */
+async function tickOffline(page: Page, context: import("@playwright/test").BrowserContext) {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await expect(page.getByTestId("list-row")).toHaveCount(4);
+  await expect(page.locator('[data-offline-ready="on"]')).toBeAttached({ timeout: 15_000 });
+  // The clock is installed before the offline reload, so the next look for a signal is ours to step.
+  await page.clock.install();
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByText("Offline. Showing your last list.")).toBeVisible();
+  await page.getByRole("checkbox", { name: "Got Yellow onion" }).check();
+  await expect(page.getByRole("checkbox", { name: "Got Yellow onion" })).toBeChecked();
+}
+
+test("back online says Saved only when the queue emptied", async ({ page, context }) => {
+  await tickOffline(page, context);
+  await context.setOffline(false);
+  // The list looks for a signal again after 5 seconds.
+  await page.clock.runFor(12_000);
+  const saved = page.getByText("Back online. Saved.");
+  await expect(saved).toBeVisible();
+  await expect(page.getByText("Offline. Showing your last list.")).toHaveCount(0);
+  // It says so for two seconds, then goes.
+  await page.clock.runFor(2500);
+  await expect(saved).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Got Yellow onion" })).toBeChecked();
+});
+
+// page.route does not see requests of a page its service worker controls (WebKit), so these two block the worker.
+test.describe("with the service worker blocked, so every request can be routed", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("back online says only Back online when the server refused a change", async ({ page, context }) => {
+    await createHousehold(page);
+    await planTacos(page);
+    await openList(page);
+    await expect(page.getByTestId("list-row")).toHaveCount(4);
+    // The clock is installed before the signal drops, so the next look for it is ours to step.
+    await page.clock.install();
+    await page.reload();
+    await expect(page.getByTestId("list-row")).toHaveCount(4);
+    await context.setOffline(true);
+    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+    await expect(page.getByText("Offline. Showing your last list.")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Got Yellow onion" }).check();
+    await expect(page.getByRole("checkbox", { name: "Got Yellow onion" })).toBeChecked();
+
+    // Every write is refused as bad data (a real answer, not a dropped connection).
+    await page.route("**/rest/v1/week_item_state*", (route) =>
+      route.request().method() === "GET"
+        ? route.continue()
+        : route.fulfill({
+            status: 400,
+            contentType: "application/json",
+            headers: { "access-control-allow-origin": "*", "access-control-expose-headers": "*" },
+            body: JSON.stringify({ code: "23514", message: "refused", details: null, hint: null }),
+          }),
+    );
+    await context.setOffline(false);
+    await page.clock.runFor(12_000);
+    await expect(page.getByText("Back online.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Back online. Saved.")).toHaveCount(0);
+    // The dropped change is said out loud, and stays until the next action.
+    await expect(page.getByRole("alert").filter({ hasText: "Some changes didn’t save." })).toBeVisible();
+    await page.clock.runFor(2500);
+    await expect(page.getByText("Back online.", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: "Some changes didn’t save." })).toBeVisible();
+  });
+
+  test("the stale-prices line and the offline line can show together", async ({ page, context }) => {
+    await createHousehold(page);
+    await chooseStore(page);
+    // Every Fred Meyer lookup fails, so the prices on screen may be old.
+    await page.route("**/api/kroger/match", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+    await planTacos(page);
+    await openList(page);
+    const stale = page.getByText("Fred Meyer prices may be out of date.");
+    await expect(stale).toBeVisible();
+
+    await context.setOffline(true);
+    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+    const offline = page.getByText("Offline. Showing your last list.");
+    await expect(offline).toBeVisible();
+    await expect(stale).toBeVisible();
+    // The offline line comes first.
+    const [a, b] = [(await offline.boundingBox())!, (await stale.boundingBox())!];
+    expect(a.y).toBeLessThan(b.y);
+  });
+});
+
+test("Check off all shows Undo without moving the list", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await expect(page.getByTestId("list-row")).toHaveCount(4);
+
+  const first = page.getByTestId("list-row").first();
+  const button = checkAll(page);
+  const topBefore = (await first.boundingBox())!.y;
+  const buttonBox = (await button.boundingBox())!;
+  await button.click();
+
+  const toast = page.getByTestId("check-all-undo");
+  await expect(toast).toContainText("Checked off 4 items");
+  // The message floats over the page: it is not inside the list, and it takes no room in it.
+  expect(await toast.evaluate((el) => getComputedStyle(el.parentElement!).position)).toBe("fixed");
+  await expect(page.getByRole("tabpanel").getByTestId("check-all-undo")).toHaveCount(0);
+  // The first row only moves up (by the button that went away), never down by a message.
+  const topAfter = (await page.getByTestId("list-row").first().boundingBox())!.y;
+  expect(topAfter).toBeLessThanOrEqual(topBefore + 1);
+  expect(topBefore - topAfter).toBeLessThanOrEqual(buttonBox.height + 24);
+  await expect(page.getByRole("region", { name: /^Got it · 4$/ })).toBeVisible();
+});
+
+test("an Amazon row with no price links to the store search", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await (await openSheet(page, "Corn tortillas")).getByRole("button", { name: "Move to Amazon" }).click();
+  await page.getByRole("tab", { name: /^Amazon/ }).click();
+
+  const tortillas = row(page, "Corn tortillas");
+  const link = tortillas.getByRole("link", { name: "Search Amazon" });
+  await expect(link).toHaveAttribute("href", "https://www.amazon.com/s?k=corn%20tortillas");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  // It stands where the price would be: the row has no price, and the link sits beside the row's own button, not inside it.
+  await expect(tortillas.getByTestId("row-total")).toHaveCount(0);
+  await expect(tortillas.locator("button a")).toHaveCount(0);
+  // The name still opens the item sheet.
+  await tortillas.getByRole("button", { name: /^Corn tortillas/ }).click();
+  await expect(page.getByRole("dialog", { name: "Corn tortillas" })).toBeVisible();
+});
+
+test("a sheet never reopens by itself after a move and a move back", async ({ page }) => {
+  await createHousehold(page);
+  await planTacos(page);
+  await openList(page);
+  await (await openSheet(page, "Corn tortillas")).getByRole("button", { name: "Move to Amazon" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("tab", { name: /^Amazon/ }).click();
+  await (await openSheet(page, "Corn tortillas")).getByRole("button", { name: "Move to Fred Meyer" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("tab", { name: /^Fred Meyer/ }).click();
+  await expect(row(page, "Corn tortillas")).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
