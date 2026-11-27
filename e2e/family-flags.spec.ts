@@ -142,6 +142,11 @@ test("an allergy stays a warning: on the draft, the week row, the meal sheet and
 /** The first number in the cremini mushrooms row of the shopping list (ounces). */
 async function mushroomAmount(page: Page): Promise<number> {
   await page.goto("/list");
+  return mushroomAmountNow(page);
+}
+
+/** Reads the amount on the list that is already open, without reloading it. */
+async function mushroomAmountNow(page: Page): Promise<number> {
   const row = page.getByTestId("list-row").filter({ hasText: "mushrooms" });
   await expect(row).toBeVisible();
   const match = /(\d+(?:\.\d+)?)\s*(?:oz|lb)/.exec(await row.innerText());
@@ -178,7 +183,10 @@ test("a won't-eat can be left out or swapped for one person, and the list follow
   await sheet.getByRole("button", { name: "Keep it as is" }).click();
   await expect(sheet.getByTestId("dislike-box")).toHaveCount(0);
   await sheet.getByRole("button", { name: "Close" }).click();
-  expect(await mushroomAmount(page)).toBeGreaterThan(cut);
+  // The list opens on its offline copy (still the cut amount) and swaps in the fresh one once it loads,
+  // so poll the open list until it shows the full amount rather than trusting the first paint.
+  await page.goto("/list");
+  await expect.poll(() => mushroomAmountNow(page)).toBeGreaterThan(cut);
 
   // Swap them for zucchini: the box says so and the list has a zucchini row.
   await page.goto("/week");
