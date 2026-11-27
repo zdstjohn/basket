@@ -6,7 +6,10 @@ import { matchFood } from "@/lib/domain/families";
 import { eatersLeft, ideaNote } from "@/components/flags/swap-notes";
 import { flagCopy, namesLabel, type Flag } from "@/lib/domain/flags";
 import type { Meal, Person, PersonChange, SwapIdea } from "@/lib/domain/types";
-import { focusRing, pillButton } from "@/lib/ui";
+import { ChevronRight, Check } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { quietLink } from "@/lib/ui";
 import { withChange } from "@/lib/db/queries/meals";
 
 export { ideaNote };
@@ -42,7 +45,7 @@ export function DislikeBox({
   onChange,
   mealName,
   meal,
-  className = "mx-5 mt-3",
+  className = "mx-4 mt-3",
 }: {
   flag: Flag;
   people: Person[];
@@ -86,16 +89,15 @@ export function DislikeBox({
   if (state === "done") {
     const done = doneCopy(flag, changes, people, eatersLeft(flag, meal, people));
     return (
-      <section aria-label="Won’t eat" data-testid="dislike-box" data-state="done" className={`${className} flex items-center gap-3 rounded-[14px] bg-green-tint px-3.5 py-3`}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1F7A4D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-none">
-          <path d="M5 12.5l4.5 4.5L19 7.5" />
-        </svg>
+      <section aria-label="Won’t eat" data-testid="dislike-box" data-state="done" className={`${className} flex items-center gap-3 rounded-md bg-surface p-3`}>
+        <Icon icon={Check} size={18} />
         <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-semibold text-[#134D31]">{done.head}</p>
-          <p className="mt-0.5 break-words text-xs text-[#2C5A42]">{done.sub}</p>
+          <p className="break-words text-small font-bold text-ink">{done.head}</p>
+          <p className="mt-0.5 break-words text-label text-ink-soft">{done.sub}</p>
         </div>
-        <button type="button" disabled={busy} onClick={() => void undo()} className={`${pillButton} shrink-0`}>
+        <button type="button" disabled={busy} onClick={() => void undo()} className={`${quietLink} min-w-11 shrink-0 justify-center`}>
           Change
+          <Icon icon={ChevronRight} size={18} />
         </button>
       </section>
     );
@@ -104,19 +106,20 @@ export function DislikeBox({
   const them = copy.pronoun;
   return (
     <>
-      <section aria-label="Won’t eat" data-testid="dislike-box" data-state="ask" className={`${className} rounded-[14px] bg-[#EEF0ED] px-3.5 py-3`}>
-        <p className="break-words text-[15px] font-semibold text-ink">{copy.head}</p>
-        <p className="mt-[3px] break-words text-sm text-[#4A544F]">{copy.body}</p>
-        <div className="mt-2.5 flex flex-wrap gap-2">
-          <button type="button" disabled={busy} onClick={() => void leaveOut()} className={`${pillButton} border-transparent bg-white`}>
+      <section aria-label="Won’t eat" data-testid="dislike-box" data-state="ask" className={`${className} rounded-md bg-sunk p-3`}>
+        <p className="break-words text-small font-bold text-ink">{copy.head}</p>
+        <p className="mt-1 break-words text-small text-ink-soft">{copy.body}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button variant="ghost" disabled={busy} onClick={() => void leaveOut()}>
             Leave {them} out
-          </button>
-          <button type="button" disabled={busy} onClick={() => setSwapping(true)} className={`${pillButton} border-transparent bg-white`}>
+          </Button>
+          <Button variant="ghost" disabled={busy} onClick={() => setSwapping(true)}>
             Swap {them}
-          </button>
+          </Button>
         </div>
-        <button type="button" onClick={() => setKept(true)} className={`mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-[#4A544F] underline ${focusRing}`}>
+        <button type="button" onClick={() => setKept(true)} className={`${quietLink} mt-1 min-w-11`}>
           Keep it as is
+          <Icon icon={ChevronRight} size={18} />
         </button>
       </section>
       {swapping && (
