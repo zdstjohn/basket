@@ -203,9 +203,10 @@ export function useWeekList(household: Household, weekId: string | null) {
       }
     };
     // One flush runs at a time; a call that joined it may have missed a change added just now, so look once more.
-    let left = await flushQueue(household.id, send);
+    const gaveUp = () => void (refused.current = true);
+    let left = await flushQueue(household.id, send, undefined, gaveUp);
     if (loadQueue(household.id).length > 0 && !(typeof navigator !== "undefined" && navigator.onLine === false)) {
-      left = await flushQueue(household.id, send);
+      left = await flushQueue(household.id, send, undefined, gaveUp);
     }
     return left;
   }, [sb, household.id]);
@@ -448,6 +449,8 @@ export function useWeekList(household: Household, weekId: string | null) {
       const left = await flushPending();
       if (left > 0) {
         setOffline(true);
+        // A change was given up on while others wait: put the screen back to what the server has.
+        if (refused.current) void load();
         return;
       }
       void load();

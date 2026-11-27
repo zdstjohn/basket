@@ -22,6 +22,17 @@ export async function requestEstimates(items: Wanted[], store: Store): Promise<P
     return parts.flat();
   }
   if (items.length === 0) return [];
+  // The server answers with one price per name. When the same food is wanted by weight and by count
+  // (chicken as mass and as count), one request would give both rows the same price: ask once per kind.
+  const kindsByName = new Map<string, Set<string>>();
+  for (const w of items) kindsByName.set(w.canonical, (kindsByName.get(w.canonical) ?? new Set()).add(w.qty.kind));
+  if ([...kindsByName.values()].some((k) => k.size > 1)) {
+    const groups = new Map<string, Wanted[]>();
+    for (const w of items) groups.set(w.qty.kind, [...(groups.get(w.qty.kind) ?? []), w]);
+    const parts: PriceRow[][] = [];
+    for (const g of groups.values()) parts.push(await requestEstimates(g, store));
+    return parts.flat();
+  }
   try {
     const res = await fetch('/api/estimates', {
       method: 'POST',

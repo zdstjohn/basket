@@ -288,6 +288,11 @@
         "magic_link": {
           "subject": "Your Basket sign-in link and code",
           "content_path": "./supabase/templates/magic_link.html"
+        },
+        // First-time sign-ups get the confirmation email, so it carries the same link and 6-digit code.
+        "confirmation": {
+          "subject": "Your Basket sign-in link and code",
+          "content_path": "./supabase/templates/magic_link.html"
         }
       },
 
