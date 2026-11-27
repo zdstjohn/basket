@@ -32,6 +32,33 @@ test("a new family signs in, sets up the household and sees it", async ({
   await page.screenshot({ path: `${shots}/household.png`, fullPage: true });
 });
 
+test("onboarding shows one person editor at a time", async ({ page }) => {
+  await signInAs(page, uniqueEmail("onboard-one"));
+  await onboard(page, FAMILY.slice(0, 2));
+  await expect(page.getByRole("group", { name: /^Person/ })).toHaveCount(1);
+  await expect(page.getByRole("group", { name: "Person 2" })).toBeVisible();
+  await expect(page.getByTestId("person-row")).toHaveCount(1);
+  await expect(page.getByTestId("person-row").first()).toContainText("Dad");
+
+  await page.getByTestId("person-row").first().click();
+  await expect(page.getByRole("group", { name: "Person 1" })).toBeVisible();
+  await expect(page.getByRole("group", { name: /^Person/ })).toHaveCount(1);
+  await expect(page.getByTestId("person-row").first()).toContainText("Mom");
+});
+
+test("Start planning keeps the person still being edited", async ({ page }) => {
+  await signInAs(page, uniqueEmail("onboard-open"));
+  await onboard(page, FAMILY.slice(0, 2));
+  await expect(page.getByRole("group", { name: "Person 2" })).toBeVisible();
+  await page.getByRole("button", { name: "Start planning" }).click();
+  await expect(page).toHaveURL(/\/week$/);
+
+  await page.goto("/household");
+  const rows = page.getByTestId("person-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasText: "Mom" })).toBeVisible();
+});
+
 test("someone with no session is sent to sign in", async ({ page }) => {
   await page.goto("/week");
   await expect(page).toHaveURL(/\/login$/);

@@ -20,7 +20,7 @@ export const SCREENS_B: Screen[] = [
     },
   },
   { name: "household", path: "/household", contrastPending: true },
-  { name: "onboarding", path: "/onboarding", fresh: true, contrastPending: true },
+  { name: "onboarding", path: "/onboarding", fresh: true },
   { name: "login", path: "/login", signedOut: true },
   { name: "invite-failed", path: `/invite/${"0".repeat(64)}` },
 ];

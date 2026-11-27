@@ -1,7 +1,5 @@
 app/(app)/household/HouseholdScreen.tsx
 app/(app)/household/PersonEditor.tsx
-app/onboarding/OnboardingForm.tsx
-app/onboarding/page.tsx
 components/BudgetMeter.tsx
 components/ListRow.tsx
 components/ListScreen.tsx
