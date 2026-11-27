@@ -28,6 +28,8 @@ export function useWeekData(household: Household) {
   const [data, setData] = useState<WeekData | null>(null);
   const [error, setError] = useState(false);
   const [live, setLive] = useState(false);
+  // Goes up each time the subscription fires, so things that load beside the week (the dinner card) can follow it.
+  const [changes, setChanges] = useState(0);
   const latest = useRef(0);
   const invalidate = useCallback(() => {
     latest.current++;
@@ -69,12 +71,20 @@ export function useWeekData(household: Household) {
   useEffect(() => {
     // Loading starts from an effect on purpose: the week depends on the phone's clock.
     void load();
-    const stop = subscribeHousehold(household.id, ["week_meals", "meals", "people"], () => void load(), setLive);
+    const stop = subscribeHousehold(
+      household.id,
+      ["week_meals", "meals", "people", "meal_verdicts"],
+      () => {
+        setChanges((n) => n + 1);
+        void load();
+      },
+      setLive,
+    );
     return () => {
       invalidate();
       stop();
     };
   }, [household.id, load, invalidate]);
 
-  return { sb, data, error, live, reload: load };
+  return { sb, data, error, live, changes, reload: load };
 }
