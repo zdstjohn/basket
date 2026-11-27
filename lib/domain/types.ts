@@ -42,6 +42,8 @@ export interface VegSwap {
   role: Role;
 }
 
+export type SwapIdea = VegSwap;
+
 export interface Meal {
   id: string;
   name: string;
