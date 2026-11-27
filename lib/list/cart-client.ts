@@ -2,7 +2,12 @@ import type { Modality } from '@/lib/domain/cart';
 
 export type SendResult =
   | { ok: true; sent: number; rejected: { key: string; name: string }[] }
-  | { ok: false; reason: 'not_connected' | 'already_sent' | 'unsure' | 'rejected' | 'too_many' | 'failed' };
+  /** The send may have reached the cart: `added` are the products Kroger confirmed, `rejected` the ones it refused. */
+  | { ok: false; reason: 'unsure'; added: string[]; rejected: { key: string; name: string }[] }
+  | { ok: false; reason: 'not_connected' | 'already_sent' | 'already_sending' | 'rejected' | 'too_many' | 'failed' };
+
+const isNamed = (r: unknown): r is { key: string; name: string } =>
+  typeof r === 'object' && r !== null && typeof (r as { key?: unknown }).key === 'string' && typeof (r as { name?: unknown }).name === 'string';
 
 /**
  * Asks the server to add products to the signed-in person's Fred Meyer cart. `quantity` is the wanted total of that
@@ -20,15 +25,19 @@ export async function sendCart(body: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const json = (await res.json().catch(() => ({}))) as { sent?: number; rejected?: { key: string; name: string }[]; error?: string };
-    if (res.ok) return { ok: true, sent: json.sent ?? 0, rejected: json.rejected ?? [] };
+    const json = (await res.json().catch(() => ({}))) as { sent?: number; rejected?: unknown; ok?: unknown; error?: string };
+    if (res.ok) return { ok: true, sent: json.sent ?? 0, rejected: Array.isArray(json.rejected) ? json.rejected.filter(isNamed) : [] };
     // 409 means three things; the body says which. Only the cases the person can act on get their own reason.
     if (res.status === 409) {
       if (json.error === 'not_connected') return { ok: false, reason: 'not_connected' };
       if (json.error === 'already_sent') return { ok: false, reason: 'already_sent' };
+      if (json.error === 'already_sending') return { ok: false, reason: 'already_sending' };
       return { ok: false, reason: 'failed' };
     }
-    if (res.status === 504) return { ok: false, reason: 'unsure' };
+    if (res.status === 504) {
+      const added = Array.isArray(json.ok) ? json.ok.filter((u): u is string => typeof u === 'string') : [];
+      return { ok: false, reason: 'unsure', added, rejected: Array.isArray(json.rejected) ? json.rejected.filter(isNamed) : [] };
+    }
     if (res.status === 502) return { ok: false, reason: 'rejected' };
     if (res.status === 429) return { ok: false, reason: 'too_many' };
     return { ok: false, reason: 'failed' };

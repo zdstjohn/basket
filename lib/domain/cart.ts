@@ -36,10 +36,10 @@ export interface CartDiff {
   byOther: boolean;
 }
 
-type Me = { userId: string; profileId: string | null };
+export type Me = { userId: string; profileId: string | null };
 
 /** A send went to the same Kroger account as mine: equal profile ids when both are known, else the same login. */
-const sameAccount = (s: CartSend, me: Me): boolean =>
+export const sameAccount = (s: CartSend, me: Me): boolean =>
   s.profileId !== null && me.profileId !== null ? s.profileId === me.profileId : s.userId === me.userId;
 
 /**

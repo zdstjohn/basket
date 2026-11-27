@@ -1,12 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createHousehold } from "./helpers/household";
 import { routeFoodImages } from "./helpers/fixtures";
+import { chooseStore, openReview, planTacos } from "./helpers/fred-meyer";
 
 const SCREENS = [
   { name: "week", path: "/week" },
   { name: "add-meal", path: "/week/add?day=thu&slot=dinner" },
   { name: "favorites", path: "/favorites" },
   { name: "list", path: "/list" },
+  { name: "review", path: "/list/review" },
   { name: "household", path: "/household" },
 ];
 
@@ -93,13 +95,9 @@ test("layout: every screen fits, taps are 44px and nothing hides under the nav",
   const shots = `e2e/screenshots/${testInfo.project.name}`;
   await createHousehold(page, "layout");
 
-  // Put a planned meal on the week so the list and week screens have real content.
-  await page.goto("/week/add?day=thu&slot=dinner");
-  await page.getByLabel("What's for dinner?").fill("tacos");
-  await page.getByRole("button", { name: "Search" }).click();
-  await page.getByRole("button", { name: "Chicken tacos · Allrecipes" }).click();
-  await page.getByRole("button", { name: "Add to Thursday" }).click();
-  await expect(page).toHaveURL(/\/week$/);
+  // Put a planned meal on the week so the list and week screens have real content, and a Fred Meyer store so the review screen opens.
+  await chooseStore(page);
+  await planTacos(page);
 
   const found: string[] = [];
   for (const screen of SCREENS) {
@@ -108,9 +106,28 @@ test("layout: every screen fits, taps are 44px and nothing hides under the nav",
     if (screen.name === "list") {
       await expect(page.getByTestId("list-row").first()).toBeVisible();
     }
+    if (screen.name === "review") {
+      await expect(page.getByTestId("review-line").first()).toBeVisible();
+    }
     const problems = await audit(page);
     await page.screenshot({ path: `${shots}/layout-${screen.name}.png`, fullPage: true });
     for (const p of problems) found.push(`${screen.path}: ${p.what}: ${p.detail}`);
   }
   expect(found, found.join("\n")).toEqual([]);
+});
+
+test("review screen: no sideways scroll at 360, 402 and 412, and the send button sits above the nav", async ({ page }) => {
+  await createHousehold(page, "layoutreview");
+  await chooseStore(page);
+  await planTacos(page);
+  await openReview(page);
+  await expect(page.getByTestId("review-line").first()).toBeVisible();
+  for (const width of [360, 402, 412]) {
+    await page.setViewportSize({ width, height: 800 });
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(wide, `sideways scroll at ${width}`).toBe(false);
+    const send = await page.getByTestId("send-cart").boundingBox();
+    const nav = await page.getByRole("navigation", { name: "Main" }).boundingBox();
+    expect(send && nav && send.y + send.height <= nav.y + 0.5, `send button above the nav at ${width}`).toBe(true);
+  }
 });

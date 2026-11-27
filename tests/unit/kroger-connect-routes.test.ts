@@ -110,7 +110,7 @@ describe('GET /api/kroger/connect', () => {
 
 describe('GET /api/kroger/callback', () => {
   const failed = (res: Response) => {
-    expect(loc(res).pathname).toBe('/list');
+    expect(loc(res).pathname).toBe('/list/review');
     expect(loc(res).searchParams.get('fm')).toBe('failed');
     expect(saveLink).not.toHaveBeenCalled();
     expect(exchangeCode).not.toHaveBeenCalled();

@@ -20,15 +20,25 @@ describe('sendCart', () => {
     answer(409, { error: 'already_sent' });
     expect(await sendCart(body)).toEqual({ ok: false, reason: 'already_sent' });
     answer(409, { error: 'already_sending' });
-    expect(await sendCart(body)).toEqual({ ok: false, reason: 'failed' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'already_sending' });
     answer(409, { error: 'no_store' });
     expect(await sendCart(body)).toEqual({ ok: false, reason: 'failed' });
   });
   it('maps the other statuses', async () => {
-    for (const [status, reason] of [[504, 'unsure'], [502, 'rejected'], [429, 'too_many'], [500, 'failed'], [503, 'failed'], [400, 'failed']] as const) {
+    for (const [status, reason] of [[502, 'rejected'], [429, 'too_many'], [500, 'failed'], [503, 'failed'], [400, 'failed']] as const) {
       answer(status, { error: 'x' });
       expect(await sendCart(body)).toEqual({ ok: false, reason });
     }
+  });
+  it('reads the 504 body: what was added and what Fred Meyer refused', async () => {
+    answer(504, { error: 'unsure', ok: ['0001', '0002'], rejected: [{ key: 'k', name: 'Milk' }] });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'unsure', added: ['0001', '0002'], rejected: [{ key: 'k', name: 'Milk' }] });
+    answer(504, { error: 'unsure' });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'unsure', added: [], rejected: [] });
+    answer(504, { error: 'unsure', ok: 'nope', rejected: [{ key: 1 }, null, { key: 'k', name: 'Eggs' }] });
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'unsure', added: [], rejected: [{ key: 'k', name: 'Eggs' }] });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>', { status: 504 })));
+    expect(await sendCart(body)).toEqual({ ok: false, reason: 'unsure', added: [], rejected: [] });
   });
   it('a thrown fetch is failed', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));

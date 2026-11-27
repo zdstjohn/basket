@@ -46,7 +46,7 @@ test("a sign-in that did not start here is refused", async ({ page }) => {
   await createHousehold(page);
   const res = await page.request.get("/api/kroger/callback?code=fake-code&state=nope", { maxRedirects: 0 });
   expect(res.status()).toBe(302);
-  expect(res.headers().location).toContain("/list?fm=failed");
+  expect(res.headers().location).toContain("/list/review?fm=failed");
   await page.goto("/household");
   await expect(page.getByRole("region", { name: "Stores and settings" }).getByRole("link", { name: "Connect" })).toBeVisible();
 });

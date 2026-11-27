@@ -16,8 +16,8 @@ interface Pending {
 }
 
 const MAX_AGE_MS = 600_000;
-// TODO(Task 9): send an unreadable or foreign sign-in back to /list/review once that screen exists.
-const FAILED_HOME = '/list';
+/** Where an unreadable or foreign sign-in goes back to: the review screen, which is where the connect starts. */
+const FAILED_HOME = '/list/review';
 
 function readPending(req: Request): Pending | null {
   const header = req.headers.get('cookie') ?? '';
